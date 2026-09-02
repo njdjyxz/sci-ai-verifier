@@ -14,14 +14,23 @@ class ClaimExtractionError(ValueError):
 
 
 class ClaimExtractor(Protocol):
-    def extract(self, document: SkillDocument) -> ExtractionResponse: ...
+    """Define the extraction behavior required by claim-manifest construction."""
+
+    def extract(self, document: SkillDocument) -> ExtractionResponse:
+        """Extract candidate scientific claims from a submitted skill document."""
+
+        ...
 
 
 def _normalized_text(value: str) -> str:
+    """Collapse whitespace so equivalent text can be compared consistently."""
+
     return re.sub(r"\s+", " ", value).strip()
 
 
 def _claim_id(document: SkillDocument, statement: str, scope: str) -> str:
+    """Create a deterministic ID from the source skill, claim, and scope."""
+
     identity = "\0".join(
         (
             document.sha256,
@@ -36,6 +45,8 @@ def build_claim_manifest(
     document: SkillDocument,
     extractor: ClaimExtractor,
 ) -> ClaimManifest:
+    """Validate extracted claims and assemble the trusted claim manifest."""
+
     extraction = extractor.extract(document)
     normalized_source = _normalized_text(document.content)
     seen_claims: set[tuple[str, str]] = set()

@@ -14,6 +14,8 @@ class SkillInputError(ValueError):
 
 
 def resolve_skill_file(skill_path: str | Path) -> Path:
+    """Resolve a file or skill directory to the exact skill document to read."""
+
     path = Path(skill_path).expanduser()
     if not path.exists():
         raise SkillInputError(f"Skill path does not exist: {path}")
@@ -31,6 +33,8 @@ def resolve_skill_file(skill_path: str | Path) -> Path:
 
 
 def load_skill(skill_path: str | Path) -> SkillDocument:
+    """Read and validate a skill file, returning its text and source hash."""
+
     path = resolve_skill_file(skill_path)
     raw = path.read_bytes()
     if len(raw) > MAX_SKILL_BYTES:
@@ -52,4 +56,3 @@ def load_skill(skill_path: str | Path) -> SkillDocument:
         content=content,
         sha256=hashlib.sha256(raw).hexdigest(),
     )
-
