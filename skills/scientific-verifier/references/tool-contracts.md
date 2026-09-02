@@ -6,8 +6,8 @@ This file names the complete intended Python tool surface for the verifier. No a
 
 | Planned file | Responsibility |
 |---|---|
-| `src/sci_ai_verifier/agent.py` | Start the bounded Claude session, maintain messages, enforce step, retry, cost, and execution limits, and detect completion. |
-| `src/sci_ai_verifier/tools.py` | Publish approved tool definitions, dispatch tool calls, and convert expected exceptions into structured results. |
+| `src/sci_ai_verifier/agent.py` | Start the bounded verifier-agent session, assemble source-labeled context with explicit trust classes, reconstruct committed workflow state, expose only state-eligible tools, maintain messages, enforce step, retry, cost, and execution limits, and detect completion. |
+| `src/sci_ai_verifier/tools.py` | Publish approved tool definitions, reject illegal state transitions, dispatch eligible tool calls, and convert expected exceptions into structured results. |
 | `src/sci_ai_verifier/storage.py` | Perform atomic artifact writes, content hashing, run-workspace management, managed-store access, and registry locking. |
 | `src/sci_ai_verifier/ingest.py` | Load submitted skills as untrusted UTF-8 data. |
 | `src/sci_ai_verifier/claims.py` | Validate and commit claim manifests and assign claim IDs. |
@@ -19,7 +19,7 @@ This file names the complete intended Python tool surface for the verifier. No a
 | `src/sci_ai_verifier/execution.py` | Run audited evaluators and capture reproducible outputs and metrics. |
 | `src/sci_ai_verifier/reporting.py` | Validate claim results and write machine-readable and human-readable report cards. |
 
-These are planned boundaries, not permission for Claude to call arbitrary functions inside the files. Claude sees only the approved tools below.
+These are planned boundaries, not permission for the verifier agent to call arbitrary functions inside the files. The runner exposes only the subset of approved tools allowed by the current state in `workflow.md`. Python revalidates state and prerequisites when dispatching every request; tool visibility alone is not authorization.
 
 ## Common result protocol
 
@@ -60,7 +60,7 @@ Run or claim cannot continue safely:
 }
 ```
 
-`data` appears only with `ok`. `error` appears only with `retryable` or `fatal`. Empty searches, unsupported grades, inadequate bundles, failed audits, scientific failures, and missing evaluators are `ok` data because Claude must route from them.
+`data` appears only with `ok`. `error` appears only with `retryable` or `fatal`. Empty searches, unsupported grades, inadequate bundles, failed audits, scientific failures, and missing evaluators are `ok` data because the verifier agent must route from them. A tool requested outside its permitted workflow state returns `retryable` without changing committed state.
 
 ## Load and profile tools
 
@@ -82,7 +82,7 @@ Fatal conditions: missing, unreadable, empty, oversized, or invalidly encoded so
 
 Planned implementation: `claims.py` and `storage.py`
 
-Purpose: validate Claude's candidate atomic claims, assign stable IDs, and persist the accepted manifest.
+Purpose: validate the verifier agent's candidate atomic claims, assign stable IDs, and persist the accepted manifest.
 
 Input: source digest and claims containing statement, scope, expected behavior, exact source quote, and report note.
 
@@ -240,7 +240,7 @@ Input: validated bundle ID, evaluator implementation entry point and version, su
 
 Successful data: evaluator ID and version, bundle ID and version, registration status, and registry revisions.
 
-Side effects: writes reusable evaluator and bundle metadata. New code or payloads must already exist in approved locations; Claude cannot insert arbitrary implementation code through this tool.
+Side effects: writes reusable evaluator and bundle metadata. New code or payloads must already exist in approved locations; the verifier agent cannot insert arbitrary implementation code through this tool.
 
 Retryable conditions: incomplete registration, duplicate capability, stale registry, or unmet validation prerequisite.
 
@@ -292,7 +292,7 @@ Planned implementation: `reporting.py` and `storage.py`
 
 Purpose: enforce the evidence-grade ceiling and persist the scientific result for one claim.
 
-Input: claim, plan, audit, execution, evaluator, bundle, and resource references; proposed status and grade; coverage; AI involvement; downgrade reasons; warnings; and report notes.
+Input: claim, route, and plan references; audit, execution, evaluator, bundle, and resource references when produced by the valid path; proposed status and grade; coverage; AI involvement; downgrade reasons; warnings; and report notes. A pre-execution grade-U path marks stages that were not scientifically applicable instead of inventing their references.
 
 Successful data: immutable claim-result ID, accepted status, accepted grade, and completeness findings.
 
@@ -322,4 +322,4 @@ Fatal conditions: corrupted run state or storage failure.
 
 ## Excluded capabilities
 
-Claude is never given arbitrary shell execution, arbitrary Python execution, direct registry editing, unrestricted network access, secret retrieval, evaluator-code injection, or permission to bypass audits and grade ceilings.
+The verifier agent is never given arbitrary shell execution, arbitrary Python execution, direct registry editing, unrestricted network access, secret retrieval, evaluator-code injection, or permission to bypass audits and grade ceilings.

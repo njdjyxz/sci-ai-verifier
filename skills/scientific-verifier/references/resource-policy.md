@@ -105,7 +105,7 @@ Discard material that is reproducible, redundant, unsafe, or unrelated to the fi
 - Temporary downloads already present in the managed store.
 - Decompressed or converted working copies.
 - Duplicate payloads.
-- Failed Claude drafts and superseded retry payloads, except structured error events needed for audit.
+- Failed verifier-agent drafts and superseded retry payloads, except structured error events needed for audit.
 - Temporary evaluator inputs and outputs not referenced by a result.
 - Search-result pages and unused candidate resources.
 - Build artifacts, process logs, and caches not needed for reproducibility.

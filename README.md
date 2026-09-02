@@ -1,8 +1,8 @@
 # Scientific AI Verifier
 
-Scientific AI Verifier is a planned Claude-orchestrated system for testing the scientific claims made by chemical, biological, and other scientific AI skills. Its goal is not merely to confirm that a skill runs, but to determine what each atomic claim is, what evidence can test it, how independent that evidence is from AI judgment, and what conclusion the evidence supports.
+Scientific AI Verifier is a planned agent-orchestrated system for testing the scientific claims made by chemical, biological, and other scientific AI skills. Its goal is not merely to confirm that a skill runs, but to determine what each atomic claim is, what evidence can test it, how independent that evidence is from AI judgment, and what conclusion the evidence supports.
 
-Claude will manage semantic workflow decisions and recovery. Small approved Python tools will perform operations that must be reproducible, exact, persistent, or auditable.
+The verifier agent will manage semantic workflow decisions and recovery. Small approved Python tools will perform operations that must be reproducible, exact, persistent, or auditable.
 
 ## Current stage: complete Markdown specification
 
@@ -12,8 +12,8 @@ There is intentionally no active Python package at the repository root. This all
 
 ## Review order
 
-1. [`skills/scientific-verifier/SKILL.md`](skills/scientific-verifier/SKILL.md) — Claude's high-level operating instructions and reference routing.
-2. [`skills/scientific-verifier/references/workflow.md`](skills/scientific-verifier/references/workflow.md) — the complete workflow graph, autonomous fallback behavior, and failure paths.
+1. [`skills/scientific-verifier/SKILL.md`](skills/scientific-verifier/SKILL.md) — the verifier agent's entry instructions and reference routing.
+2. [`skills/scientific-verifier/references/workflow.md`](skills/scientific-verifier/references/workflow.md) — the authoritative textual state machine, exact tool transitions, autonomous fallback behavior, and failure paths. Its retained graph is a non-authoritative review aid.
 3. [`skills/scientific-verifier/references/tool-contracts.md`](skills/scientific-verifier/references/tool-contracts.md) — every approved Python tool and the planned `.py` file responsible for it.
 4. [`skills/scientific-verifier/references/artifact-contracts.md`](skills/scientific-verifier/references/artifact-contracts.md) — what each run, registry, result, and report artifact must contain.
 5. [`skills/scientific-verifier/references/resource-policy.md`](skills/scientific-verifier/references/resource-policy.md) — what to reuse, store, return, retain, promote, and discard.
@@ -24,22 +24,30 @@ There is intentionally no active Python package at the repository root. This all
 ```text
 User starts verifier
         |
-Python starts a bounded Claude session
+Python creates the run and starts a bounded verifier-agent session
         |
-Claude loads the scientific-verifier Skill
+Python supplies SKILL.md, workflow.md, and committed run state
         |
-Claude chooses the next approved tool
+Python exposes only the tools legal for the committed state
+        |
+The agent chooses a permitted semantic branch and requests its named tool
         |
 Python validates and performs the deterministic operation
         |
 Python returns ok, retryable, or fatal
         |
-Claude continues, repairs, lowers the evidence target, or completes
+The agent continues, repairs, lowers the evidence target, or completes
         |
 Python writes the audited claim results and report card
 ```
 
-Claude owns:
+## Session context
+
+At startup or resumption, Python supplies the complete verifier `SKILL.md`, the complete authoritative `workflow.md`, their versions or digests, the committed run and claim states, current limits, and only the tool definitions legal in that state. Each source is a separately labeled context block with an explicit trust class. The submitted scientific skill is not included at bootstrap; Python reads and hashes it through `load_submitted_skill`, then returns its content as explicitly untrusted data.
+
+The runner supplies applicable tool and artifact contract sections with each legal operation and introduces the evidence rubric and resource policy only when their stages become relevant. Registries, run artifacts, datasets, expected answers, evaluator code, and credentials are not exposed as raw project files; approved tools return only the structured data required for the current state.
+
+The verifier agent owns:
 
 - Atomic claim interpretation.
 - Semantic claim-type comparison.
@@ -54,13 +62,14 @@ Python owns:
 - File access, hashing, IDs, and schemas.
 - Artifact and registry integrity.
 - Exact evaluator lookup.
+- Workflow state, prerequisites, and tool eligibility.
 - Resource materialization, digests, and locks.
 - Reproducible case construction.
 - Objective bundle validation and plan prerequisites.
 - Evaluator execution, metrics, tolerances, and grade ceilings.
 - Run audit trail and report rendering.
 
-A Python tool result is authoritative. Claude may respond to it but cannot override it.
+A Python tool result is authoritative. The verifier agent may respond to it but cannot override it.
 
 ## Complete workflow
 
@@ -83,7 +92,7 @@ Every decision gate has a failure path. Missing resources, inadequate cases, fai
 
 ## Evidence principle
 
-The preferred result is a scientific verdict determined completely outside AI judgment. Claude may orchestrate a deterministic test without becoming its oracle.
+The preferred result is a scientific verdict determined completely outside AI judgment. The verifier agent may orchestrate a deterministic test without becoming its oracle.
 
 - A: direct independent ground truth; no AI judgment in scoring or verdict.
 - B: external benchmark or replication; normally no AI judgment in scoring.
@@ -143,7 +152,7 @@ src/sci_ai_verifier/
 └── reporting.py
 ```
 
-The files are planned responsibility boundaries, not separate workflow controllers. `agent.py` will run one generic Claude/tool loop; the other files will provide small deterministic capabilities behind approved tools.
+The files are planned responsibility boundaries, not separate workflow controllers. `agent.py` will run one generic agent/tool loop while enforcing the authoritative workflow state, context bootstrap, and legal tool set; the other files will provide small deterministic capabilities behind approved tools.
 
 ## Preserved fixed workflow
 
@@ -155,8 +164,8 @@ Useful deterministic behavior may be migrated later after the new tool contract 
 
 Stage 2 will build only:
 
-1. The bounded Claude agent loop.
-2. Tool dispatch and the common `ok`, `retryable`, and `fatal` protocol.
+1. The bounded verifier-agent loop and deterministic session bootstrap.
+2. State-aware tool dispatch and the common `ok`, `retryable`, and `fatal` protocol.
 3. `load_submitted_skill`.
 4. `commit_claim_manifest`.
 5. Run-state and artifact persistence required by those operations.

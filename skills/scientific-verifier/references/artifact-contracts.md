@@ -12,7 +12,7 @@ Every persisted artifact contains:
 - The run or parent artifact ID that produced it.
 - Content or source digests needed to reproduce the decision.
 - Tool and implementation versions involved in deterministic operations.
-- Claude model and response identifiers for semantic decisions, without storing hidden chain-of-thought.
+- Verifier-agent provider, model, and response identifiers for semantic decisions, without storing hidden chain-of-thought.
 
 Artifacts are append-only within a completed run. A revision creates a new version or event rather than silently changing the evidence behind a published result.
 
@@ -25,9 +25,13 @@ Contains:
 - Run ID and lifecycle status.
 - Submitted source path, name, and digest.
 - Start and completion time.
+- Verifier `SKILL.md` and authoritative `workflow.md` versions or digests supplied at bootstrap or resumption.
+- A context manifest recording stage references and tool definitions supplied to the verifier agent, their trust classification, versions or digests, and the state that authorized them.
 - Requested minimum or target grade when provided.
 - Step, retry, cost, and execution limits.
 - Available and unavailable Python tools.
+- Current run and per-claim workflow states, with the committed artifact that authorized each state.
+- Accepted state-transition history and rejected invalid-transition attempts.
 - Artifact IDs produced by the run.
 - Tool-call events, structured results, and operational errors.
 - Final completion or termination reason.
@@ -47,7 +51,7 @@ Contains one entry per atomic scientific claim:
 - `source_quote`
 - `report_note`
 
-The manifest also records source and extraction provenance. Python validates exact source-quote presence, rejects duplicates, and assigns IDs after Claude proposes the claims.
+The manifest also records source and extraction provenance. Python validates exact source-quote presence, rejects duplicates, and assigns IDs after the verifier agent proposes the claims.
 
 ## Routing artifact
 
