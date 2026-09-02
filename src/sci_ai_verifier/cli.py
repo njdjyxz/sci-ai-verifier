@@ -13,33 +13,33 @@ from sci_ai_verifier.adapters.claude import (
     ClaudeConfigurationError,
     ClaudeResponseError,
 )
-from sci_ai_verifier.claims import ClaimExtractionError, extract_claim_manifest
+from sci_ai_verifier.claims import ClaimExtractionError, build_claim_manifest
 from sci_ai_verifier.ingest import SkillInputError, load_skill
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="sci-ai-verifier")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    extract = subparsers.add_parser(
-        "extract-claims",
-        help="Extract a draft scientific claim manifest from a submitted skill.",
+    parser = argparse.ArgumentParser(
+        prog="sci-ai-verifier",
+        description=(
+            "Start scientific skill verification. The current implementation builds "
+            "the claim manifest."
+        ),
     )
-    extract.add_argument(
+    parser.add_argument(
         "skill",
         help="A UTF-8 skill file, or a directory containing a top-level SKILL.md.",
     )
-    extract.add_argument(
+    parser.add_argument(
         "--model",
         default=os.environ.get("CLAUDE_MODEL"),
         help="Company-approved Claude model ID; defaults to CLAUDE_MODEL.",
     )
-    extract.add_argument(
+    parser.add_argument(
         "--output",
         type=Path,
         help="Manifest path; defaults to .verifier/runs/<run-id>/claim-manifest.json.",
     )
-    extract.add_argument(
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Allow replacement of an explicitly selected output file.",
@@ -69,15 +69,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
 
-    if args.command != "extract-claims":
-        parser.error(f"Unsupported command: {args.command}")
     if not args.model:
         parser.error("--model is required when CLAUDE_MODEL is not set.")
 
     try:
         document = load_skill(args.skill)
         extractor = ClaudeClaimExtractor(model=args.model)
-        manifest = extract_claim_manifest(document, extractor)
+        manifest = build_claim_manifest(document, extractor)
         output = (args.output or _default_output(document.sha256)).resolve()
         if output == Path(document.path):
             raise ValueError("Output path cannot overwrite the submitted skill file.")
@@ -93,9 +91,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    review_count = sum(claim.needs_human_review for claim in manifest.claims)
-    print(f"Wrote {len(manifest.claims)} draft claim(s) to {output}")
-    if review_count:
-        print(f"Human review required for {review_count} claim(s).")
+    print(f"Wrote a claim manifest with {len(manifest.claims)} claim(s) to {output}")
     return 0
-

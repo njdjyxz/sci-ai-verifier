@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -13,16 +13,15 @@ class SkillDocument:
 
 
 @dataclass(frozen=True)
-class DraftClaim:
+class ExtractedClaim:
     statement: str
     scope: str
     expected_behavior: str
     source_quote: str
-    needs_human_review: bool
-    review_reason: str
+    report_note: str
 
     @classmethod
-    def from_mapping(cls, value: Any) -> "DraftClaim":
+    def from_mapping(cls, value: Any) -> "ExtractedClaim":
         if not isinstance(value, dict):
             raise ValueError("Each extracted claim must be a JSON object.")
 
@@ -31,8 +30,7 @@ class DraftClaim:
             "scope": str,
             "expected_behavior": str,
             "source_quote": str,
-            "needs_human_review": bool,
-            "review_reason": str,
+            "report_note": str,
         }
         if set(value) != set(required):
             missing = sorted(set(required) - set(value))
@@ -49,16 +47,12 @@ class DraftClaim:
             if not value[field_name].strip():
                 raise ValueError(f"Claim field '{field_name}' cannot be empty.")
 
-        if value["needs_human_review"] and not value["review_reason"].strip():
-            raise ValueError("A claim marked for human review must include a review reason.")
-
         return cls(**value)
 
 
 @dataclass(frozen=True)
 class ExtractionResponse:
-    claims: tuple[DraftClaim, ...]
-    notes: str
+    claims: tuple[ExtractedClaim, ...]
     provider: str
     model: str
     response_id: str
@@ -71,16 +65,13 @@ class Claim:
     scope: str
     expected_behavior: str
     source_quote: str
-    needs_human_review: bool
-    review_reason: str
-    status: Literal["draft"] = "draft"
+    report_note: str
 
 
 @dataclass(frozen=True)
 class ClaimManifest:
     schema_version: str
     manifest_id: str
-    status: Literal["draft"]
     created_at: str
     source_path: str
     source_name: str
@@ -88,9 +79,7 @@ class ClaimManifest:
     extraction_provider: str
     extraction_model: str
     extraction_response_id: str
-    extraction_notes: str
     claims: tuple[Claim, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

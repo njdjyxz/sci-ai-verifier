@@ -21,11 +21,9 @@ class FakeMessages:
                     "scope": "Not specified",
                     "expected_behavior": "Return a monoisotopic mass.",
                     "source_quote": "Calculates monoisotopic mass.",
-                    "needs_human_review": True,
-                    "review_reason": "The supported molecule scope is not specified.",
+                    "report_note": "The supported molecule scope is not specified.",
                 }
             ],
-            "notes": "One scientific claim found.",
         }
         return SimpleNamespace(
             id="msg_test",
@@ -36,7 +34,7 @@ class FakeMessages:
 
 
 class ClaudeAdapterTests(unittest.TestCase):
-    def test_adapter_requests_structured_output_and_returns_drafts(self) -> None:
+    def test_adapter_requests_structured_output_and_returns_claims(self) -> None:
         messages = FakeMessages()
         client = SimpleNamespace(messages=messages)
         document = SkillDocument(
@@ -53,6 +51,10 @@ class ClaudeAdapterTests(unittest.TestCase):
 
         self.assertEqual(result.provider, "anthropic")
         self.assertEqual(len(result.claims), 1)
+        self.assertEqual(
+            result.claims[0].report_note,
+            "The supported molecule scope is not specified.",
+        )
         self.assertIn("output_config", messages.request)
         self.assertEqual(
             messages.request["output_config"]["format"]["type"],
@@ -62,4 +64,3 @@ class ClaudeAdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

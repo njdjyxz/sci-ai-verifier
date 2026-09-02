@@ -4,9 +4,9 @@ Sci-AI Verifier is a framework for evaluating the scientific accuracy of AI skil
 
 The project treats each atomic scientific claim as the unit of verification. A single skill may therefore receive different results for different claims. Example scientific skills and recipes can be found in the [Scripps AI Enablement catalog](https://github.com/scripps-ai-enablement/sci-ai-enabler/tree/main).
 
-## Current prototype: claim extraction
+## Current implementation: claim manifest
 
-The first implemented workflow slice accepts a skill, asks Claude to extract draft scientific claims, validates Claude's structured response, assigns claim IDs in Python, and writes a draft claim manifest. It does not yet confirm claims, find evaluation resources, assign evidence grades, or execute scientific tests.
+The package has one operation: start verification of a submitted skill. The current implementation completes only the first subprocess: it asks Claude to extract scientific claims, validates Claude's structured response, assigns claim IDs in Python, and writes the claim manifest. It does not yet find evaluation resources, assign evidence grades, execute scientific tests, or generate a report card.
 
 ```text
 Submitted skill file
@@ -18,16 +18,16 @@ Python reads and hashes the file
 Python calls the Claude API
         |
         v
-Claude returns draft claims without IDs
+Claude returns extracted claims without IDs
         |
         v
 Python validates fields and source quotes
         |
         v
-Python assigns IDs and writes a draft manifest
+Python assigns IDs and writes the claim manifest
 ```
 
-Python remains the workflow controller. Claude receives the submitted skill as untrusted text and is instructed to analyze rather than follow it. Every extracted claim must include a supporting quote that Python can locate in the submitted file. Claims with an unstated scope or another ambiguity are marked for human review.
+Python remains the workflow controller. Claude receives the submitted skill as untrusted text and is instructed to analyze rather than follow it. Every extracted claim must include a supporting quote that Python can locate in the submitted file. An ambiguity never pauses the program; Claude records it in `report_note` so a future report card can disclose it.
 
 ### Accepted input
 
@@ -55,27 +55,26 @@ $env:ANTHROPIC_API_KEY = "<your-api-key>"
 $env:CLAUDE_MODEL = "<company-approved-claude-model-id>"
 ```
 
-Extract claims from a single file:
+Start verification with a single file:
 
 ```powershell
-sci-ai-verifier extract-claims C:\path\to\recipe.md
+sci-ai-verifier C:\path\to\recipe.md
 ```
 
-Or extract claims from a skill directory containing `SKILL.md`:
+Or start with a skill directory containing `SKILL.md`:
 
 ```powershell
-sci-ai-verifier extract-claims C:\path\to\skill-directory
+sci-ai-verifier C:\path\to\skill-directory
 ```
 
 By default, the manifest is written under `.verifier/runs/<run-id>/claim-manifest.json`. Use `--output` to select another path. Existing output files are not replaced unless `--force` is explicitly supplied.
 
-The output remains a draft:
+The current stage produces this claim manifest:
 
 ```json
 {
   "schema_version": "0.1",
   "manifest_id": "cmf-...",
-  "status": "draft",
   "claims": [
     {
       "claim_id": "clm-...",
@@ -83,9 +82,7 @@ The output remains a draft:
       "scope": "Small molecules represented by molecular formula",
       "expected_behavior": "Return the corresponding monoisotopic mass.",
       "source_quote": "Calculate the monoisotopic mass from a molecular formula.",
-      "needs_human_review": false,
-      "review_reason": "",
-      "status": "draft"
+      "report_note": ""
     }
   ]
 }
@@ -211,7 +208,7 @@ sci-ai-verifier/
 └── docs/
 ```
 
-Only skill ingestion and draft claim extraction are implemented at this stage. The evaluator, registry, policy, and documentation directories remain reserved for later workflow slices.
+Only skill ingestion and claim-manifest construction are implemented at this stage. The evaluator, registry, policy, and documentation directories remain reserved for later workflow slices.
 
 ### `src/sci_ai_verifier/`
 
@@ -221,7 +218,7 @@ This directory contains reusable program code only. It must not accumulate claim
 
 ### `src/sci_ai_verifier/adapters/`
 
-Contains integrations for external systems. The current Claude adapter requests schema-constrained JSON from the Claude Messages API and converts it into draft claim models. Future adapters may cover other skill formats, resource providers, and evaluator execution environments.
+Contains integrations for external systems. The current Claude adapter requests schema-constrained JSON from the Claude Messages API and converts it into extracted claim models. Future adapters may cover other skill formats, resource providers, and evaluator execution environments.
 
 ### `evaluators/`
 
