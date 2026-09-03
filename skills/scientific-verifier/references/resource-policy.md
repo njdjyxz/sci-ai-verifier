@@ -12,10 +12,11 @@ The registry has two layers with the same record shapes and different authority.
 
 - `registry/claim_types.json`
 - `registry/evaluators.json`
+- `registry/subject_runners.json` (reviewed-only; no runtime counterpart)
 - `registry/resources/`
 - `registry/bundles/`
 
-**Runtime layer, not in Git.** The same four shapes under `.verifier/registry/`, written by runs:
+**Runtime layer, not in Git.** The four reusable scientific-asset shapes under `.verifier/registry/`, written by runs:
 
 - `.verifier/registry/claim_types.json`
 - `.verifier/registry/evaluators.json`
@@ -26,7 +27,7 @@ Runs read the merge of both layers and write only to the runtime layer. No tool 
 
 Promotion from runtime to reviewed is a human action taken outside any run: read the provisional record, satisfy yourself that its definition, scope, and provenance are right, and commit it to `registry/`. Nothing in the workflow performs this step or waits for it, and a run never depends on its own proposals being promoted.
 
-`registry/evaluators.json` holds both approved generic-harness definitions and registered bounded evaluator configurations. Approved generic harnesses and approved subject runners exist only in the reviewed layer; a run may configure them but never define one. Registry records describe reusable assets and point to immutable payloads or retrieval locations. Large datasets, generated cases, model weights, and raw evaluator output do not belong directly in Git.
+`registry/evaluators.json` holds both approved generic-harness definitions and registered bounded evaluator configurations. `registry/subject_runners.json` is a separate reviewed-only catalog with the schema and required review fields defined in [Artifact Contracts](artifact-contracts.md#reviewed-subject-runner-catalog); its empty initial array is valid and means no subject runner is installed. Approved generic harnesses and approved subject runners exist only in the reviewed layer; a run may configure them but never define one. There is no `.verifier/registry/subject_runners.json`, and a file at that path must not be merged into the approved catalog. Registry records describe reusable assets and point to immutable payloads or retrieval locations. Large datasets, generated cases, model weights, and raw evaluator output do not belong directly in Git.
 
 ### Managed store
 
@@ -41,6 +42,8 @@ Text payloads are normalized to LF newlines before hashing, and the normalizatio
 ### Run workspace
 
 `.verifier/runs/<run-id>/` isolates one submitted skill's manifests, plans, locks, audits, results, report card, and necessary execution logs. A run may reference shared assets but does not copy them unless isolation or the execution environment requires it.
+
+Resource locks are isolated further at `resource-locks/<claim-id>/<plan-revision>.json`. A lock authorizes resources only for its recorded run, claim, plan ID, and revision, not for every claim in the run. Shared payload deduplication never implies shared role coverage. Revising a plan requires a new lock and exact per-role revalidation before previous payload references can be copied, as specified in [Artifact Contracts](artifact-contracts.md#resource-lock).
 
 ### Cache and scratch space
 
@@ -88,6 +91,8 @@ Resource records may become intrinsically validated after their required determi
 
 New evaluator and bundle versions are registered as provisional. A passing `commit_plan_audit` atomically promotes only the exact evaluator and bundle versions covered by that audit. A failed or stale audit never promotes them. Any semantic uncertainty is recorded as a limitation and may reduce the grade ceiling.
 
+Repairing a plan invalidates that plan's authorization bindings, not a shared asset's validity for other plans. After `resource_change_required`, capability selection consumes the audit's repair requirements, invalidated resource roles, and claim-local excluded evaluator/bundle bindings. It selects either an approved harness for reconstruction or another compatible registered pair; it cannot reselect the excluded binding at a lower grade. The new plan revision and lock require materialization or explicit revalidation of affected roles and a fresh audit. Neither path can reuse the stale audit or silently treat a lock refresh as plan repair.
+
 ### Claim types
 
 Claim types use the same four states, with one difference: no automated step promotes them. An audit validates a plan against a claim type; nothing in a run establishes that the type itself was well defined, so `validated` is reachable for a claim type only by human review and a commit to the reviewed layer.
@@ -106,13 +111,14 @@ Keep the minimum information required to reproduce and audit a returned scientif
 - Submitted-skill snapshot manifest and immutable snapshot payload, subject to retention policy.
 - Source digest and claim manifest.
 - Claim routing and index revision.
-- Final evaluation plans and resource lock.
+- Final evaluation plans and exact claim/plan-revision resource-lock versions, digests, and revalidation or invalidation events.
 - Plan audits.
 - Claim results, metrics, coverage, and decision outputs.
 - Report-card JSON and Markdown.
 - Tool-call events and operational errors needed for audit.
 - Exact evaluator, bundle, resource, implementation, and environment versions.
-- Subject-runner identity, subject model and generation settings, trial count, aggregation rule, per-trial outputs, and observed agreement for every published result. These are what make a result reproducible; discarding them leaves a number no one can re-derive.
+- For A-through-C results, subject-runner identity and catalog revision/digest, subject model/settings, trial count, aggregation rule, per-trial outputs/scores, case outcomes, and agreement needed to reproduce the decision. Documentary D retains explicit `not_applicable` subject-trial markers rather than implying a subject was executed.
+- Completed independent documentary-assessment artifacts, their bounded evidence packets, and assessor-independence records for every grade-D result.
 - Reusable validated or provisional registry metadata.
 - Managed payloads required by published results when retention and license permit.
 - Operational-outcome records and the finalization summary.

@@ -18,7 +18,7 @@ The security property is unchanged. It rests on dispatcher revalidation, not on 
 
 ## 2. One transition per tool call
 
-Every tool result commits at most one state transition. The runner must guarantee that the model cannot request two workflow tools in a single assistant turn, because two concurrent requests against one committed state have no defined ordering and the second would be validated against state the first has already changed.
+Every tool result commits at most one scoped transition. Bulk claim-type assignment moves the manifest's claims together to the same next state; subsequent capability lookup and scientific work target one claim per call. The runner must guarantee that the model cannot request two workflow tools in a single assistant turn, because two concurrent requests against one committed state have no defined ordering and the second would be validated against state the first has already changed.
 
 If the host cannot disable concurrent tool requests, it must serialize them: dispatch the first request, and reject every other request in the same turn under section 3 with `concurrent_request_rejected`. It must still return a result for every request the model made, so the conversation stays well formed.
 
@@ -45,6 +45,8 @@ The runner assembles the session as separately labeled blocks with explicit trus
 Both rules exist so the stable prefix stays byte-identical across steps. A host that rewrites earlier context on each step is conformant but pays full price for the entire specification on every step of every claim.
 
 The runner records the identity, version or digest, trust class, and authorizing state of every block it appends, as required by the run record.
+
+Use `verifier_instruction` only for reviewed operator instructions and `committed_metadata` for validated structured state/identity. Source snapshot bytes, registry prose, documentary evidence, and other free text are `untrusted_payload`, supplied separately through data/tool-result channels rather than embedded in system/operator blocks. A digest verifies identity, not instructional authority. On resumption preserve these separate trust labels; never promote a retrieved payload into an operator instruction because it was previously read.
 
 ## 5. Model-level termination
 

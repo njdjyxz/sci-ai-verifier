@@ -64,12 +64,13 @@ Python owns:
 
 - File access, hashing, IDs, and schemas.
 - Artifact and registry integrity.
-- Exact evaluator lookup.
+- Exact per-claim evaluator/harness and approved subject-runner lookup, including lower-grade fallback.
 - Workflow state, prerequisites, and tool eligibility.
 - Resource materialization, digests, and locks.
 - Reproducible case construction.
 - Objective bundle validation and plan prerequisites.
-- Running the submitted skill under the audited subject runner and aggregating its trials.
+- Running the submitted skill under the audited subject runner, scoring each trial with an isolated evaluator, then aggregating scored results.
+- Obtaining a completed independent documentary assessment for grade D, or recording assessor unavailability.
 - Evaluator execution, metrics, tolerances, and grade ceilings.
 - Run audit trail and report rendering.
 
@@ -105,9 +106,11 @@ The preferred result is a scientific verdict determined completely outside AI ju
 - D: bounded documentary judgment; AI or human judgment is primary and disclosed.
 - U: no acceptable scientific evidence; no scientific conclusion.
 
+Documentary-only D does not run the submitted skill and therefore does not require an installed subject runner. It still requires an approved documentary harness and a completed independent assessment; assessor unavailability is an operational outcome, not U.
+
 Pass or fail is separate from evidence strength. An A-grade failure is strong evidence against a claim; a D-grade pass establishes documentary consistency only.
 
-A submitted skill is usually a set of instructions for a model, so running it twice can give two answers. Every plan therefore fixes the **subject runner**: which model runs the skill, under what settings, how many trials per case, and the deterministic rule reducing those trials to one outcome — all before execution. The evaluator's decision rules are deterministic; the subject runner is what makes the sample they act on repeatable. A single trial against a non-deterministic subject cannot support grade A or B, and trial disagreement is reported rather than folded into the verdict.
+A submitted skill is usually a set of instructions for a model, so running it twice can give two answers. Every execution plan fixes the **subject runner**, model/settings, trial count, and deterministic rule aggregating individually scored trials. An approved claim-specific trial-grade policy is locked during audit; Python computes the verdict and evidence ceiling separately from the retained sample. A single trial against a non-deterministic subject cannot support grade A or B. Agreement is distinct from accuracy: unanimous failures may strongly refute a claim. If no A-through-C evidence grade remains supported, the workflow attempts a separately audited documentary plan rather than fabricating a D or U result.
 
 The model running the verifier agent and the model running the submitted skill are different roles with separate records. The first orchestrating a run does not weaken the evidence; the second is the thing being measured, not evidence about it.
 
@@ -132,6 +135,7 @@ The verifier returns the report card, machine-readable results, claim manifest, 
 ├── registry/
 │   ├── claim_types.json
 │   ├── evaluators.json
+│   ├── subject_runners.json
 │   ├── bundles/
 │   └── resources/
 ├── skills/
@@ -148,7 +152,7 @@ The verifier returns the report card, machine-readable results, claim manifest, 
     └── legacy_fixed_workflow/
 ```
 
-`evaluators/` will hold approved harness implementation code and is empty in Stage 1. `registry/bundles/` and `registry/resources/` are empty and tracked so a fresh clone has them. The runtime registry and every run artifact live under the gitignored `.verifier/`.
+`evaluators/` will hold approved harness implementation code and is empty in Stage 1. `registry/bundles/` and `registry/resources/` are empty and tracked so a fresh clone has them. `registry/subject_runners.json` is a reviewed-only catalog, initially empty; it has no runtime overlay. Its record contract is in `artifact-contracts.md`. The runtime registry and every run artifact live under the gitignored `.verifier/`. Resource locks are scoped to a claim and semantic plan revision; sharing a payload digest does not share authorization.
 
 ## Planned implementation structure
 
@@ -189,6 +193,6 @@ Stage 2 will build only:
 5. `commit_claim_manifest`.
 6. Run-state and artifact persistence required by those operations, including the LF normalization the digests depend on.
 
-The subject runner is not in Stage 2. Nothing before `execute_evaluation_plan` needs it, and the approved-runner catalog is a security review of its own.
+The subject runner is not implemented in Stage 2. Later capability selection and planning need its reviewed catalog metadata, but only `execute_evaluation_plan` invokes the runner. Implementation and each catalog entry require their own security review.
 
 Later implementation stages will add the remaining tools in workflow order without changing the reviewed Markdown silently.

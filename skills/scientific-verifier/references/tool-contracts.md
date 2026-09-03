@@ -16,7 +16,7 @@ This file names the complete intended Python tool surface for the verifier. No a
 | `src/sci_ai_verifier/resources.py` | Search, inspect, materialize, validate, register, and lock scientific resources. |
 | `src/sci_ai_verifier/evaluation.py` | Resolve approved generic harnesses, build and validate cases and bundles, and register reusable evaluator configurations without accepting arbitrary code. |
 | `src/sci_ai_verifier/audit.py` | Validate plan prerequisites, persist bounded plan audits, and atomically promote passing provisional evaluator and bundle versions. |
-| `src/sci_ai_verifier/execution.py` | Resolve approved subject runners, run the submitted skill under the audited subject-runner configuration for the audited trial count, apply the audited aggregation rule, run audited evaluators over the aggregated outcomes, and capture reproducible per-trial outputs, variance, and metrics. |
+| `src/sci_ai_verifier/execution.py` | Resolve approved subject runners, run the submitted skill for the audited trial count, score each trial with the isolated audited evaluator, then aggregate scores/verdicts; capture raw outputs, trial scores, agreement, and metrics. For grade D, prepare the audited packet and obtain a completed independent assessment through the runner's bounded assessor adapter. |
 | `src/sci_ai_verifier/reporting.py` | Validate claim results, write machine-readable and human-readable report cards, and include the storage finalizer's recorded summary. |
 
 These are planned boundaries, not permission for the verifier agent to call arbitrary functions inside the files. The runner declares the subset of approved tools allowed by the current state in `workflow.md`, and revalidates state and prerequisites when dispatching every request. Tool visibility alone is not authorization: the published tool surface may be wider than the legal set, and the dispatcher, not the published surface, is what enforces the workflow. `runtime-contract.md` covers the host-side reasons for keeping the published surface stable.
@@ -25,12 +25,18 @@ These are planned boundaries, not permission for the verifier agent to call arbi
 
 Every tool returns exactly one status.
 
+State fields describe the operation's declared `scope`: `run`, `claim`, or `routing_batch`. Run-scoped tools return the run state; claim-scoped tools return `claim_id`, that claim's committed state, and its legal next tools. Routing tools return `affected_claim_ids` and one identical state/legal-tool set for all of them; only `commit_claim_type_assignments` changes their states. Each result also includes `run_state` and the current `claim_states` map so the host can schedule independent claims without treating a union of tool names as permission for the wrong claim. `find_registered_evaluators` is claim-scoped and never returns divergent nested transitions. The examples below show a claim-scoped result; run/batch forms omit `claim_id`, with batch forms providing `affected_claim_ids` instead. Fatal operational scope remains `claim` or `run` even if the attempted operation was a routing batch.
+
 Successful operation or ordinary workflow outcome:
 
 ```json
 {
   "status": "ok",
   "data": {
+    "scope": "claim",
+    "claim_id": "claim_id",
+    "run_state": "active",
+    "claim_states": {"claim_id": "authoritative_state_after_operation"},
     "outcome": "tool_specific_mutually_exclusive_code",
     "committed_state": "authoritative_state_after_operation",
     "next_permitted_state": "authoritative_next_state",
@@ -52,6 +58,10 @@ Correctable request or stale state:
     "refresh_required": false,
     "retries_remaining": 1,
     "illegal_transitions_remaining": 3,
+    "scope": "claim",
+    "claim_id": "claim_id",
+    "run_state": "active",
+    "claim_states": {"claim_id": "unchanged_state"},
     "committed_state": "unchanged_state",
     "next_legal_tools": []
   }
@@ -67,7 +77,10 @@ Run or claim cannot continue safely:
     "code": "stable_machine_readable_code",
     "message": "Short explanation",
     "details": {},
-    "scope": "claim_or_run",
+    "scope": "claim",
+    "claim_id": "claim_id",
+    "run_state": "active",
+    "claim_states": {"claim_id": "terminal_operational"},
     "operational_outcome_id": "python_assigned_id_or_null_only_for_persistence_failure",
     "committed_state": "terminal_state",
     "next_legal_tools": []
@@ -186,27 +199,29 @@ Fatal conditions: registry corruption or storage failure.
 
 Planned implementation: `routing.py`
 
-Purpose: perform an exact evaluator-registry lookup for every accepted claim route and return approved generic harnesses that can implement unsupported target plans.
+Purpose: resolve a usable capability for exactly one accepted claim, including lower-grade fallback: an evaluator-or-harness plus subject runner for A through C, or an approved documentary capability without subject execution for D.
 
-Input: accepted claim routes, scientific scope, and the current intended grade for each claim.
+Input: claim ID, its accepted route ID, current scientific scope, and intended grade ceiling A through D. The runner supplies the configured target (A when unspecified); the agent cannot raise it during repair. Python checks that this claim is in `capability_selection` and reads its committed repair requirements and excluded bindings. Other claims are unchanged.
 
-Successful outcome: `capabilities_resolved`.
+Python first validates registry integrity, then searches from the intended grade downward through D. For A through C it tests compatible subject-runner and validated evaluator/bundle or approved generic-harness pairs. For documentary D it tests approved documentary evaluators/harnesses with `subject_runner: not_applicable`; an absent or empty runner catalog cannot disqualify D. Skip matches outside applicable interfaces, model/settings bounds, scope, or claim-local repair constraints. Choose the strongest grade with a complete match, preferring registered evaluators at that grade over constructing a target. Do not terminate merely because only a lower-grade match exists.
 
-Successful data: evaluator-registry revision and digest plus, for every claim, one mutually exclusive `capability_outcome`:
+Successful outcomes are mutually exclusive:
 
-- `registered_evaluator_available`: one or more validated evaluator and bundle versions cover the current scope and intended grade.
-- `generic_harness_available`: no validated evaluator covers the current need, but one or more approved generic harness IDs and versions can implement the target plan.
-- `implementation_required`: neither a validated evaluator nor an approved harness can implement the claim. Python creates a claim-scoped operational outcome with this code.
+- `registered_evaluator_available`: complete registered matches exist at the intended grade; `capability_kind: registered`.
+- `generic_harness_available`: no complete registered match exists at the intended grade, but an approved harness match does; `capability_kind: target`.
+- `lower_grade_available`: no complete match exists at the intended grade, but one exists at a lower grade. Return the strongest `resolved_grade`, `capability_kind`, compatible matches, and downgrade reason. The next state is `planning`, not terminal; the original request/minimum is preserved. D matches explicitly mark the unused runner `not_applicable`.
+- `subject_runner_unavailable`: no complete match exists at any searched grade, at least one A-through-C evaluator/harness otherwise fits, and no documentary D capability fits. Python writes a claim-scoped operational outcome; a missing, empty, retired-only, or incompatible subject-runner catalog is handled here only after considering documentary fallback.
+- `implementation_required`: no evaluator or harness fits at any searched grade, independently of runner availability. Python writes a claim-scoped operational outcome. This condition takes precedence over diagnosing runner absence when both are missing.
 
-The result also returns compatible lower-grade evaluator versions as fallback candidates, approved harness input/output/configuration contracts, supported grade ceilings, scope, and limitations. Provisional or retired evaluators are never returned as executable matches.
+Successful data: claim/route IDs; selection ID and revision; queried scope and intended grade; resolved grade and capability kind when available; evaluator-registry revision/digest; subject-runner-catalog revision/digest (or explicit `missing`); exact compatible pair references; supported grade ceilings; harness input/output/configuration, per-trial scoring, aggregation, and approved trial-grade-policy contracts (or D rubric/assessment contracts); limitations; repair requirements; excluded binding IDs; and only this claim's next state/legal tools. The stored `capability_outcome` copies the top-level `outcome`; there is no `capabilities_resolved` wrapper. Compatible lower-grade alternatives may be retained as provenance but never replace the selected outcome implicitly.
 
-It additionally returns the **approved subject-runner catalog**: for each entry, its ID and version, the interface it drives, the subject model identities it may be configured with, the generation settings it accepts, its supported trial counts and aggregation rules, its isolation guarantees, and its status. A plan may name only a subject runner returned here. The catalog is returned with capability selection rather than through a separate tool because the choice of subject runner and the choice of evaluator constrain each other: an evaluator's input contract determines what the subject's output must look like.
+The approved subject-runner catalog comes only from reviewed `registry/subject_runners.json`, with the record contract in `artifact-contracts.md`. Return approved IDs/versions/digests, interfaces, model allowlists, bounded settings/trial-count contracts, environment identity, isolation guarantees, and review status, not executable code or credentials. A plan may select only a match returned by this claim's selection revision, including its explicit `not_applicable` runner for D. Runtime registry overlays cannot add subject runners. Provisional or retired evaluators are never executable matches; the approved originating harness may still be returned for rebuilding after audit invalidates a claim-local binding.
 
-Side effects: writes an append-only run-local capability-selection revision to `routing.json` but makes no registry changes. For each `implementation_required` claim, the runner also writes the claim-scoped operational-outcome artifact described by the common transition protocol.
+Side effects: append this claim's capability-selection revision to `routing.json`; never rewrite another claim's route or state and never change the reviewed registries. Terminal outcomes additionally persist their operational-outcome artifact.
 
-Retryable conditions: missing or unknown route IDs.
+Retryable conditions: missing/unknown claim or route IDs, mismatched scope, or invalid intended grade. Wrong claim state is rejected by the dispatcher before the tool runs.
 
-Fatal conditions: malformed evaluator or harness registry. Python records an operational outcome for every affected unresolved claim.
+Fatal conditions: malformed or unsupported evaluator, harness, or subject-runner registry, or storage failure. Record the affected scope; registry corruption is not an ordinary empty catalog.
 
 ## Planning tool
 
@@ -216,20 +231,25 @@ Planned implementation: `planning.py` and `storage.py`
 
 Purpose: validate and persist one registered or target plan for a claim.
 
-Input: claim and route IDs; immutable source-snapshot ID and digest; plan kind; requested, target, and planned grade; evaluator or target-evaluator specification; exact approved generic-harness ID and version for a target plan; required resource roles; oracle or evidence design; case method; metrics; tolerances; deterministic invalid-case, coverage, scoring, and verdict rules for grades A through C; documentary rubric and assessor boundary for grade D; the subject-runner configuration; execution requirements; budget; AI involvement; limitations; and report notes. A registered plan may reference either a validated evaluator returned by capability selection or the exact provisional evaluator just returned by `register_evaluator`; a provisional reference is legal only for the audit state.
+Input uses exactly one form:
 
-The subject-runner configuration names one approved subject-runner ID and version from the catalog returned by capability selection, the exact subject model identity or deterministic entry point it drives, the generation settings that affect output, the trial count `n`, and the deterministic aggregation rule reducing a case's `n` trials to one per-case outcome. Python rejects a plan whose subject runner is absent, is not in the catalog, is configured outside the catalog entry's declared bounds, or whose aggregation rule is not total over `n` trials. An aggregation rule that is chosen or adjusted after execution is not a rule; that is the failure this field exists to prevent.
+- `reselection_request`: claim/route IDs, snapshot ID/digest, current plan ID/revision, proposed grade/scope, authoritative downgrade/repair trigger reference, and reason. It contains no new evaluator, harness, runner configuration, resources, grade-specific rubric, or trial policy; those are not known before lookup. Python validates the parent/trigger and allowed target, persists a non-executable request event with `reselection_request_id`, invalidates any old execution authorization for the changed target, and returns `capability_reselection_required`. This form does not create a complete plan revision or resource lock and does not undergo unavailable capability-dependent field validation.
+- `plan_commit`: claim and route IDs; matching capability-selection ID/revision; immutable source-snapshot ID/digest; current plan ID/revision for an update; plan kind; requested, target, and planned grade; evaluator or target-evaluator specification; exact approved generic-harness ID/version for a target plan; resource roles; oracle/evidence design; case method; metrics; tolerances; deterministic invalid-case, coverage, per-trial scoring, aggregation, and verdict rules for A through C; documentary rubric/assessor boundary for D; subject-runner configuration; execution requirements; budget; AI involvement; limitations; and report notes. A registered plan may reference either a validated evaluator returned by this claim's selection or the exact provisional evaluator just returned by `register_evaluator`; the latter is legal only for audit. Pending repair requirements cannot be removed by the caller.
 
-Successful outcomes:
+For A through C, the subject-runner configuration names an approved ID/version/digest from the returned pair, the exact allowed subject model identity or reviewed deterministic entry point, generation settings, and trial count `n`. The plan separately fixes an approved aggregation rule over per-trial scores/verdicts, including ties and invalid observations. Python rejects a missing runner, mismatched pair, out-of-bounds settings, or non-total rule. Caller typos are retryable; a formerly valid catalog entry that becomes unavailable returns to capability selection through `capability_reselection_required`. No raw-output averaging or answer synthesis substitutes for scoring each trial. Documentary D instead supplies explicit `not_applicable` values for runner, model, trial count, aggregation, and trial-grade policy; these markers are valid and do not require catalog membership. Its approved documentary harness, rubric, evidence design, and assessor boundary remain mandatory.
 
-- `resource_resolution_required`
-- `registered_plan_audit_ready`
-- `target_bundle_required`
-- `capability_reselection_required`: this revision lowered the planned grade or materially changed scope, so the previously selected capability may no longer be the best fit. Every downgrade path re-enters capability selection through this outcome, which is what keeps the rule about preferring an existing lower-grade evaluator over rebuilding from being advice the agent can skip.
+For A through C, input also includes `trial_grade_policy`: approved harness policy ID/version/digest and bounded parameters defining claim-specific grade eligibility thresholds. Its inputs, denominators, boundary inclusivity, precedence, coverage/invalid-case rules, and explicit `no_supported_execution_grade` fallback must form a total decision under `evidence-rubric.md`. Thresholds are fixed during planning and validated in audit, not inferred after execution. Policy eligibility is independent of correctness and cannot raise the audited/planned ceiling; nondeterministic `n = 1` remains capped at C.
 
-Successful data: plan ID, revision, current grade ceiling, unresolved requirements, preserved lower-grade evaluator candidates, accepted subject-runner configuration, next permitted state, and legal next tools.
+Successful outcomes, in this order after validation of the chosen input form:
 
-Side effects: writes or revises the claim's run-local plan.
+1. `capability_reselection_required`: a valid `reselection_request` records the proposed scope/grade, or a previously valid capability/runner binding became ineligible. Return the request/trigger ID and target for this claim before resource work. A matching selection already resolved at a lower grade satisfies this check; do not reselect it again. A full plan with invented or mismatched references is a retryable caller error, not an accepted reselection request.
+2. `resource_resolution_required`: the matching selection is valid but at least one role lacks a validated binding in this plan revision's resource lock.
+3. `registered_plan_audit_ready`: a registered plan's exact bindings and complete revision-bound lock are compatible and non-stale.
+4. `target_bundle_required`: a target plan has a complete revision-bound lock and can construct its bundle.
+
+Successful data for `plan_commit`: new plan ID/revision, selection ID/revision, current grade ceiling, unresolved requirements, accepted subject-runner configuration, resource-lock ID/version/digest, next state, and legal tools. For reselection: request ID, prior plan reference, proposed scope/grade, trigger/reason, next state, and legal tools; no new plan or lock is claimed committed.
+
+Side effects: `plan_commit` writes a new append-only semantic plan revision and its own resource lock. Existing resources may seed that lock only after exact per-role revalidation; an empty-role plan gets an explicit complete empty lock. Reselection records only the request and old-authorization invalidation events. Old plans/locks remain provenance, never implicit authority for the new target.
 
 Retryable conditions: unsupported evaluator capability, missing plan fields, inconsistent grade requirements, or stale plan revision.
 
@@ -245,7 +265,7 @@ Planned implementation: `resources.py` plus approved provider adapters.
 
 Purpose: search registered assets first and approved external sources second for the resource roles in an evaluation plan.
 
-Input: plan ID, resource roles, scientific scope, schema needs, expected-answer needs, independence constraints, license or access constraints, and result limit.
+Input: claim ID, plan ID and revision, resource roles, scientific scope, schema needs, expected-answer needs, independence constraints, license or access constraints, and result limit. Search-result identity binds the exact claim/plan/revision and its pending repair requirements.
 
 Successful outcomes, calculated across every required resource role:
 
@@ -270,7 +290,7 @@ Planned implementation: `resources.py` and `storage.py`
 
 Purpose: retrieve or open selected candidates, calculate immutable digests, inspect required metadata, store allowed payloads, and create resource records.
 
-Input: plan ID, search-result ID and revision, selected candidate references, intended roles, expected versions, and access authorization already available to the runtime.
+Input: claim ID, plan ID and revision, current resource-lock ID/version/digest, search-result ID/revision, selected candidate references, intended roles, expected resource versions, and access authorization already available to the runtime. Every reference must belong to this exact plan revision; cross-claim or superseded lock references are retryable caller errors.
 
 Successful outcomes, in repair precedence order:
 
@@ -283,9 +303,9 @@ Precedence is evaluated only over roles that are still unsatisfied. Outcomes 1 t
 5. `lower_grade_required`: all roles can be locked, but the materialized resources jointly support only the stated lower grade.
 6. `all_roles_locked`: every required role is satisfied at the planned grade. Candidates rejected during the call are reported as rejection records on this outcome and never enter the lock.
 
-Successful data: resource IDs, per-role validation status, immutable versions and digests, managed locations, restrictions, scientific-fit findings, rejection reasons, and strongest joint grade.
+Successful data: resource IDs, per-role validation status, immutable versions and digests, managed locations, restrictions, scientific-fit findings, rejection reasons, strongest joint grade, and the new resource-lock ID/version/digest bound to this claim/plan/revision.
 
-Side effects: may write content-addressed payloads to managed storage, add provisional or validated resource metadata, and update the run's resource lock for successfully accepted roles. `candidate_rejected` never adds that candidate to the resource lock or reusable registry; an unreferenced download remains only temporary cleanup material. On `resource_unavailable`, the runner also writes a claim-scoped operational-outcome artifact.
+Side effects: may write content-addressed payloads, add resource metadata, and append a version to this plan revision's lock for accepted roles. It never updates another claim's lock or a superseded revision. Reuse of a shared payload still requires validation against this role's scope, independence, license, and pending audit repairs. `candidate_rejected` never adds the candidate to the lock or reusable registry; an unreferenced download remains temporary cleanup material. On `resource_unavailable`, also write the claim-scoped operational outcome.
 
 Retryable conditions: malformed candidate references, stale plan revision, or a request that omits required role assignments. Candidate-specific scientific, access, license, schema, version, or payload problems use the ordinary outcomes above so the agent can select an alternative.
 
@@ -299,7 +319,7 @@ Planned implementation: `evaluation.py` and `storage.py`
 
 Purpose: reproducibly transform locked resources and a plan into isolated evaluator inputs, expected answers or oracle instructions, tolerances, metrics, and case metadata.
 
-Input: plan ID, exact approved generic-harness ID and version, resource lock, deterministic transformation recipe, bounded harness configuration, split rules, exclusions, and case budget.
+Input: claim ID, plan ID/revision, exact approved generic-harness ID/version, matching resource-lock ID/version/digest, deterministic transformation recipe, bounded harness configuration, split rules, exclusions, and case budget. Lock ownership must match the plan even when payload digests are shared with another claim.
 
 Successful outcomes:
 
@@ -367,16 +387,18 @@ Planned implementation: `audit.py` and `storage.py`
 
 Purpose: combine mandatory Python checks with a bounded semantic assessment, persist whether the exact plan and asset versions may execute, and atomically promote passing provisional evaluator and bundle versions.
 
-Input: source-snapshot ID and digest; plan ID and revision; evaluator status and version; generic-harness and configuration versions; bundle, resource, subject-runner, and environment versions; objective check references; semantic findings for scope, fairness, and limitations; AI-involvement assessment; and the agent's proposed audit status.
+Input: source-snapshot ID and digest; claim ID, plan ID/revision; evaluator status/version; generic-harness/configuration versions; bundle, resource-lock ID/version/digest, resource, subject-runner, and environment versions; objective check references; semantic findings for scope, fairness, and limitations; AI-involvement assessment; and the agent's proposed audit status. The lock and all role bindings must belong to this plan revision; matching resource bytes alone are insufficient.
 
 The proposed status is advisory and is recorded, not obeyed. Python decides from its own checks and returns that decision as the outcome code; the artifact stores the proposal beside the decision so a reviewer can see where the agent's semantic reading and the objective checks diverged. Divergence is a finding to report, not a condition to repair, and Python never returns `retryable` merely because the proposal disagreed with the result.
 
-Subject-runner checks are mandatory prerequisites, not semantic findings: a plan cannot pass audit if its subject-runner configuration is incomplete, names an entry outside the approved catalog, is configured beyond that entry's declared bounds, has a trial count or aggregation rule inconsistent with the claim and the planned grade, or fails the isolation requirement that the subject never sees expected answers, oracle instructions, or split membership.
+For A through C, subject-runner checks are mandatory prerequisites: incomplete configuration, an entry outside the approved catalog, settings beyond declared bounds, inconsistent trial/aggregation rules, or failed subject/oracle isolation prevents audit passage. For documentary D, runner/model/trial references must be `not_applicable`; audit validates the approved documentary harness, bounded packet/rubric design, and independent-assessor boundary instead. An unused missing subject runner does not block a D audit.
+
+For A through C, also validate the `trial_grade_policy` identity, allowed parameters, total eligibility predicates with deterministic strongest-grade-first precedence, and every allowed trial/coverage state. A missing or scientifically unsupported policy requires `plan_revision_required`; a policy whose maximum eligible grade is below the planned grade requires `lower_grade_required`. The policy cannot turn a failed scientific trial into missing data or turn an operationally missing trial into scientific evidence.
 
 Successful outcomes, in repair precedence order:
 
 1. `audit_passed`: all prerequisites pass; Python atomically promotes the exact provisional evaluator and bundle versions to `validated` before returning.
-2. `resource_change_required`: resources must change and all dependent bundle, evaluator, plan, and audit versions become stale.
+2. `resource_change_required`: resources must change. Persist `repair_requirements`, `invalidated_resource_roles`, and `excluded_binding_ids`; invalidate this plan's dependent bundle/evaluator/lock/audit bindings and return `capability_selection` for this claim. The old evaluator/bundle binding is excluded at all grades for this repair, without globally retiring shared assets. Lookup may return a different registered pair or the originating approved harness; either requires a new plan revision and lock before resource validation/build/audit. Never route an old registered plan directly back to audit after replacing its resources.
 3. `bundle_rebuild_required`: the resource lock remains usable but the bundle and dependent evaluator, plan, and audit must change.
 4. `plan_revision_required`: only the plan and its audit must change.
 5. `no_supported_grade`: no permissible repair supports grades A through D.
@@ -398,28 +420,32 @@ Fatal conditions: corrupted prerequisites or storage failure.
 
 Planned implementation: `execution.py`
 
-Purpose: run the immutable submitted-skill snapshot under the audited subject runner, aggregate its trials by the audited rule, and score the result with the exact audited evaluator, all in an isolated environment.
+Purpose: obtain evidence under an audited plan: for A through C, execute subject trials, score each separately with the isolated evaluator, then aggregate scored results; for D, obtain a completed independent assessment of the audited documentary packet.
 
-Input: source-snapshot ID and digest; plan ID; passing audit ID; exact validated evaluator, generic-harness configuration, bundle, resource, subject-runner, and environment versions; and execution budget covered by the audit.
+Input: source-snapshot ID/digest; claim ID, plan ID/revision; passing audit ID; exact validated evaluator, generic-harness configuration, bundle, resource-lock ID/version/digest, resource, subject-runner, and environment versions; and execution budget covered by the audit. Documentary D supplies `not_applicable` for subject-runner/model/trial references, as recorded in its audited plan.
 
-Execution proceeds in two stages, both owned by Python. First the audited subject runner produces `n` trial outputs for each bundle case from the snapshot and the case input alone, with expected answers, oracle instructions, and split membership withheld. Then the audited aggregation rule reduces each case's trials to one per-case outcome and the evaluator scores those outcomes. Neither stage may be reconfigured at execution time; a request naming a subject-runner version other than the audited one is a caller error, not a variation.
+For grades A through C, Python first runs the audited subject runner `n` times per case from the snapshot and case input alone, withholding expected answers, oracle instructions, and split membership. Second, the isolated evaluator scores each trial against its oracle, producing trial-level metrics/verdicts and invalid-observation dispositions. Third, Python aggregates these scored records into per-case outcomes and applies the claim-level decision rules. Aggregation never synthesizes a raw answer for later scoring and cannot feed oracle information back to the subject. Keep all trial outputs and scores. None of these stages may be reconfigured after execution begins.
+
+For grade D, the documentary harness prepares the audited rubric and bounded evidence packet; it does not run the A-through-C trial pipeline. The host obtains an assessment from an identified independent human through a configured bounded adapter or a separately provisioned assessor session. The assessor receives only that packet, rubric, and fixed response contract, not the planner transcript/proposed verdict or verifier workflow tools. Python validates assessor identity and separation from the planning session, packet/rubric digests, required findings, citations, status, and disclosures before committing the assessment artifact. Missing configuration, refusal, timeout, or invalid assessment after the configured bounded attempts produces `assessor_unavailable`; the planner is never the fallback assessor.
 
 Successful outcomes:
 
-- `completed_deterministic_decision`: grades A through C; returns Python's authoritative `decision_status` from the audited invalid-case, coverage, tolerance, metric, and decision rules.
-- `documentary_judgment_ready`: grade D; returns only the audited rubric, bounded evidence excerpts and citations, assessor boundary, and judgment packet the verifier agent or identified human may assess.
+- `completed_deterministic_decision`: the audited scientific observations support A, B, or C. Return authoritative `decision_status`, `achieved_grade_ceiling`, `grade_policy_ref`, measured policy inputs, and `grade_limit_reasons`. Choose the strongest eligible grade no higher than planned/audited ceilings. Claim status comes from decision rules, not the grade or agreement percentage.
+- `lower_grade_required`: A-through-C execution completed but no execution-grade eligibility branch is supported, including zero scientifically usable cases. Return `achieved_grade_ceiling: null`, `next_target_grade: D`, failed policy branches, and retained evidence, without a committed scientific status. Move to `planning` to attempt a separate documentary plan; do not directly return a D/U result. Operationally incomplete execution uses retries/`operational_failure` instead.
+- `documentary_assessment_ready`: grade D; returns a completed immutable assessment ID, rubric/packet references, findings/citations, accepted assessment status, assessor identity/independence provenance, and disclosure. Only a completed validated assessment permits `result_commit`.
+- `assessor_unavailable`: grade D; no independent assessment can be obtained within configured limits. Python persists a claim-scoped operational outcome, returns its ID with no scientific status, and moves the claim to `terminal_operational`.
 - `reaudit_required`: a committed asset is no longer eligible under the existing audit; Python invalidates the audit and returns the audit state without executing.
 - `operational_failure`: execution retries are exhausted; Python records a claim-scoped operational outcome and returns its ID without a scientific status.
 
-Successful data, when applicable: execution ID, authoritative decision status or judgment packet, decision-rule identity, raw-output references, metrics, case-level outcomes, invalid-case disposition, coverage disposition, duration, source-snapshot digest, subject-runner identity with its subject model and generation settings, trial count, aggregation-rule identity, per-trial output references, per-case trial agreement, environment digest, and operational errors.
+Successful data, when applicable: execution ID, authoritative decision status or completed documentary assessment, decision-rule identity, raw-output references, per-trial scores/verdicts, metrics, case-level outcomes, invalid-case disposition, coverage disposition, duration, source-snapshot digest, subject-runner identity with its subject model/settings, trial count, aggregation-rule identity, per-trial output references, per-case trial agreement, environment digest, and operational errors. Documentary records mark the subject runner/model, trials, aggregation, and trial-grade policy `not_applicable`; no subject execution is claimed.
 
-Per-trial outputs and per-case agreement are returned and retained rather than collapsed into the aggregate. A claim that satisfied its oracle on every trial and a claim that satisfied it on a bare majority are different findings about the submitted skill, and only the recorded trial detail distinguishes them. Agreement statistics are reported in the claim result and bound the grade under `evidence-rubric.md`; they are not themselves a verdict.
+Per-trial outputs/scores, requested/attempted/obtained/evaluated/invalid/missing counts, and per-case agreement are retained rather than collapsed into the aggregate. Python evaluates the audited `trial_grade_policy` exactly, including ties, threshold boundaries, and coverage. Unanimous fail and unanimous pass have the same agreement; accuracy is not an evidence-strength shortcut. Missing trials due to operational errors exhaust bounded retries and return `operational_failure`, never a smaller silently selected sample. A supported lower A-through-C grade is returned for direct commitment of this execution; only the no-supported-execution-grade branch returns to planning for a D attempt.
 
-Side effects: writes execution artifacts and referenced raw outputs only when execution begins. `reaudit_required` writes no execution artifact; `operational_failure` additionally causes the runner to write its operational-outcome artifact.
+Side effects: writes execution artifacts/raw outputs when execution begins, or packet and completed assessment artifacts for documentary work. `reaudit_required` writes no execution artifact; `operational_failure` and `assessor_unavailable` additionally persist operational outcomes. Assessor absence detected before documentary execution may return only an outcome artifact.
 
 Retryable conditions: transient execution failure within runner limits or caller-supplied references that do not match the still-valid committed audit. The result identifies the exact committed references and remaining retries.
 
-Ordinary outcomes: deterministic pass, fail, or inconclusive data; an audited documentary judgment packet; evaluator-reported invalid cases resolved by the audited rules; a required re-audit; or exhausted operational failure. None automatically determines an evidence grade.
+Ordinary outcomes: deterministic pass, fail, or inconclusive data with an independently computed evidence ceiling; completed independent documentary assessment; scientifically insufficient execution evidence requiring a D attempt; required re-audit; or exhausted operational failure. Successful execution alone never establishes a scientific pass or evidence grade.
 
 Fatal conditions: source-snapshot integrity failure, unsafe environment, corrupted evaluator assets, or storage failure. A request budget above the audited allowance is retryable; exhaustion of the run's execution budget produces an operational outcome. Stale but trustworthy assets route to `reaudit_required` rather than fatal termination.
 
@@ -431,8 +457,8 @@ Purpose: enforce result-kind invariants and the evidence-grade ceiling, then per
 
 Input uses exactly one form:
 
-- `evaluated_result` for grades A through C: claim, route, plan, source snapshot, audit, execution, evaluator, bundle, resource, and subject-runner references; proposed grade; coverage; trial count, aggregation rule, and observed agreement; AI involvement; downgrade reasons; warnings; and report notes. Status is omitted or must exactly equal Python's authoritative execution status.
-- `documentary_result` for grade D: the same applicable references plus the audited judgment packet, citations, rubric findings, assessor identity, the assessor's independence from the session that designed the plan and rubric, proposed status, and explicit AI or human involvement.
+- `evaluated_result` for grades A through C: claim, route, plan, source snapshot, audit, execution, evaluator, bundle, resource-lock, resource, and subject-runner references; `grade_policy_ref`; coverage; trial count, aggregation rule, and observed agreement; AI involvement; downgrade reasons; warnings; and report notes. Status and grade are omitted or must equal Python's authoritative execution `decision_status` and `achieved_grade_ceiling` exactly; policy reasons/inputs are copied, not re-estimated.
+- `documentary_result` for grade D: the same applicable references plus completed assessment ID, audited packet/rubric references, citations, findings, assessor identity/independence, and AI/human disclosure copied from that assessment. Status is omitted or must equal the accepted assessment status; the planning agent cannot supply a new judgment.
 - `unverified_result` for grade U: claim, route, plan, source snapshot, attempted-evidence references, missing evidence, searches or checks performed, downgrade reasons, limitations, and explicit `not_applicable` stage markers. Status is omitted or `inconclusive`.
 
 Successful outcome: `claim_result_committed`.
@@ -441,7 +467,7 @@ Successful data: immutable claim-result ID, result kind, Python-accepted status,
 
 Side effects: writes the claim-result artifact.
 
-Retryable conditions: proposed grade above the evidence ceiling, a grade A-through-C status differing from the deterministic execution status, a grade-U status other than `inconclusive`, unsupported documentary judgment, a documentary result whose assessor is the session that designed the plan and rubric, missing provenance, missing subject-runner or trial disclosure on an evaluated result, or incomplete coverage disclosure.
+Retryable conditions: grade or status differing from the authoritative A-through-C execution result, a grade-U status other than `inconclusive`, documentary fields/status that differ from the completed independent assessment, missing provenance/policy disclosure, missing subject-runner or trial disclosure on an evaluated result, or incomplete coverage disclosure. A `lower_grade_required` execution cannot authorize an evaluated result. Missing independent assessment is handled by execution's `assessor_unavailable` outcome before `result_commit`, not an invitation for the planner to manufacture one.
 
 Ordinary outcomes: pass, fail, or inconclusive at grades A through D as permitted by the rubric, and only inconclusive at grade U.
 

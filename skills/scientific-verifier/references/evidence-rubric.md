@@ -37,15 +37,31 @@ If those conditions are weaker, the same dataset may support only B or a lower g
 
 Most submitted skills are instructions for a model. Running one twice can produce two different outputs, so a verdict is a statement about a sample, and the sample has to be described before the verdict means anything.
 
-The plan fixes the subject model, its generation settings, the trial count `n`, and the deterministic rule that reduces a case's `n` trials to one per-case outcome, all before execution. Those four together are what make an A-through-C decision reproducible: the decision rules are deterministic given the trial set, and the subject-runner configuration is what makes the trial set repeatable.
+The plan fixes the subject model, its generation settings, the trial count `n`, the deterministic trial-aggregation rule, and the `trial_grade_policy` before execution. Python first runs the subject with expected answers withheld, then scores each trial with the audited evaluator, then aggregates the scored trials into per-case outcomes and the claim decision. Raw outputs are not aggregated before scoring. These fixed rules make an A-through-C decision reproducible given the recorded trial set; recording model settings does not guarantee that a non-deterministic subject will generate identical outputs again.
 
 Three consequences for grading:
 
 - **`n = 1` against a non-deterministic subject caps the grade at C.** A single sample cannot distinguish a skill that is right from one that is sometimes right, and a claim of direct validation from one observation is a claim the evidence does not support. A deterministic subject with a fixed entry point is unaffected and uses `n = 1` legitimately.
-- **Disagreement between trials lowers the ceiling.** A claim that satisfies its oracle on every trial is directly validated within its scope. A claim that satisfies it on most trials is evidence about a distribution, and the result says so. Observed agreement is recorded per case and reported; a bare pass that concealed heavy disagreement would misstate what was found.
+- **Exceeding audited agreement or coverage limits lowers the ceiling.** The permitted variation depends on the claim and is fixed by the audited policy, not by a universal numerical cutoff. Agreement measures consistency of scored evidence, not correctness: unanimous failure can support the same evidence grade as unanimous success when the other evidence requirements are equal. Passing most trials is not interchangeable with passing every trial; the recorded observations and audited rules determine what can be concluded.
 - **Changing the subject model invalidates the result, not just the audit.** A grade earned on one model is evidence about that model running that skill. Reporting it as a property of the skill alone overstates it, so the subject model appears in the result and in the report card.
 
 The aggregation rule is chosen from the claim. A claim that a calculation is correct is not served by a majority rule, since being right most of the time is the thing that claim denies. A claim about typical behavior is not served by requiring unanimity. Choosing the rule after seeing the trials is not grading; it is fitting the rule to the answer, and the audit rejects a plan that leaves it open.
+
+### Audited trial-grade policy
+
+`trial_grade_policy` names an exact policy identity, version, and digest supplied by the approved reviewed harness, plus parameters restricted to that harness's declared bounds. A registered evaluator retains this harness-policy reference. The policy's scientific justification and its applicability to the claim are audited before execution; neither the verifier agent nor execution may invent a policy or tune its parameters after observing results.
+
+The policy defines total eligibility predicates for A, B, and C. Each predicate combines the applicable rubric requirements with the audited trial-count, agreement, coverage, and invalid-observation requirements. Unsupported grades have an explicitly false predicate. The contract must specify:
+
+- What agreement measures over the scored trials, including ties, numerical boundary equality, and mixed `pass`, `fail`, and `inconclusive` outcomes.
+- The denominators used for trial and case coverage, the treatment of scientifically invalid outputs or cases, and the reduction from per-case evidence to claim-level eligibility. Invalid observations cannot silently disappear from counts or denominators.
+- Every supported trial count, including the C ceiling for `n = 1` with a non-deterministic subject, and the distinction between requested, attempted, obtained, evaluated, invalid, and missing trials.
+- Explicit behavior for zero usable cases or zero scientifically evaluable trials: no A-through-C grade is eligible. An initially empty evaluation bundle fails audit rather than running.
+- An explicit default, `no_supported_execution_grade`, when no A-through-C eligibility predicate is satisfied. There must be no uncovered observation pattern; simultaneous eligibility for several grades is resolved by choosing the strongest eligible grade no higher than the planned and audited ceilings.
+
+The strongest eligible grade is Python's authoritative `achieved_grade_ceiling`. A downgrade must still satisfy that grade's rubric; it is not merely changing an A label to B or C. Execution records `grade_policy_ref`, `grade_limit_reasons`, trial counts, per-trial scores and decisions, and per-case agreement and coverage alongside that ceiling. Verdict rules remain separate from grade eligibility, so evidence against a claim is not weakened merely because the claim failed.
+
+Missing trials caused by runner, provider, evaluator, or other operational failures use bounded execution retries and then `operational_failure`; they are not scientifically invalid observations, a scientific `fail`, or grounds for assigning U. For a completed scientific evaluation with `no_supported_execution_grade`, execution returns `lower_grade_required`, `achieved_grade_ceiling: null`, and `next_target_grade: D`. The claim returns to planning and capability selection to attempt documentary evidence under a separate audited plan. This outcome does not authorize a D result or bypass that assessment. U is reached only through the existing no-acceptable-evidence paths after no grade A through D is supportable.
 
 ## AI-involvement disclosure
 
@@ -63,8 +79,10 @@ The subject model is not `evidence_generation`. It produces the outputs being te
 
 The audited plan defines how invalid cases, coverage shortfalls, tolerances, and decision thresholds map to `pass`, `fail`, or `inconclusive` before execution.
 
-- For grades A through C, `execute_evaluation_plan` returns the authoritative status produced by those deterministic rules. The verifier agent may explain it but may not select, revise, or override it. `commit_claim_result` rejects a different status.
-- For grade D, an audited documentary-rubric harness may return a bounded judgment packet. The status is proposed only from that packet and rubric, and only by an assessor independent of the session that designed the plan and rubric: an identified human, or a separate assessor session given the packet and nothing else. The session that chose the evidence does not also grade it — that is the specific bias the D disclosure exists to let a reader discount, and it cannot be discounted if it is not separated. Where no independent assessor is available, the limitation is recorded and no D status is proposed. The provider, model or assessor identity, its independence from the planning session, cited evidence, and judgment boundary are all recorded.
+Documentary-only D does not execute the submitted skill, so it does not require an installed subject runner. Its plan and artifacts mark subject runner/model, trial count, aggregation, and trial-grade policy `not_applicable`. An approved documentary harness, bounded evidence packet/rubric, and independent assessment remain required; missing assessor infrastructure is not missing scientific evidence.
+
+- For grades A through C, `execute_evaluation_plan` returns `completed_deterministic_decision` with the authoritative status and `achieved_grade_ceiling` produced by the audited rules, plus `grade_policy_ref` and `grade_limit_reasons`. The verifier agent may explain them but may not select, revise, or override them. `commit_claim_result` copies the exact strongest supported grade and status; caller-supplied values must be omitted or equal those execution values. `lower_grade_required` is a replanning outcome and cannot be committed as an evaluated result.
+- For grade D, `execute_evaluation_plan` obtains a completed assessment through a runner-provisioned independent assessor meeting the audited documentary plan's assessor boundary. The host selects and verifies the assessor; the planner cannot invent its identity. The assessor is an identified human or separate assessor session given only the bounded judgment packet, cited evidence, and audited rubric, not the planning conversation. `documentary_assessment_ready` means that this assessment has completed and its identity, independence, rubric findings, status, and provenance are recorded. The planning session never assesses its own packet, and result commit preserves the recorded assessment rather than accepting a new planning-agent judgment. If no eligible independent assessor is available, or assessment cannot complete within the runner's bounded limits, `assessor_unavailable` records a terminal claim-scoped operational outcome before result commit, with no scientific status. It does not justify either D or U.
 - Grade U always has `status: inconclusive`. `pass` or `fail` with grade U is invalid.
 
 Operational completion, schema validity, evaluator crashes, unavailable tools, and exhausted runtime limits never determine a scientific status.
@@ -73,30 +91,33 @@ Operational completion, schema validity, evaluator crashes, unavailable tools, a
 
 - Assign the strongest grade actually supported, never the intended or requested grade by default.
 - A registered evaluator's grade is a ceiling, not a guarantee for every plan or dataset.
-- Missing coverage, weak independence, uncertain provenance, leakage, unsupported tolerances, a trial count too small for a non-deterministic subject, or unexplained disagreement between trials all lower the grade ceiling.
+- Missing coverage, weak independence, uncertain provenance, leakage, unsupported tolerances, or failure to meet the audited trial-count, agreement, or coverage requirements lower the grade ceiling. Trial-related limits are computed by the fixed `trial_grade_policy`, not inferred by the verifier agent after execution.
 - When target-grade evidence is unavailable, automatically attempt the next supportable grade and record the downgrade reason.
 - When the user explicitly requires a minimum grade, label any lower-grade result as not satisfying that requirement.
-- When no acceptable scientific evidence exists, assign U and make no scientific claim.
+- When no acceptable evidence supports any grade A through D, assign U through the workflow's no-acceptable-evidence path and make no scientific claim. Failure to support A through C does not skip the documentary-evidence attempt; unavailable implementation or an unavailable assessor remains an operational outcome, not U.
 - Before lowering a target plan, reconsider registered evaluators that support the lower grade so an existing capability is not rebuilt unnecessarily.
 
 ## Result interpretation
 
+This schematic shows the recorded fields, not a numerical threshold policy or an evaluated claim:
+
 ```yaml
 status: pass | fail | inconclusive
-evidence_grade: A | B | C | D | U
+evidence_grade: A | B | C
 requested_grade: A | B | C | D | U | not_specified
+achieved_grade_ceiling: <authoritative A, B, or C from execution>
+grade_policy_ref: <reviewed policy identity, version, and digest>
+grade_limit_reasons: <recorded reasons, or an empty list>
 coverage:
-  tested_cases: 120
-  included_scope:
-    - human proteins
-  excluded_scope:
-    - protein complexes
+  tested_cases: <recorded count>
+  included_scope: <audited scope>
+  excluded_scope: <recorded exclusions>
 subject:
-  subject_runner: model-skill-runner@3
+  subject_runner: <approved runner identity and version>
   subject_model: <exact model id and version>
-  trial_count: 5
-  aggregation_rule: all_trials_satisfy_oracle
-  case_trial_agreement: 117 unanimous, 3 split
+  trial_count: <audited count per case>
+  aggregation_rule: <audited rule identity>
+  case_trial_agreement: <recorded per-case summaries and denominators>
 ai_involvement:
   orchestration: true
   evidence_generation: false
