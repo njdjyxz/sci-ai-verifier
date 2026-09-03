@@ -1,0 +1,18 @@
+# Content-addressed digests and exact source-quote matching depend on stable
+# bytes. Normalize every text file to LF in the repository and in the working
+# tree so a checkout on Windows and a checkout on Linux hash identically.
+* text=auto eol=lf
+
+*.md   text eol=lf
+*.json text eol=lf
+*.py   text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# Payloads that must never be newline-normalized.
+*.png  binary
+*.jpg  binary
+*.gz   binary
+*.zip  binary
+*.parquet binary

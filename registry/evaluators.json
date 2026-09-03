@@ -1,4 +1,6 @@
 {
-  "schema_version": "1",
+  "schema_version": 2,
+  "revision": 0,
+  "harnesses": [],
   "evaluators": []
 }

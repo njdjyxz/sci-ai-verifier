@@ -33,6 +33,20 @@ The verifier should first seek an A-grade design where the submitted skill's out
 
 If those conditions are weaker, the same dataset may support only B or a lower grade.
 
+## Subject non-determinism
+
+Most submitted skills are instructions for a model. Running one twice can produce two different outputs, so a verdict is a statement about a sample, and the sample has to be described before the verdict means anything.
+
+The plan fixes the subject model, its generation settings, the trial count `n`, and the deterministic rule that reduces a case's `n` trials to one per-case outcome, all before execution. Those four together are what make an A-through-C decision reproducible: the decision rules are deterministic given the trial set, and the subject-runner configuration is what makes the trial set repeatable.
+
+Three consequences for grading:
+
+- **`n = 1` against a non-deterministic subject caps the grade at C.** A single sample cannot distinguish a skill that is right from one that is sometimes right, and a claim of direct validation from one observation is a claim the evidence does not support. A deterministic subject with a fixed entry point is unaffected and uses `n = 1` legitimately.
+- **Disagreement between trials lowers the ceiling.** A claim that satisfies its oracle on every trial is directly validated within its scope. A claim that satisfies it on most trials is evidence about a distribution, and the result says so. Observed agreement is recorded per case and reported; a bare pass that concealed heavy disagreement would misstate what was found.
+- **Changing the subject model invalidates the result, not just the audit.** A grade earned on one model is evidence about that model running that skill. Reporting it as a property of the skill alone overstates it, so the subject model appears in the result and in the report card.
+
+The aggregation rule is chosen from the claim. A claim that a calculation is correct is not served by a majority rule, since being right most of the time is the thing that claim denies. A claim about typical behavior is not served by requiring unanimity. Choosing the rule after seeing the trials is not grading; it is fitting the rule to the answer, and the audit rejects a plan that leaves it open.
+
 ## AI-involvement disclosure
 
 Every claim result records AI involvement separately for:
@@ -43,14 +57,27 @@ Every claim result records AI involvement separately for:
 
 Verifier-agent orchestration alone does not lower an otherwise valid A-grade result. AI-generated expected answers or AI judgment in scoring do.
 
+The subject model is not `evidence_generation`. It produces the outputs being tested, which is the thing under examination, not evidence about it; if it counted, no model-based skill could exceed grade D and the system would have nothing to say. What matters is whether AI produced the *expected answers*, selected the cases, or decided the verdict. The subject model is disclosed in its own field so a reader can see what was tested without confusing it with what did the testing.
+
+## Verdict authority
+
+The audited plan defines how invalid cases, coverage shortfalls, tolerances, and decision thresholds map to `pass`, `fail`, or `inconclusive` before execution.
+
+- For grades A through C, `execute_evaluation_plan` returns the authoritative status produced by those deterministic rules. The verifier agent may explain it but may not select, revise, or override it. `commit_claim_result` rejects a different status.
+- For grade D, an audited documentary-rubric harness may return a bounded judgment packet. The status is proposed only from that packet and rubric, and only by an assessor independent of the session that designed the plan and rubric: an identified human, or a separate assessor session given the packet and nothing else. The session that chose the evidence does not also grade it — that is the specific bias the D disclosure exists to let a reader discount, and it cannot be discounted if it is not separated. Where no independent assessor is available, the limitation is recorded and no D status is proposed. The provider, model or assessor identity, its independence from the planning session, cited evidence, and judgment boundary are all recorded.
+- Grade U always has `status: inconclusive`. `pass` or `fail` with grade U is invalid.
+
+Operational completion, schema validity, evaluator crashes, unavailable tools, and exhausted runtime limits never determine a scientific status.
+
 ## Grade selection and downgrade
 
 - Assign the strongest grade actually supported, never the intended or requested grade by default.
 - A registered evaluator's grade is a ceiling, not a guarantee for every plan or dataset.
-- Missing coverage, weak independence, uncertain provenance, leakage, or unsupported tolerances lower the grade ceiling.
+- Missing coverage, weak independence, uncertain provenance, leakage, unsupported tolerances, a trial count too small for a non-deterministic subject, or unexplained disagreement between trials all lower the grade ceiling.
 - When target-grade evidence is unavailable, automatically attempt the next supportable grade and record the downgrade reason.
 - When the user explicitly requires a minimum grade, label any lower-grade result as not satisfying that requirement.
 - When no acceptable scientific evidence exists, assign U and make no scientific claim.
+- Before lowering a target plan, reconsider registered evaluators that support the lower grade so an existing capability is not rebuilt unnecessarily.
 
 ## Result interpretation
 
@@ -64,10 +91,16 @@ coverage:
     - human proteins
   excluded_scope:
     - protein complexes
+subject:
+  subject_runner: model-skill-runner@3
+  subject_model: <exact model id and version>
+  trial_count: 5
+  aggregation_rule: all_trials_satisfy_oracle
+  case_trial_agreement: 117 unanimous, 3 split
 ai_involvement:
   orchestration: true
   evidence_generation: false
   verdict: false
 ```
 
-An A-grade failure is strong evidence that the claim is incorrect within the tested scope. A D-grade pass establishes documentary consistency only, not scientific accuracy. U never supports a scientific pass or fail conclusion.
+An A-grade failure is strong evidence that the claim is incorrect within the tested scope. A D-grade pass establishes documentary consistency only, not scientific accuracy. U is valid only with `inconclusive` and never supports a scientific pass or fail conclusion.

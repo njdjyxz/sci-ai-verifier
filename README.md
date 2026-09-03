@@ -15,9 +15,10 @@ There is intentionally no active Python package at the repository root. This all
 1. [`skills/scientific-verifier/SKILL.md`](skills/scientific-verifier/SKILL.md) — the verifier agent's entry instructions and reference routing.
 2. [`skills/scientific-verifier/references/workflow.md`](skills/scientific-verifier/references/workflow.md) — the authoritative textual state machine, exact tool transitions, autonomous fallback behavior, and failure paths. Its retained graph is a non-authoritative review aid.
 3. [`skills/scientific-verifier/references/tool-contracts.md`](skills/scientific-verifier/references/tool-contracts.md) — every approved Python tool and the planned `.py` file responsible for it.
-4. [`skills/scientific-verifier/references/artifact-contracts.md`](skills/scientific-verifier/references/artifact-contracts.md) — what each run, registry, result, and report artifact must contain.
-5. [`skills/scientific-verifier/references/resource-policy.md`](skills/scientific-verifier/references/resource-policy.md) — what to reuse, store, return, retain, promote, and discard.
-6. [`skills/scientific-verifier/references/evidence-rubric.md`](skills/scientific-verifier/references/evidence-rubric.md) — evidence grades, AI-involvement limits, and grade fallback rules.
+4. [`skills/scientific-verifier/references/runtime-contract.md`](skills/scientific-verifier/references/runtime-contract.md) — what the host process must guarantee so the state machine holds when the agent is a language model.
+5. [`skills/scientific-verifier/references/artifact-contracts.md`](skills/scientific-verifier/references/artifact-contracts.md) — what each run, registry, result, and report artifact must contain.
+6. [`skills/scientific-verifier/references/resource-policy.md`](skills/scientific-verifier/references/resource-policy.md) — what to reuse, store, return, retain, promote, and discard.
+7. [`skills/scientific-verifier/references/evidence-rubric.md`](skills/scientific-verifier/references/evidence-rubric.md) — evidence grades, AI-involvement limits, subject non-determinism, and grade fallback rules.
 
 ## Architecture
 
@@ -28,7 +29,7 @@ Python creates the run and starts a bounded verifier-agent session
         |
 Python supplies SKILL.md, workflow.md, and committed run state
         |
-Python exposes only the tools legal for the committed state
+Python declares the tools legal for the committed state and enforces it on dispatch
         |
 The agent chooses a permitted semantic branch and requests its named tool
         |
@@ -43,7 +44,9 @@ Python writes the audited claim results and report card
 
 ## Session context
 
-At startup or resumption, Python supplies the complete verifier `SKILL.md`, the complete authoritative `workflow.md`, their versions or digests, the committed run and claim states, current limits, and only the tool definitions legal in that state. Each source is a separately labeled context block with an explicit trust class. The submitted scientific skill is not included at bootstrap; Python reads and hashes it through `load_submitted_skill`, then returns its content as explicitly untrusted data.
+At startup or resumption, Python supplies the complete verifier `SKILL.md`, the complete authoritative `workflow.md`, their versions or digests, the committed run and claim states, current limits, and its declaration of the tools legal in that state. Each source is a separately labeled context block with an explicit trust class. The submitted scientific skill is not included at bootstrap; Python reads and hashes it through `load_submitted_skill`, then returns its top-level content as explicitly untrusted data. Files inside the snapshot are read one at a time through `read_snapshot_file`, because a skill's testable scientific statements usually live in its bundled reference documents rather than in the file that routes to them.
+
+Tool definitions may be published more broadly than they are legal. Legality is declared per state and enforced by the dispatcher, which is what the security boundary has always rested on; `runtime-contract.md` explains why the published surface is held stable instead.
 
 The runner supplies applicable tool and artifact contract sections with each legal operation and introduces the evidence rubric and resource policy only when their stages become relevant. Registries, run artifacts, datasets, expected answers, evaluator code, and credentials are not exposed as raw project files; approved tools return only the structured data required for the current state.
 
@@ -66,6 +69,7 @@ Python owns:
 - Resource materialization, digests, and locks.
 - Reproducible case construction.
 - Objective bundle validation and plan prerequisites.
+- Running the submitted skill under the audited subject runner and aggregating its trials.
 - Evaluator execution, metrics, tolerances, and grade ceilings.
 - Run audit trail and report rendering.
 
@@ -77,13 +81,14 @@ Each submitted skill is processed as atomic claims:
 
 ```text
 load and profile
+→ read the snapshot files that carry the claims
 → route claim type
 → reuse evaluator or define target evaluator
-→ create evaluation plan
+→ create evaluation plan, including the subject runner and trial rules
 → reuse or acquire resources
 → build and validate evaluation capability when needed
 → audit exact plan and asset versions
-→ execute evaluator
+→ run the submitted skill under the audited subject runner, then the evaluator
 → assign supported claim result and evidence grade
 → write claim-level report card
 ```
@@ -102,9 +107,17 @@ The preferred result is a scientific verdict determined completely outside AI ju
 
 Pass or fail is separate from evidence strength. An A-grade failure is strong evidence against a claim; a D-grade pass establishes documentary consistency only.
 
+A submitted skill is usually a set of instructions for a model, so running it twice can give two answers. Every plan therefore fixes the **subject runner**: which model runs the skill, under what settings, how many trials per case, and the deterministic rule reducing those trials to one outcome — all before execution. The evaluator's decision rules are deterministic; the subject runner is what makes the sample they act on repeatable. A single trial against a non-deterministic subject cannot support grade A or B, and trial disagreement is reported rather than folded into the verdict.
+
+The model running the verifier agent and the model running the submitted skill are different roles with separate records. The first orchestrating a run does not weaken the evidence; the second is the thing being measured, not evidence about it.
+
 ## Storage principle
 
 Per-skill artifacts stay under `.verifier/runs/<run-id>/` or company-managed storage. Large payloads use content-addressed managed storage and are referenced by digest. Git stores small reusable metadata and implementation code, not every submitted skill's datasets and reports.
+
+The registry has two layers. `registry/` in Git holds entries a human has reviewed and committed; `.verifier/registry/` holds provisional entries written by runs. Runs read the merge and write only to the runtime layer, so no automated step can rewrite the files the review process depends on, and two runs on one checkout cannot race for the same bytes. Promotion is a human commit.
+
+Text payloads are normalized to LF before hashing. Without that, the same skill checked out on Windows and on Linux would produce different snapshot digests, and every content-addressed guarantee here would be platform-dependent. `.gitattributes` enforces the same normalization for repository content.
 
 The verifier returns the report card, machine-readable results, claim manifest, and reproducibility references. It retains the minimum provenance and assets required for audit. Temporary downloads, duplicate payloads, failed drafts, unused search results, caches, and secrets are discarded according to the resource policy.
 
@@ -112,8 +125,10 @@ The verifier returns the report card, machine-readable results, claim manifest, 
 
 ```text
 .
-├── AGENT.md
+├── .gitattributes
+├── CLAUDE.md
 ├── README.md
+├── evaluators/
 ├── registry/
 │   ├── claim_types.json
 │   ├── evaluators.json
@@ -126,11 +141,14 @@ The verifier returns the report card, machine-readable results, claim manifest, 
 │           ├── artifact-contracts.md
 │           ├── evidence-rubric.md
 │           ├── resource-policy.md
+│           ├── runtime-contract.md
 │           ├── tool-contracts.md
 │           └── workflow.md
 └── tmp/
     └── legacy_fixed_workflow/
 ```
+
+`evaluators/` will hold approved harness implementation code and is empty in Stage 1. `registry/bundles/` and `registry/resources/` are empty and tracked so a fresh clone has them. The runtime registry and every run artifact live under the gitignored `.verifier/`.
 
 ## Planned implementation structure
 
@@ -164,10 +182,13 @@ Useful deterministic behavior may be migrated later after the new tool contract 
 
 Stage 2 will build only:
 
-1. The bounded verifier-agent loop and deterministic session bootstrap.
-2. State-aware tool dispatch and the common `ok`, `retryable`, and `fatal` protocol.
+1. The bounded verifier-agent loop and deterministic session bootstrap, meeting `runtime-contract.md`.
+2. State-aware tool dispatch driven by the state tables in `workflow.md`, with the common `ok`, `retryable`, and `fatal` protocol and the two separate retry budgets.
 3. `load_submitted_skill`.
-4. `commit_claim_manifest`.
-5. Run-state and artifact persistence required by those operations.
+4. `read_snapshot_file`.
+5. `commit_claim_manifest`.
+6. Run-state and artifact persistence required by those operations, including the LF normalization the digests depend on.
+
+The subject runner is not in Stage 2. Nothing before `execute_evaluation_plan` needs it, and the approved-runner catalog is a security review of its own.
 
 Later implementation stages will add the remaining tools in workflow order without changing the reviewed Markdown silently.
