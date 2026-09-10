@@ -1,12 +1,12 @@
 # Python Tool Contracts
 
-This file names the complete intended Python tool surface for the verifier. No active Python implementation exists in Stage 1. Later stages may implement these tools without changing their reviewed purpose; interface changes require a documentation update first.
+This file names the complete intended Python tool surface. Stage 2 implements the first three workflow tools and bootstrap controls under the [Claude Desktop profile](stage2-contract.md). Later tools remain specifications. Interface changes require a documentation update first.
 
 ## Planned runtime files
 
 | Planned file | Responsibility |
 |---|---|
-| `src/sci_ai_verifier/agent.py` | Start the bounded verifier-agent session, assemble source-labeled context with explicit trust classes, reconstruct committed workflow state, declare the state-eligible tools, reserve finalization capacity, maintain messages, enforce step, retry, illegal-transition, cost, and execution limits, handle agent-side termination, and detect completion. Implements `runtime-contract.md`. |
+| `src/sci_ai_verifier/agent.py` | Bootstrap and resume committed runs; pin and label context. Claude Desktop owns the model conversation. The Stage 2 profile records which full-host obligations are unavailable. |
 | `src/sci_ai_verifier/tools.py` | Publish approved tool definitions, reject illegal state transitions, dispatch eligible tool calls, and convert expected exceptions into structured results. |
 | `src/sci_ai_verifier/storage.py` | Perform atomic artifact writes, content hashing, run-workspace management, managed-store access, registry locking, operational-outcome persistence, and runner-owned finalization. Reads the reviewed registry under `registry/` and writes only to the runtime registry under `.verifier/registry/`; it has no write path to the repository. |
 | `src/sci_ai_verifier/ingest.py` | Snapshot submitted skills under the reviewed exclusion policy and load their top-level instructions as untrusted UTF-8 data. |
@@ -115,6 +115,8 @@ Input: a path to a UTF-8 file or directory containing a top-level `SKILL.md`, pl
 
 Successful outcome: `source_snapshotted`.
 
+Stage 2 binds the source path at run creation. Its input schema adds `run_id` and `state_token`; snapshot policy and limits are read from the run and cannot be changed by a tool request.
+
 Successful data: source-snapshot ID and digest, resolved original path as provenance, normalized included-file manifest, excluded paths with reason codes, snapshot-policy version, total size, top-level `SKILL.md` digest, and exact top-level content.
 
 Side effects: writes the run-local source-snapshot manifest and an immutable managed-store payload. On resumption before claim commitment, the runner re-supplies the verified snapshot content instead of reading the live source.
@@ -130,6 +132,8 @@ Purpose: return the exact verified content of one file already inside the commit
 Input: source-snapshot ID, source-snapshot digest, and one snapshot-relative path taken from the returned manifest. An optional byte range may be supplied for a large file.
 
 Successful outcome: `snapshot_file_returned`.
+
+Stage 2 adds `run_id` and `state_token`; ranges use half-open UTF-8 byte offsets. Read receipts are journal events, not changes to snapshot identity.
 
 Successful data: snapshot-relative path, file digest, encoding, size, returned byte range when partial, and exact content as untrusted data.
 
@@ -150,6 +154,8 @@ Purpose: validate the verifier agent's candidate atomic claims, assign stable ID
 Input: source-snapshot ID, source-snapshot digest, and claims containing statement, scope, expected behavior, the snapshot-relative source path, an exact source quote from that file, and report note.
 
 Successful outcomes: `claims_committed` or `no_scientific_claims`.
+
+Stage 2 adds `run_id` and `state_token`, requires the quote to have been delivered from the named file, and stops at `stage2_complete` for either outcome. This explicit profile exception replaces routing/reporting below until later stages are implemented. Scientific atomicity and completeness still need semantic review; structural validation cannot certify them.
 
 Successful data: manifest ID and accepted claims with Python-assigned claim IDs. The empty outcome contains an explicit zero count and permits reporting without routing.
 

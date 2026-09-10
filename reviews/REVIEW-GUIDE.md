@@ -1,6 +1,6 @@
 # Scientific verifier: review guide
 
-This is a reading map for the current Stage 1 specification, including the nine-fix update in commit `59a0b62` on `main`. Prepared on 2026-09-03.
+This is a historical reading map for the Stage 1 specification, including the nine-fix update in commit `59a0b62` on `main`. Prepared on 2026-09-03. For the current implemented scope, start with the [Stage 2 desktop contract](../skills/scientific-verifier/references/stage2-contract.md) and [development plan](../DEVELOPMENT-PLAN.md). References below to unchanged files and specification-only behavior describe that earlier review.
 
 It explains the workflow, when each document is used, and a suggested review order. It is for human reviewers: it is not another source of verifier instructions. If this summary and a contract disagree, review the contract; do not treat this guide as an override.
 

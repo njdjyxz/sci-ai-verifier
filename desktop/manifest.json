@@ -1,0 +1,42 @@
+{
+  "manifest_version": "0.3",
+  "name": "scientific-verifier",
+  "display_name": "Scientific Verifier - Stage 2",
+  "version": "0.2.0",
+  "description": "Extract traceable scientific claims from a local skill with bounded Python tools. Stage 2 does not evaluate or grade claims.",
+  "author": {"name": "sci-ai-verifier contributors"},
+  "repository": {"type": "git", "url": "https://github.com/njdjyxz/sci-ai-verifier"},
+  "server": {
+    "type": "python",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "${user_config.python_path}",
+      "args": [
+        "-I", "-B", "${__dirname}/server.py", "serve",
+        "--workspace", "${user_config.data_directory}",
+        "--source-root", "${user_config.submission_directory}",
+        "--instructions", "${__dirname}/skills/scientific-verifier"
+      ]
+    }
+  },
+  "compatibility": {"platforms": ["win32"], "runtimes": {"python": ">=3.11"}},
+  "user_config": {
+    "python_path": {
+      "type": "file", "title": "Python interpreter",
+      "description": "Select an installed Python 3.11 or newer python.exe. No pip dependencies are needed.",
+      "required": true
+    },
+    "submission_directory": {
+      "type": "directory", "title": "Submission directory",
+      "description": "Only sanitized submitted skills inside this directory may be read.",
+      "required": true
+    },
+    "data_directory": {
+      "type": "directory", "title": "Verifier data directory",
+      "description": "Writable location for .verifier snapshots, manifests, and audit records.",
+      "required": true
+    }
+  },
+  "tools_generated": true,
+  "keywords": ["science", "claims", "verification", "stage2"]
+}

@@ -2,6 +2,8 @@
 
 This reference defines what the verifier retains and returns. Field-level JSON Schemas will be implemented with the Python tools; these Markdown contracts are the reviewed source for their intended meaning.
 
+The implemented [Stage 2 profile](stage2-contract.md#bootstrap-and-persistence) specifies its journal commit point, readable projections, content-addressed objects, context receipts, nullable unavailable model metadata, and extraction checkpoint. No scientific result or report-card artifact is created in that profile.
+
 ## Common requirements
 
 Every persisted artifact contains:

@@ -2,6 +2,19 @@
 
 This file is the single authoritative workflow definition. Stage 1 documents every state and transition even when the corresponding Python tool has not been implemented. `tool-contracts.md` defines each named tool's interface; this file defines when that tool is legal and what must happen after each mutually exclusive result.
 
+## Stage 2 profile
+
+For `profile: stage2`, use this matrix and the [Stage 2 contract](stage2-contract.md). The later-stage matrix below remains the full target workflow.
+
+| Run state | Legal workflow tools | Successful transition |
+|---|---|---|
+| `created` | `load_submitted_skill` | `source_snapshotted` -> `source_ready` |
+| `source_ready` | `read_snapshot_file`, `commit_claim_manifest` | `snapshot_file_returned` stays here; `claims_committed` or `no_scientific_claims` -> `stage2_complete` |
+| `stage2_complete` | none | Prototype checkpoint; scientific verification has not completed. |
+| `incomplete` | none | Operational termination; no report card. |
+
+Accepted claims record their future `routing` state, but this profile authorizes no routing operation. Context/start/resume/cancel controls are host operations defined in the Stage 2 contract. A valid `stage2_complete` with no next tools is an intentional stop, not a runner error. This profile also specifies the desktop host's actual context, concurrency, limits, and termination guarantees.
+
 ## Ownership
 
 You are the semantic orchestrator. Interpret claims, compare scientific meanings, design evidence strategies, select candidates returned by approved tools, repair retryable requests, relay independently assessed grade-D findings, and explain limitations. Do not invent workflow states, tools, resources, evaluator implementations, operational outcomes, or successful transitions.

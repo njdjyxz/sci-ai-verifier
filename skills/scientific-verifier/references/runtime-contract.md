@@ -2,7 +2,7 @@
 
 `workflow.md` defines *what* the verifier does. This file defines what the **host process** must do so that definition holds when the verifier agent is a large language model rather than a subroutine. Nothing here changes a scientific rule; everything here is an obligation on the runner.
 
-Sections 1 through 5 are provider-neutral. Section 6 records the Claude-specific settings the reference host uses, because the reviewed architecture assumes a Claude model in the agent role.
+Sections 1 through 5 describe the full host target. The implemented desktop prototype uses the explicit [Stage 2 profile](stage2-contract.md), including narrower observable/enforceable host guarantees. Section 6 describes that integration instead of the superseded direct model API host.
 
 ## 1. Declared legality versus authorization
 
@@ -61,24 +61,10 @@ None of these are scientific outcomes and none map to `ok`, `retryable`, or `fat
 
 An `agent_unavailable` outcome never becomes grade U and never becomes a scientific `fail`. A refusal to analyze a submitted skill is a fact about the run, not evidence about the claim.
 
-## 6. Claude host settings
+## 6. Implemented Claude Desktop host
 
-The reference host runs the verifier agent on Claude. These settings implement sections 1 through 5.
+The approved integration target is Claude Desktop Chat, using an uploaded skill ZIP and a local MCP extension. The app owns model calls and the conversation. Python implements deterministic bootstrap controls and the first three workflow tools; it does not maintain a model message loop or configure model API features.
 
-**Tool array stability (section 1).** Response caching is a prefix match, and the rendered request orders tools before the system prompt and messages. Because tools render first, changing the published tool array on a state transition invalidates the cached prefix *and* the whole conversation after it. Publish all workflow tools once, in a deterministic order, and enforce legality in the dispatcher. Where a smaller published surface is wanted, use deferred tool loading rather than swapping the array — noting that the search tool itself must not be deferred and at least one tool must remain non-deferred. Confirm the result by watching `usage.cache_read_input_tokens` across steps; a persistent zero means something in the prefix is still changing.
+The [Stage 2 contract](stage2-contract.md) records the exact enforced boundaries and exceptions to the full host target above: state-token serialization instead of assistant-turn inspection, immutable supplied context instead of guaranteed privileged message placement, bounded local tool requests instead of model billing control, and explicit recovery/cancellation instead of observing private model stop reasons. Other app tools cannot be disabled by this MCP server. Exact model and response identifiers remain null when the desktop client does not expose them.
 
-**Appended operator blocks (section 4).** Stage-specific reference sections are appended as `system`-role entries in the message array rather than by editing the top-level system prompt, which would invalidate the prefix. This channel is also the injection-safe way to deliver operator instructions after untrusted payload content has entered the conversation. It is available on Claude Opus 5, Opus 4.8, Fable 5, and Mythos 5, and not on Sonnet 5; hosts on other models must fall back to appending a labeled user-role block. Placement constraints: such an entry must follow a user turn, cannot be the first message, and must be either last or followed by an assistant turn.
-
-**Single request per turn (section 2).** Parallel tool use is on by default and must be disabled. When it is left enabled, all tool results for a turn must be returned in one user message, which is incompatible with committing a transition per call.
-
-**Input validation.** Declarative harness configurations and other structured tool inputs are declared with strict schemas — `additionalProperties: false` plus an explicit `required` list — so the runner receives inputs that validate exactly and schema violations never reach the dispatcher's semantic checks.
-
-**Termination (section 5).** The host checks the response's stop reason before its content, and enables server-side refusal fallbacks so a classifier decline is routed rather than surfaced as a dead step.
-
-**Limits.** The runner's step, cost, wall-clock, and execution limits are enforced by the runner and are not delegated to the model. A model-facing task budget may be set in addition, as pacing guidance; it is advisory and does not satisfy the enforcement requirement in `workflow.md`.
-
-**Long runs.** Server-side compaction or tool-result clearing may be enabled to bound context growth. Neither is permitted to become the record: every committed artifact is persisted by the runner and reread from storage, never recovered from the transcript. This is consistent with the run record's existing rule that the transcript stores what audit requires and never persists private model reasoning.
-
-**Agent tool surface.** The verifier agent is given the approved workflow tools and nothing else. A general-purpose coding harness that ships file-read, shell, search, or fetch tools must have them disabled; with any of them enabled the trust boundary in `SKILL.md` is void, because the agent could read registries, run artifacts, expected answers, and raw payloads directly instead of through the tools that bound them.
-
-**Subject model.** The model running the verifier agent is recorded separately from the model running the submitted skill. They are different roles with different records, and neither may be inferred from the other. See the subject-runner rules in `workflow.md` and `artifact-contracts.md`.
+Earlier API-specific claims about model availability, system-role message insertion, refusal fallback settings, and cache behavior have been removed. They are neither needed nor asserted for the desktop prototype. A future fully restricted host must satisfy sections 1 through 5 before claiming full-host conformance.

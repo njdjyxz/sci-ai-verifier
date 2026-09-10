@@ -16,7 +16,7 @@
 
 ## This repository
 
-Stage 1 is a **Markdown specification with no active Python package**. `src/sci_ai_verifier/` is named by the tool contracts but does not exist. Do not create it, or any other runnable module, without first updating the reviewed contracts — the whole point of this stage is that the architecture can still change cheaply.
+Stage 1 is the reviewed Markdown specification. Stage 2 implements a small Claude Desktop MCP runtime under `src/sci_ai_verifier/`, after reconciling the contracts in `skills/scientific-verifier/references/stage2-contract.md`. Only bootstrap controls and the first three workflow tools are in scope. Update the reviewed contracts before extending executable behavior; keep policy reviewable in Markdown.
 
 The authoritative documents, in dependency order:
 
