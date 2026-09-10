@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .agent import Runtime
+from .agent import ConfigurationError, Runtime
 from .common import canonical
 from .mcp import parse_json, serve
 
@@ -19,7 +19,12 @@ def main():
     parser.add_argument("--instructions", type=Path,
                         default=Path(__file__).resolve().parents[2] / "skills" / "scientific-verifier")
     args = parser.parse_args()
-    runtime = Runtime(args.workspace, args.source_root, args.instructions)
+    try:
+        runtime = Runtime(args.workspace, args.source_root, args.instructions)
+    except ConfigurationError as error:
+        # One actionable line: the app shows a start failure without a Python traceback.
+        sys.stderr.write(f"scientific-verifier cannot start. {error}\n")
+        raise SystemExit(2) from None
     if args.command == "serve":
         serve(runtime, sys.stdin.buffer, sys.stdout.buffer)
     else:

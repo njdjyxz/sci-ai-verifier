@@ -7,18 +7,90 @@ from uuid import uuid4
 from . import __version__
 from .common import Fault, canonical, normalize, utc_now, validate
 from .ingest import authorize, read_file, verified_snapshot
-from .storage import Store, no_links
+from .storage import SCHEMA_VERSION, Store, no_links
 from .tools import (
     DEFAULT_LIMITS, DEFINITIONS, LEGAL, SCHEMAS, WORKFLOW_TOOLS, Dispatcher,
     advance, expired, keep_object, metadata, persistence_failure, terminate,
 )
 
+# The Stage 2 pin, chosen explicitly rather than truncated at the first later-stage heading.
+# `None` pins the whole document. Every named section must exist or bootstrap fails closed,
+# so a reworded heading cannot silently drop policy the profile depends on.
+PINNED_CONTEXT = (
+    ("SKILL.md", None),
+    ("references/workflow.md", ("Stage 2 profile", "Ownership",
+                                "Session bootstrap and trust classes",
+                                "Authoritative states and tool results",
+                                "Limits, interruption, cancellation, and unavailable tools",
+                                "1. Start or resume the run", "2. Commit the claim manifest")),
+    ("references/stage2-contract.md", None),
+    ("references/runtime-contract.md", None),
+    ("references/tool-contracts.md", ("Common result and transition protocol",
+                                      "Load and profile tools", "Excluded capabilities")),
+    ("references/artifact-contracts.md", ("Common requirements", "Run record",
+                                          "Submitted-skill snapshot", "Claim manifest",
+                                          "Operational outcome")),
+    ("references/resource-policy.md", ("Storage layers",)),
+)
+REQUIRED_INSTRUCTIONS = tuple(relative for relative, _ in PINNED_CONTEXT)
+
+
+def sections(relative, text, wanted):
+    """Keep the document head and the named `## ` sections, in their document order."""
+    if wanted is None:
+        return text
+    parts = text.split("\n## ")
+    kept = [parts[0]] + [part for part in parts[1:] if part.split("\n", 1)[0].strip() in wanted]
+    missing = [title for title in wanted
+               if not any(part.split("\n", 1)[0].strip() == title for part in kept[1:])]
+    if missing:
+        raise Fault("missing_instruction_section",
+                    f"{relative} has no section named {', '.join(missing)}; the pinned Stage 2 "
+                    "instructions would be incomplete.", fatal=True)
+    return "\n## ".join(kept)
+
+
+class ConfigurationError(Exception):
+    """An operator setting the extension cannot use. Reported before serving, not mid-run."""
+
+
+def configured(setting, value, *, remedy):
+    """Resolve one operator directory, naming the setting and the fix when it fails."""
+    try:
+        return no_links(value)
+    except Fault as error:
+        raise ConfigurationError(f"{setting}: {error}. {remedy}") from None
+
 
 class Runtime:
     def __init__(self, workspace, source_root, instruction_root, *, limits=None):
-        self.store = Store(workspace)
-        self.source_root = no_links(source_root)
-        self.instruction_root = no_links(instruction_root)
+        no_link_fix = "Choose a directory with no symlink, junction, or reparse point in its path."
+        self.source_root = configured("Submission directory", source_root, remedy=no_link_fix)
+        self.instruction_root = configured("Instruction directory", instruction_root,
+                                           remedy=no_link_fix)
+        workspace = configured("Verifier data directory", workspace, remedy=no_link_fix)
+        if not self.source_root.is_dir():
+            raise ConfigurationError(f"Submission directory: {self.source_root} is not an existing "
+                                     "directory. Select the folder that holds submitted skills.")
+        try:  # Build the pin once now, so a bad install fails before a run exists.
+            for _ in self._instruction_blocks():
+                pass
+        except OSError as error:
+            raise ConfigurationError(
+                f"Instruction directory: {self.instruction_root} is missing or cannot read "
+                f"{Path(getattr(error, 'filename', '') or '').name or 'a required file'}. Point "
+                "--instructions at the skills/scientific-verifier folder shipped with this "
+                "extension.") from None
+        except Fault as error:
+            raise ConfigurationError(f"Instruction directory: {error}. Reinstall the extension "
+                                     "or restore the reviewed instruction files.") from None
+        try:  # `.verifier` itself may be unusable even when its parent is fine.
+            self.store = Store(workspace)
+        except Fault as error:
+            raise ConfigurationError(f"Verifier data directory: {error}. {no_link_fix}") from None
+        except OSError as error:
+            raise ConfigurationError(f"Verifier data directory: {workspace} is not writable "
+                                     f"({error.strerror}). Choose a writable folder.") from None
         self.limits = {**DEFAULT_LIMITS, **(limits or {})}
         if any(type(v) is not int or v < 1 for v in self.limits.values()):
             raise ValueError("All limits must be positive integers.")
@@ -34,13 +106,14 @@ class Runtime:
             return self._control(name, arguments["run_id"], call_id)
         except Fault as error:
             if error.fatal:
-                return persistence_failure()
+                return persistence_failure(error.code, str(error))
             return {"status": "retryable", "error": {
                 "code": error.code, "message": str(error), "repair_fields": error.fields,
                 "scope": "host", "committed_state": None, "next_legal_tools": [],
             }}
         except OSError:
-            return persistence_failure()
+            return persistence_failure("storage_failure",
+                                       "Managed storage is unavailable for this request.")
 
     def _start(self, arguments, call_id):
         try:
@@ -51,7 +124,8 @@ class Runtime:
         run_id = str(uuid4())
         now = utc_now()
         state = {
-            "schema_version": 1, "implementation_version": __version__, "profile": "stage2",
+            "schema_version": SCHEMA_VERSION, "implementation_version": __version__,
+            "profile": "stage2",
             "run_id": run_id, "created_at": now, "updated_at": now, "last_activity_at": now,
             "revision": 1, "state_token": str(uuid4()), "run_state": "created",
             "claim_states": {}, "source_path": str(source), "source_root": str(self.source_root),
@@ -94,18 +168,9 @@ class Runtime:
             "Wait for each result, use the latest state token, and stop at stage2_complete. "
             "Other app tools and model identity are not attested by this prototype."
         )
-        root = self.instruction_root
-        for relative in ("SKILL.md", "references/workflow.md", "references/stage2-contract.md",
-                         "references/runtime-contract.md", "references/tool-contracts.md",
-                         "references/artifact-contracts.md", "references/resource-policy.md"):
-            text = normalize(no_links(root / relative).read_text(encoding="utf-8"))
-            if relative.endswith("tool-contracts.md"):
-                text = text.split("## Routing tools")[0]
-            elif relative.endswith("artifact-contracts.md"):
-                text = text.split("## Routing artifact")[0]
-            elif relative.endswith("resource-policy.md"):
-                text = text.split("## Resource record")[0]
-            yield relative, text
+        for relative, wanted in PINNED_CONTEXT:
+            text = normalize(no_links(self.instruction_root / relative).read_text(encoding="utf-8"))
+            yield relative, sections(relative, text, wanted)
         yield "tool-definitions", canonical(DEFINITIONS).decode("utf-8")
 
     def _bootstrap(self, state):

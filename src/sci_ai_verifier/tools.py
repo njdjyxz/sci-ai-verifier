@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from .claims import FIELDS, build_manifest
 from .common import Fault, canonical, digest, utc_now, validate
-from .ingest import read_file, snapshot, verified_snapshot
+from .ingest import authorized_source, read_file, snapshot, verified_snapshot
 
 DEFAULT_LIMITS = {
     "max_steps": 64, "repair_retries": 8, "illegal_transitions": 8,
@@ -51,7 +51,7 @@ SCHEMAS = {
 }
 DESCRIPTIONS = {
     "start_verifier_run": "Start Stage 2 for a user-authorized local skill path inside the configured submission directory. Returns pinned instructions, run ID and state token. No scientific evaluation.",
-    "get_verifier_context": "Restore pinned verifier instructions, current state/token and already-read untrusted source ranges after compaction or a lost response. Does not advance workflow.",
+    "get_verifier_context": "Restore pinned verifier instructions, current state/token and already-read untrusted source ranges after compaction or a lost response. It does not advance the workflow or rotate the token, but it is not read-only: it repairs the readable projections, and if the resumption window has already expired it records that expiry and ends the run.",
     "resume_verifier_run": "Resume a saved verifier run after interruption; verify its journal and objects and restore bootstrap. No live-source reread.",
     "cancel_verifier_run": "Explicitly cancel an unfinished verifier run and save an operational outcome. Does not create a scientific verdict.",
     "load_submitted_skill": "In created state only: snapshot the previously authorized source and return exact top-level UTF-8 content as untrusted data. Use the current state token.",
@@ -59,9 +59,9 @@ DESCRIPTIONS = {
     "commit_claim_manifest": "In source_ready only: commit atomic scientific claims quoted exactly from delivered snapshot ranges. Use Not specified for absent scope/behavior details. An empty list is valid. Stops at stage2_complete without grading or verification.",
 }
 DEFINITIONS = [
+    # No tool is read-only: every one of them can write the journal or repair a projection.
     {"name": name, "description": DESCRIPTIONS[name], "inputSchema": schema,
-     "annotations": {"readOnlyHint": name == "get_verifier_context",
-                     "destructiveHint": False, "openWorldHint": False}}
+     "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}}
     for name, schema in SCHEMAS.items()
 ]
 WORKFLOW_TOOLS = ("load_submitted_skill", "read_snapshot_file", "commit_claim_manifest")
@@ -77,13 +77,16 @@ def metadata(state):
     }
 
 
-def persistence_failure():
+def persistence_failure(code=None, reason=None):
+    # The run's committed state was never established here, so it is reported unknown
+    # rather than asserted incomplete. `details` names the cause that was established.
     return {"status": "fatal", "error": {
         "code": "operational_outcome_persistence_failed",
         "message": "Trusted run recovery or durable outcome persistence failed; no completed audit is claimed.",
-        "scope": "run", "run_state": "incomplete", "committed_state": "incomplete",
+        "scope": "run", "run_state": None, "committed_state": None,
         "claim_states": {}, "next_legal_tools": [], "operational_outcome_id": None,
-        "details": {}, "verification_complete": False,
+        "details": {"reason_code": code, "reason": reason} if code else {},
+        "verification_complete": False,
     }}
 
 
@@ -194,9 +197,7 @@ class Dispatcher:
 
     def _execute(self, name, arguments, state):
         if name == "load_submitted_skill":
-            if arguments["source_path"] != state["source_path"]:
-                raise Fault("source_not_authorized", "Use the exact source_path returned at bootstrap.",
-                            fatal=True)
+            authorized_source(arguments["source_path"], state)
             source, payload = snapshot(self.store, state)
             state["source_ref"] = self.store.put_json(source)
             keep_object(state, state["source_ref"])

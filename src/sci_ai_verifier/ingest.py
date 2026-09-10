@@ -50,6 +50,19 @@ def authorize(source_path, source_root):
     return path
 
 
+def authorized_source(supplied, state):
+    """Accept any spelling of the pinned path. Only a different location is unauthorized."""
+    try:
+        path = no_links(supplied)
+    except Fault as error:
+        raise Fault(error.code, str(error), ["source_path"], fatal=error.fatal) from None
+    if path != Path(state["source_path"]):
+        raise Fault("source_not_authorized",
+                    "This is not the source authorized at bootstrap. Use the path returned in "
+                    f"authorized-parameters: {state['source_path']}", ["source_path"], fatal=True)
+    return path
+
+
 def snapshot(store, state):
     source = authorize(state["source_path"], state["source_root"])
     limits = state["limits"]

@@ -12,9 +12,13 @@ The package asks for three values:
 |---|---|
 | Python interpreter | `C:\Python314\python.exe` |
 | Submission directory | `D:\Su Lab\sci-ai-verifier\examples\submissions` |
-| Verifier data directory | `D:\Su Lab\sci-ai-verifier` |
+| Verifier data directory | `D:\Su Lab\verifier-runs` |
 
-Python 3.14 is installed on this computer; the extension requires 3.11 or newer and has no pip dependencies. The submission directory limits what the extension can read. For your own submissions, change it to a dedicated folder containing sanitized skill folders. The data directory must be writable; records will be under its `.verifier` subfolder.
+Python 3.14 is installed on this computer; the extension requires 3.11 or newer and has no pip dependencies. Only 3.14 is installed here, so the 3.11 floor has not actually been exercised. The submission directory limits what the extension can read. For your own submissions, change it to a dedicated folder containing sanitized skill folders. The data directory must be writable; records will be under its `.verifier` subfolder.
+
+Keep the data directory **outside this checkout**. Acceptance runs saved under the repository sit beside the gitignored test workspaces and would be removed by ordinary repository cleanup. Create the folder before installing.
+
+None of the three directories may contain a symlink, junction, or other reparse point anywhere in its path, and the submission directory must already exist. If one of them is unusable the server does not start, and it writes a single line naming the setting and the fix rather than a Python traceback. Check the app's MCP log for that line before changing anything else.
 
 The package is unsigned local project code, not a listing reviewed by Anthropic. Organizational extension policies may require an administrator to allow it. App installation has not been exercised during the scripted build tests.
 

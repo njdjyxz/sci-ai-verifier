@@ -37,6 +37,15 @@
       "required": true
     }
   },
-  "tools_generated": true,
+  "tools": [
+    {"name": "start_verifier_run", "description": "Start a Stage 2 run on an authorized local skill path and return its pinned instructions."},
+    {"name": "get_verifier_context", "description": "Restore pinned instructions, state and already-read source ranges after compaction or a lost response."},
+    {"name": "resume_verifier_run", "description": "Verify a saved run's journal and objects after an interruption and restore its bootstrap."},
+    {"name": "cancel_verifier_run", "description": "Cancel an unfinished run and save an operational record. Creates no scientific verdict."},
+    {"name": "load_submitted_skill", "description": "Snapshot the authorized source and return its top-level content as untrusted data."},
+    {"name": "read_snapshot_file", "description": "Read one file, or one byte range, from the committed immutable snapshot."},
+    {"name": "commit_claim_manifest", "description": "Commit atomic claims quoted exactly from delivered snapshot ranges. No grading."}
+  ],
+  "tools_generated": false,
   "keywords": ["science", "claims", "verification", "stage2"]
 }

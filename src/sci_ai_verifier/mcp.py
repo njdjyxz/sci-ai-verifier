@@ -79,10 +79,10 @@ class Server:
                     or not isinstance(params.get("arguments", {}), dict)):
                 return rpc_error(request_id, -32602, "A tool name and object arguments are required.")
             response = self.runtime.call(params["name"], params.get("arguments", {}), request_id)
+            # One complete JSON text result. Every supported revision can read it, and the
+            # bootstrap is large enough that repeating it as structuredContent is not free.
             result = {"content": [{"type": "text", "text": canonical(response).decode("utf-8")}],
                       "isError": response["status"] != "ok"}
-            if self.protocol == "2025-06-18":
-                result["structuredContent"] = response
         else:
             return rpc_error(request_id, -32601, "Method not supported.")
         return {"jsonrpc": "2.0", "id": request_id, "result": result}

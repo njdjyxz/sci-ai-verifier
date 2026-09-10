@@ -1,12 +1,16 @@
 """Exercise the installable payload through real stdio, independent of app/model."""
 
+import ast
 import hashlib
 import json
+import os
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import tomllib
 import unittest
 import zipfile
 from pathlib import Path
@@ -69,9 +73,12 @@ class DesktopPackageTests(unittest.TestCase):
                 return response["result"]
             def call(name, arguments):
                 result = request("tools/call", {"name": name, "arguments": arguments})
+                # One complete JSON text result, not a duplicated structuredContent copy.
+                self.assertEqual([block["type"] for block in result["content"]], ["text"])
+                self.assertNotIn("structuredContent", result)
                 content = json.loads(result["content"][0]["text"])
-                self.assertEqual(content, result["structuredContent"])
                 self.assertEqual(content["status"], "ok", content)
+                self.assertIs(result["isError"], False)
                 return content["data"]
             try:
                 initialized = request("initialize", {
@@ -123,6 +130,99 @@ class DesktopPackageTests(unittest.TestCase):
     def read_lines(stream, destination):
         for line in iter(stream.readline, b""):
             destination.put(line)
+
+    def test_wire_protocol_matches_the_written_mcp_requirements(self):
+        """Drive the server from the specification's stated rules, not from mcp.py's shape.
+
+        Each assertion names the requirement it encodes, so a mistake shared between
+        `mcp.py` and a client written beside it does not pass unnoticed. An external
+        client is still better evidence; set VERIFIER_EXTERNAL_MCP_CLIENT to record one.
+        """
+        self.assertIsNone(os.environ.get("VERIFIER_EXTERNAL_MCP_CLIENT"),
+                          "An external client command is configured; record its result in "
+                          "desktop/APP-ACCEPTANCE.md rather than relying on this stand-in.")
+        sys.path.insert(0, str(ROOT / "src"))
+        from sci_ai_verifier.agent import Runtime
+        from sci_ai_verifier.mcp import Server
+        with tempfile.TemporaryDirectory() as workspace:
+            server = Server(Runtime(Path(workspace), ROOT / "examples/submissions",
+                                    ROOT / "skills/scientific-verifier"))
+            # Lifecycle: the server replies with the requested version when it supports it.
+            opened = server.handle({"jsonrpc": "2.0", "id": "s1", "method": "initialize",
+                                    "params": {"protocolVersion": "2024-11-05", "capabilities": {}}})
+            self.assertEqual(opened["result"]["protocolVersion"], "2024-11-05")
+            # JSON-RPC: the response echoes the request id, including a string id.
+            self.assertEqual(opened["id"], "s1")
+            self.assertNotIn("error", opened)
+            # Lifecycle: an unsupported version is answered with one the server does support.
+            fresh = Server(Runtime(Path(workspace), ROOT / "examples/submissions",
+                                   ROOT / "skills/scientific-verifier"))
+            offered = fresh.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                    "params": {"protocolVersion": "1900-01-01", "capabilities": {}}})
+            self.assertIn(offered["result"]["protocolVersion"], ("2025-06-18", "2025-03-26", "2024-11-05"))
+            # JSON-RPC: a notification receives no response at all.
+            self.assertIsNone(server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
+            # JSON-RPC: an unknown method is -32601.
+            self.assertEqual(server.handle({"jsonrpc": "2.0", "id": 2,
+                                            "method": "nonexistent/method"})["error"]["code"], -32601)
+            # Tools: every declared tool has a name, a description and an object inputSchema.
+            for tool in server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]["tools"]:
+                self.assertTrue(tool["name"] and tool["description"])
+                self.assertEqual(tool["inputSchema"]["type"], "object")
+            # Tools: a tool-side failure is a result with isError true, not a JSON-RPC error.
+            failed = server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+                "name": "resume_verifier_run", "arguments": {"run_id": "not-a-run"}}})
+            self.assertNotIn("error", failed)
+            self.assertIs(failed["result"]["isError"], True)
+            self.assertEqual(json.loads(failed["result"]["content"][0]["text"])["status"], "retryable")
+            # Tools: an unknown tool name is also a tool result, never a protocol error.
+            unknown = server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                                     "params": {"name": "no_such_tool", "arguments": {}}})
+            self.assertIs(unknown["result"]["isError"], True)
+
+    def test_runtime_syntax_is_valid_on_the_declared_minimum_python(self):
+        minimum = (3, 11)
+        self.assertEqual(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+                         ["project"]["requires-python"], ">=%d.%d" % minimum)
+        for path in sorted((ROOT / "src/sci_ai_verifier").glob("*.py")) + [ROOT / "desktop/server.py"]:
+            with self.subTest(module=path.name):
+                # Rejects syntax newer than 3.11. It cannot see newer stdlib APIs, so the
+                # skipped interpreter run below is still the evidence that matters.
+                ast.parse(path.read_text(encoding="utf-8"), filename=str(path),
+                          feature_version=minimum)
+
+    def test_stdio_flow_under_the_declared_minimum_interpreter(self):
+        interpreter = None
+        for candidate in (os.environ.get("VERIFIER_PY311"), "python3.11"):
+            if candidate and shutil.which(candidate):
+                interpreter = shutil.which(candidate)
+        if interpreter is None and os.name == "nt":
+            found = subprocess.run(["py", "-0p"], capture_output=True, text=True)
+            for line in found.stdout.splitlines():
+                if line.strip().startswith(("-V:3.11", "-V:3.12", "-V:3.13")):
+                    interpreter = line.split(maxsplit=1)[-1].strip(" *")
+        if interpreter is None:
+            self.skipTest("No interpreter older than the development one is installed; "
+                          "the 3.11 floor in pyproject.toml and manifest.json is unverified.")
+        result = subprocess.run(
+            [interpreter, "-I", "-B", str(ROOT / "desktop/server.py"), "request",
+             "--workspace", str(Path(tempfile.mkdtemp())),
+             "--source-root", str(ROOT / "examples/submissions"),
+             "--instructions", str(ROOT / "skills/scientific-verifier")],
+            input=json.dumps({"name": "start_verifier_run", "arguments": {
+                "source_path": str(ROOT / "examples/submissions/no-claims")}}).encode(),
+            capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+        self.assertEqual(json.loads(result.stdout)["status"], "ok")
+
+    def test_manifest_declares_exactly_the_published_tools(self):
+        sys.path.insert(0, str(ROOT / "src"))
+        from sci_ai_verifier.tools import DEFINITIONS
+        manifest = json.loads((ROOT / "desktop/manifest.json").read_bytes())
+        self.assertEqual([tool["name"] for tool in manifest["tools"]],
+                         [tool["name"] for tool in DEFINITIONS])
+        # The tool array is fixed and reviewable; nothing appears at runtime.
+        self.assertIs(manifest["tools_generated"], False)
 
     def test_archives_are_reproducible_and_skill_has_correct_root(self):
         before = json.loads((ROOT / "dist/checksums.json").read_bytes())

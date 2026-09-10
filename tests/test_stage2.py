@@ -14,14 +14,30 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from sci_ai_verifier.agent import Runtime
-from sci_ai_verifier.common import canonical
+import sci_ai_verifier.agent as agent
+import sci_ai_verifier.storage as storage
+from sci_ai_verifier.agent import ConfigurationError, Runtime
+from sci_ai_verifier.common import Fault, canonical, digest
 from sci_ai_verifier.mcp import Server, serve
 from sci_ai_verifier.storage import atomic_write
-from sci_ai_verifier.tools import DEFINITIONS
+from sci_ai_verifier.tools import DEFAULT_LIMITS, DEFINITIONS
 
 INSTRUCTIONS = ROOT / "skills/scientific-verifier"
 QUOTE = "The skill calculates exact monoisotopic mass."
+# Take the OS lock from a separate process, without reusing the runtime's own locking code.
+HOLD_LOCK = """
+import os, sys
+stream = open(sys.argv[1], "a+b")
+stream.seek(0)
+if os.name == "nt":
+    import msvcrt
+    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("held", flush=True)
+sys.stdin.read()
+"""
 
 
 class Stage2Tests(unittest.TestCase):
@@ -371,6 +387,149 @@ class Stage2Tests(unittest.TestCase):
         serve(self.runtime, source, destination)
         self.assertEqual([json.loads(l)["error"]["code"] for l in destination.getvalue().splitlines()],
                          [-32700, -32700])
+
+    def test_equivalent_source_spellings_load_and_others_do_not(self):
+        exact = str(self.skill)
+        for label, supplied in (("posix separators", exact.replace("\\", "/")),
+                                ("trailing separator", exact + os.sep),
+                                ("other drive case", exact[0].swapcase() + exact[1:])):
+            with self.subTest(label=label):
+                created = self.start()
+                result = self.call(created, "load_submitted_skill", source_path=supplied)
+                self.assertEqual(result["status"], "ok", result)
+                self.assertEqual(result["data"]["run_state"], "source_ready")
+        other = self.sources / "elsewhere"
+        (other / "references").mkdir(parents=True)
+        (other / "SKILL.md").write_text("# Other\n", encoding="utf-8")
+        created = self.start()
+        result = self.call(created, "load_submitted_skill", source_path=str(other))
+        self.assertEqual(result["error"]["code"], "source_not_authorized")
+        self.assertIsNotNone(result["error"]["operational_outcome_id"])
+
+    def test_malformed_paths_are_correctable_not_persistence_failures(self):
+        quoted = f'"{self.skill}"'
+        host = self.runtime.call("start_verifier_run", {"source_path": quoted})
+        self.assertEqual(host["status"], "retryable")
+        self.assertEqual(host["error"]["code"], "invalid_path")
+        self.assertEqual(host["error"]["repair_fields"], ["source_path"])
+        self.assertFalse((self.runtime.store.root / "runs").exists())
+        created = self.start()
+        result = self.call(created, "load_submitted_skill", source_path=quoted)
+        self.assertEqual(result["status"], "retryable")
+        self.assertEqual(result["error"]["code"], "invalid_path")
+        self.assertEqual(result["error"]["run_state"], "created")
+        self.assertEqual(result["error"]["retries_remaining"], 7)
+
+    def test_held_lock_is_retryable_and_leaves_the_run_unchanged(self):
+        created = self.start()
+        lock_path = self.runtime.store.run_dir(created["run_id"]) / ".lock"
+        holder = subprocess.Popen(
+            [sys.executable, "-c", HOLD_LOCK, str(lock_path)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), b"held")
+            result = self.runtime.call("get_verifier_context", {"run_id": created["run_id"]})
+            self.assertEqual(result["status"], "retryable")
+            self.assertEqual(result["error"]["code"], "run_busy")
+        finally:
+            holder.stdin.close()
+            holder.wait(timeout=10)
+            holder.stdout.close()
+        recovered = self.runtime.call("get_verifier_context", {"run_id": created["run_id"]})["data"]
+        self.assertEqual((recovered["run_state"], recovered["revision"]), ("created", 1))
+
+    def test_incompatible_saved_run_is_rejected_and_never_rewritten(self):
+        for label, mutate in (
+                ("unsupported schema", lambda s: s.__setitem__("schema_version", 99)),
+                ("missing field", lambda s: s.pop("read_receipts")),
+                ("missing limit", lambda s: s["limits"].pop("max_claims"))):
+            with self.subTest(label=label):
+                created = self.start()
+                event = self.runtime.store.run_dir(created["run_id"]) / "events/00000001.json"
+                record = json.loads(event.read_bytes())
+                record.pop("digest")
+                mutate(record["state_after"])
+                record["digest"] = digest(canonical(record))
+                atomic_write(event, canonical(record))
+                saved = event.read_bytes()
+                result = self.runtime.call("resume_verifier_run", {"run_id": created["run_id"]})
+                self.assertEqual(result["error"]["code"], "operational_outcome_persistence_failed")
+                self.assertEqual(result["error"]["details"]["reason_code"], "incompatible_run_record")
+                self.assertIsNone(result["error"]["run_state"])
+                self.assertEqual(event.read_bytes(), saved)
+                self.assertEqual(len(list(event.parent.glob("*.json"))), 1)
+
+    def test_saved_state_shape_matches_the_compatibility_contract(self):
+        created = self.start()
+        state, _ = self.runtime.store.read(created["run_id"])
+        self.assertEqual(set(state), set(storage.REQUIRED_STATE_FIELDS))
+        self.assertEqual(set(state["limits"]), set(storage.REQUIRED_LIMIT_FIELDS))
+        self.assertEqual(set(DEFAULT_LIMITS), set(storage.REQUIRED_LIMIT_FIELDS))
+        self.assertIn(state["schema_version"], storage.SUPPORTED_SCHEMA_VERSIONS)
+
+    def test_unusable_configuration_names_the_setting_and_the_remedy(self):
+        cases = {
+            "Submission directory": (self.base / "data", self.base / "absent", INSTRUCTIONS),
+            "Instruction directory": (self.base / "data", self.sources, self.sources),
+        }
+        for setting, arguments in cases.items():
+            with self.subTest(setting=setting):
+                with self.assertRaises(ConfigurationError) as caught:
+                    Runtime(*arguments)
+                self.assertTrue(str(caught.exception).startswith(setting), caught.exception)
+        process = subprocess.run(
+            [sys.executable, str(ROOT / "desktop/server.py"), "serve",
+             "--workspace", str(self.base / "data"), "--source-root", str(self.base / "absent"),
+             "--instructions", str(INSTRUCTIONS)],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        self.assertEqual(process.returncode, 2)
+        self.assertNotIn("Traceback", process.stderr)
+        self.assertEqual(len(process.stderr.strip().splitlines()), 1)
+        self.assertIn("Submission directory", process.stderr)
+
+    def test_pinned_context_keeps_stage2_policy_and_drops_later_stages(self):
+        blocks = dict(self.runtime._instruction_blocks())
+        tools, artifacts = blocks["references/tool-contracts.md"], blocks["references/artifact-contracts.md"]
+        self.assertIn("## Excluded capabilities", tools)
+        self.assertIn("## Operational outcome", artifacts)
+        self.assertIn("## Common result and transition protocol", tools)
+        for absent, text in (("## Routing tools", tools), ("## Execution and result tools", tools),
+                             ("## Report card", artifacts), ("## Evaluation plan", artifacts),
+                             ("## 8. Execute and commit evaluated results",
+                              blocks["references/workflow.md"])):
+            self.assertNotIn(absent, text)
+        self.assertIn("## Stage 2 profile", blocks["references/workflow.md"])
+        with patch.object(agent, "PINNED_CONTEXT", (("SKILL.md", ("No Such Section",)),)):
+            with self.assertRaises(Fault) as caught:
+                dict(self.runtime._instruction_blocks())
+        self.assertEqual(caught.exception.code, "missing_instruction_section")
+
+    def test_bootstrap_result_is_one_json_block_within_its_budget(self):
+        server = Server(self.runtime)
+        server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                       "params": {"protocolVersion": "2025-06-18"}})
+        server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        response = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+            "name": "start_verifier_run", "arguments": {"source_path": str(self.skill)}}})
+        result = response["result"]
+        self.assertNotIn("structuredContent", result)
+        self.assertEqual(len(result["content"]), 1)
+        # A contract edit that balloons the pinned bootstrap should fail here, not in the app.
+        self.assertLess(len(canonical(response)), 120_000, len(canonical(response)))
+
+    def test_non_ascii_and_spaced_paths_complete_a_run(self):
+        skill = self.sources / "提交的技能 Übung"
+        (skill / "references").mkdir(parents=True)
+        (skill / "SKILL.md").write_text("# 技能\nSee references/claim.md.\n", encoding="utf-8")
+        (skill / "references/claim.md").write_text(QUOTE + "\n", encoding="utf-8")
+        workspace = self.base / "数据 directory"
+        self.runtime = Runtime(workspace, self.sources, INSTRUCTIONS)
+        loaded = self.load(skill)
+        parent = self.parent_args(loaded)
+        read = self.call(loaded, "read_snapshot_file", **parent, path="references/claim.md")
+        result = self.call(read["data"], "commit_claim_manifest", **parent, claims=[self.candidate()])
+        self.assertEqual(result["data"]["run_state"], "stage2_complete")
+        self.assertTrue(Path(result["data"]["manifest_path"]).is_file())
 
 
 if __name__ == "__main__":
