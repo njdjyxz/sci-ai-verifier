@@ -1,51 +1,186 @@
 {
   "manifest_version": "0.3",
   "name": "scientific-verifier",
-  "display_name": "Scientific Verifier - Stage 2",
-  "version": "0.2.0",
-  "description": "Extract traceable scientific claims from a local skill with bounded Python tools. Stage 2 does not evaluate or grade claims.",
-  "author": {"name": "sci-ai-verifier contributors"},
-  "repository": {"type": "git", "url": "https://github.com/njdjyxz/sci-ai-verifier"},
+  "display_name": "Scientific Verifier (historical profiles)",
+  "version": "0.6.0",
+  "description": "Historical Desktop verification and checkpoint profiles. The personal local version uses the Claude Code verify command.",
+  "author": {
+    "name": "sci-ai-verifier contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/njdjyxz/sci-ai-verifier"
+  },
   "server": {
     "type": "python",
     "entry_point": "server.py",
     "mcp_config": {
       "command": "${user_config.python_path}",
       "args": [
-        "-I", "-B", "${__dirname}/server.py", "serve",
-        "--workspace", "${user_config.data_directory}",
-        "--source-root", "${user_config.submission_directory}",
-        "--instructions", "${__dirname}/skills/scientific-verifier"
+        "-I",
+        "-B",
+        "${__dirname}/server.py",
+        "serve",
+        "--workspace",
+        "${user_config.data_directory}",
+        "--source-root",
+        "${user_config.submission_directory}",
+        "--instructions",
+        "${__dirname}/skills/scientific-verifier"
       ]
     }
   },
-  "compatibility": {"platforms": ["win32"], "runtimes": {"python": ">=3.11"}},
+  "compatibility": {
+    "platforms": [
+      "win32"
+    ],
+    "runtimes": {
+      "python": ">=3.11"
+    }
+  },
   "user_config": {
     "python_path": {
-      "type": "file", "title": "Python interpreter",
+      "type": "file",
+      "title": "Python interpreter",
       "description": "Select an installed Python 3.11 or newer python.exe. No pip dependencies are needed.",
       "required": true
     },
     "submission_directory": {
-      "type": "directory", "title": "Submission directory",
-      "description": "Only sanitized submitted skills inside this directory may be read.",
+      "type": "directory",
+      "title": "Submission directory",
+      "description": "Default submission folder for scientific profiles. The general demo also accepts a specifically selected local path or pasted/attached skill text.",
       "required": true
     },
     "data_directory": {
-      "type": "directory", "title": "Verifier data directory",
+      "type": "directory",
+      "title": "Verifier data directory",
       "description": "Writable location for .verifier snapshots, manifests, and audit records.",
       "required": true
     }
   },
   "tools": [
-    {"name": "start_verifier_run", "description": "Start a Stage 2 run on an authorized local skill path and return its pinned instructions."},
-    {"name": "get_verifier_context", "description": "Restore pinned instructions, state and already-read source ranges after compaction or a lost response."},
-    {"name": "resume_verifier_run", "description": "Verify a saved run's journal and objects after an interruption and restore its bootstrap."},
-    {"name": "cancel_verifier_run", "description": "Cancel an unfinished run and save an operational record. Creates no scientific verdict."},
-    {"name": "load_submitted_skill", "description": "Snapshot the authorized source and return its top-level content as untrusted data."},
-    {"name": "read_snapshot_file", "description": "Read one file, or one byte range, from the committed immutable snapshot."},
-    {"name": "commit_claim_manifest", "description": "Commit atomic claims quoted exactly from delivered snapshot ranges. No grading."}
+    {
+      "name": "start_inline_demo_run",
+      "description": "Start a general safe-skill demo from text pasted or attached in Chat. Supply the skill text as data. No local file, catalog, API key or chemical scope is needed. Same-chat demo only."
+    },
+    {
+      "name": "start_verifier_run",
+      "description": "Begin verify-this-skill for the local path explicitly submitted by the user. Default demo supports any safe skill without a catalog or API key. Returns pinned instructions, profile, run ID and token. Use start_inline_demo_run for attached/pasted text."
+    },
+    {
+      "name": "get_verifier_context",
+      "description": "Restore pinned verifier instructions, current state/token and already-read untrusted source ranges after compaction or a lost response. It does not advance the workflow or rotate the token, but it is not read-only: it repairs the readable projections, and if the resumption window has already expired it records that expiry and ends the run."
+    },
+    {
+      "name": "resume_verifier_run",
+      "description": "Resume a saved verifier run after interruption; verify its journal and objects and restore bootstrap. No live-source reread."
+    },
+    {
+      "name": "cancel_verifier_run",
+      "description": "Explicitly cancel an unfinished verifier run and save an operational outcome. Does not create a scientific verdict."
+    },
+    {
+      "name": "load_submitted_skill",
+      "description": "In created state only: snapshot the previously authorized source and return exact top-level UTF-8 content as untrusted data. Use the current state token."
+    },
+    {
+      "name": "read_snapshot_file",
+      "description": "In source_ready only: read one included immutable snapshot path, optionally a half-open UTF-8 byte range. Use the current state token and snapshot identity."
+    },
+    {
+      "name": "commit_claim_manifest",
+      "description": "In source_ready only: commit atomic claims quoted from delivered snapshot ranges. Use Not specified for absent scope/behavior; add no background definitions. Empty list is valid. Follow returned profile/state; no grading."
+    },
+    {
+      "name": "list_claim_types",
+      "description": "In claims_ready only: return the complete pinned type index as untrusted data for semantic comparison. Use the latest run token."
+    },
+    {
+      "name": "commit_claim_type_assignments",
+      "description": "In claims_ready only: atomically assign exactly one returned type or complete provisional proposal to every accepted claim. Requires the delivered index digest."
+    },
+    {
+      "name": "find_registered_evaluators",
+      "description": "In active only: resolve a capability for one claim still in capability_selection. Scope and target A must match committed values. Returns exact pins or a claim-local operational outcome; never executes or grades."
+    },
+    {
+      "name": "commit_evaluation_plan",
+      "description": "For a claim in planning: select one returned match and fix its scope, trials and immutable resource/method policy. No subject calls."
+    },
+    {
+      "name": "find_resources",
+      "description": "For a claim in resource_resolution: identify installed resources at the exact planned versions. No network search."
+    },
+    {
+      "name": "materialize_resources",
+      "description": "Lock every required resource to this exact plan revision, using its returned search ID."
+    },
+    {
+      "name": "build_evaluation_bundle",
+      "description": "Build bounded cases from the locked installed resources. No caller-provided code or expected answers."
+    },
+    {
+      "name": "validate_evaluation_bundle",
+      "description": "Validate this plan's bundle and its independent input/expected-answer separation."
+    },
+    {
+      "name": "register_evaluator",
+      "description": "Persist a validated bundle/configuration as run-local provisional metadata; never edit reviewed catalogs."
+    },
+    {
+      "name": "commit_plan_audit",
+      "description": "Validate the exact plan, resource lock, bundle, method and subject settings. Scope/fairness findings are supported, unsupported or uncertain; proposed status is advisory."
+    },
+    {
+      "name": "execute_evaluation_plan",
+      "description": "Obtain separately recorded observations using the operator-configured subject adapter, then score each trial deterministically. Never include reference answers in subject input."
+    },
+    {
+      "name": "commit_claim_result",
+      "description": "Copy the exact authoritative execution verdict and grade; never invent a verdict from tool success."
+    },
+    {
+      "name": "write_report_card",
+      "description": "In reporting only: account for every accepted claim and save immutable JSON and readable Markdown reports. No overall scientific grade."
+    },
+    {
+      "name": "commit_demo_plan",
+      "description": "In demo_planning: fix useful example inputs and checks covering every accepted skill behavior before producing outputs. No scientific approval is implied."
+    },
+    {
+      "name": "record_demo_observation",
+      "description": "In demo_execution: record the actual same-chat example output, or not_tested for unavailable capabilities. Never invent external execution. Deterministic check failures override proposed success."
+    },
+    {
+      "name": "list_local_candidates",
+      "description": "Internal local verification operation: list local candidates. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "fetch_local_reference",
+      "description": "Internal local verification operation: fetch local reference. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "qualify_local_candidate",
+      "description": "Internal local verification operation: qualify local candidate. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "select_local_candidate",
+      "description": "Internal local verification operation: select local candidate. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "execute_local_claim",
+      "description": "Internal local verification operation: execute local claim. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "record_local_limitation",
+      "description": "Internal local verification operation: record local limitation. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    }
   ],
   "tools_generated": false,
-  "keywords": ["science", "claims", "verification", "stage2"]
+  "keywords": [
+    "science",
+    "claims",
+    "verification",
+    "stage3"
+  ]
 }

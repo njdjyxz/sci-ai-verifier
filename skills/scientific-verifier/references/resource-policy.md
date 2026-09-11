@@ -172,3 +172,7 @@ Finalization:
 4. Records every retained category, discarded category, cleanup failure, and applicable retention rule in the run's finalization summary.
 
 A cleanup failure does not change a scientific result. It produces an operational warning or run-scoped operational outcome, and the report must disclose any material left behind.
+
+## Local candidate storage
+
+The personal/local profile stores fetched private reference evidence and mechanically qualified candidates under `.verifier/candidates/`, separately from `.verifier/subject-runs/` receipts. Temporary subject workspaces contain only pinned skill text, frozen inputs and harmless generated configuration, with authentication configuration outside the readable workspace. Publication staging is reserved for a later opt-in workflow. Unknown or restrictive licenses do not authorize redistribution. Local qualification does not modify reviewed registry entries or grant scientific grades.

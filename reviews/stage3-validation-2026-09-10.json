@@ -1,0 +1,105 @@
+{
+  "validated_at_utc": "2026-09-11T04:32:40.042470+00:00",
+  "implementation_version": "0.3.0",
+  "automated_tests": [
+    {
+      "python": "3.14.0",
+      "exit_code": 0,
+      "tests": 77,
+      "output": "----------------------------------------------------------------------\nRan 77 tests in 19.542s\n\nOK (skipped=2)"
+    },
+    {
+      "python": "3.12.14",
+      "exit_code": 0,
+      "tests": 77,
+      "output": "----------------------------------------------------------------------\nRan 77 tests in 22.956s\n\nOK (skipped=2)"
+    }
+  ],
+  "skips": [
+    "No actual Python 3.11 interpreter available",
+    "Physical symlink test requires Windows privileges; junction test passes"
+  ],
+  "coverage": [
+    "Both Stage 2 and Stage 3 extracted-package stdio flows",
+    "Reproducible desktop/skill archives",
+    "Atomic routes, exact scope and type, strongest-grade fallback, D without runner, continued independent claims",
+    "Pinned release updates, corrupt/missing/incompatible caches, exact offline receipt, bounded redirect-denying transport",
+    "Candidate chemical formula parser and per-trial numeric scorer"
+  ],
+  "mcpb_validator": {
+    "package": "@anthropic-ai/mcpb",
+    "version": "2.1.2",
+    "manifest": "desktop/manifest.json",
+    "result": "passed"
+  },
+  "previous_app_records": {
+    "method": "Read final event state and validate compatibility only; no writes or runtime controls on original app data",
+    "records": [
+      {
+        "run_id": "125ceb03-30a0-446a-841c-84138ed0718b",
+        "writer": "0.2.0",
+        "profile": "stage2",
+        "state": "stage2_complete",
+        "current_reader_schema_validation": "passed",
+        "original_event_sha256": "4bc19fca3dbbff136cca6f6db79e74d0bf0088617955c9b4f0b7c30b247a84a2"
+      },
+      {
+        "run_id": "264f715c-3a79-4c9a-a7b3-3a9dc8a6ee6b",
+        "writer": "0.2.0",
+        "profile": "stage2",
+        "state": "stage2_complete",
+        "current_reader_schema_validation": "passed",
+        "original_event_sha256": "6992aa134416bcaddf2c2b84bb600c907c971475b494d9d98b0e52584470c54c"
+      },
+      {
+        "run_id": "3c5dc584-2c29-4618-97f1-53f92d8b5aae",
+        "writer": "0.2.0",
+        "profile": "stage2",
+        "state": "stage2_complete",
+        "current_reader_schema_validation": "passed",
+        "original_event_sha256": "9148e5956e9308d3a360152a983e7e6e7634c35171a4c12c557a9f3dfa028343"
+      },
+      {
+        "run_id": "3e3011c6-e951-4fd0-b427-d3cbdef1903b",
+        "writer": "0.2.0",
+        "profile": "stage2",
+        "state": "stage2_complete",
+        "current_reader_schema_validation": "passed",
+        "original_event_sha256": "c1d7bbf7c9604c6d1394cbba3c81b71b6625db3a0a9a56ae9ff1291dc3383df0"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "file": "scientific-verifier-0.3.0.mcpb",
+      "sha256": "2eeec5da57b84f593f0431aac86b6ac388943a3ec9ced723ecb52a1584e7883f",
+      "bytes": 120469
+    },
+    {
+      "file": "scientific-verifier-skill-0.3.0.zip",
+      "sha256": "280631a3bff76cfcdf989ce693974add31f1b757f9eeccfdc27bbd8fa01b5a37",
+      "bytes": 73991
+    }
+  ],
+  "limits": [
+    "No live 0.3.0 desktop app run",
+    "No remote success against a newly published catalog; transport success is fixture-tested",
+    "Reviewed registries remain empty; candidates are provisional",
+    "No submitted scientific skill was executed or graded",
+    "Candidate chemical mass reference/scoring policy still needs independent scientific review",
+    "Existing app other-tool activity and exact model identity remain unverified"
+  ],
+  "publication": "Local uncommitted changes; no push, catalog publication or installed app update",
+  "final_focused_check": {
+    "reason": "Final catalog identity bound and numeric/structure validation repairs",
+    "python_3_14": "Stage 3 suite passed",
+    "python_3_12": "----------------------------------------------------------------------\nRan 25 tests in 8.923s\n\nOK",
+    "scope": "Only routing/catalog code changed after the full suite; rechecked its complete suite on both interpreters"
+  },
+  "documentation_checks": {
+    "relative_links": "passed",
+    "one_Codex_entry_for_2026_09_10": "passed",
+    "git_diff_check": "passed",
+    "candidate_code_absent_from_installable_bundle": "passed"
+  }
+}

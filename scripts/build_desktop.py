@@ -24,21 +24,22 @@ def archive(path, files):
 def main():
     OUTPUT.mkdir(exist_ok=True)
     files = {}
-    for directory in ("src/sci_ai_verifier", "skills/scientific-verifier"):
+    for directory in ("src/sci_ai_verifier", "skills/scientific-verifier", "registry"):
         for path in sorted((ROOT / directory).rglob("*")):
-            if path.suffix in {".py", ".md"} and "__pycache__" not in path.parts:
+            if path.suffix in {".py", ".md", ".json"} and "__pycache__" not in path.parts:
                 files[path.relative_to(ROOT).as_posix()] = path.read_bytes().replace(b"\r\n", b"\n")
     files["server.py"] = (ROOT / "desktop/server.py").read_bytes().replace(b"\r\n", b"\n")
-    for name in ("INSTALL.md", "APP-ACCEPTANCE.md"):
+    for name in ("INSTALL.md", "STAGE3-INSTALL.md", "VERIFICATION-INSTALL.md", "DEMO-INSTALL.md", "APP-ACCEPTANCE.md"):
         data = (ROOT / "desktop" / name).read_bytes().replace(b"\r\n", b"\n")
         files[name] = data
         (OUTPUT / name).write_bytes(data)
     manifest = json.loads((ROOT / "desktop/manifest.json").read_text(encoding="utf-8"))
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
-    results = [archive(OUTPUT / "scientific-verifier-0.2.0.mcpb", files)]
+    version = manifest["version"]
+    results = [archive(OUTPUT / f"scientific-verifier-{version}.mcpb", files)]
     skill_files = {key.removeprefix("skills/"): data for key, data in files.items()
                    if key.startswith("skills/")}
-    results.append(archive(OUTPUT / "scientific-verifier-skill-0.2.0.zip", skill_files))
+    results.append(archive(OUTPUT / f"scientific-verifier-skill-{version}.zip", skill_files))
     config = {"mcpServers": {"scientific-verifier": {
         "command": sys.executable,
         "args": ["-I", "-B", str(ROOT / "desktop/server.py"), "serve",

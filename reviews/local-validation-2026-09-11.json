@@ -1,0 +1,76 @@
+{
+  "validated_at_utc": "2026-09-11T23:18:01.769006+00:00",
+  "implementation_version": "0.6.0",
+  "python_version": "3.14.0",
+  "tests": {
+    "command": "python -m unittest discover -s tests -q",
+    "total": 151,
+    "passed": 149,
+    "skipped": 2,
+    "failed": 0,
+    "duration_seconds": 49.3
+  },
+  "skips": [
+    "Actual Python 3.11 interpreter unavailable; syntax checked with feature_version=(3,11)",
+    "Physical symlink creation privilege unavailable; junction test passes"
+  ],
+  "method_sha256": "4c488252bc87f2e896fc60ab430e4ee33c139dcd8e0a40d1fa58bb4b0e6013d4",
+  "fixture": {
+    "run_id": "d03c7bd3-2d35-4865-a40c-6f4c268fefce",
+    "workspace": ".verifier/local-package-check/.verifier/local-fixtures/e5245875-fac6-4ec1-a722-368897a1ff3e",
+    "synthetic": true,
+    "events": 9,
+    "objects": 24,
+    "comparisons": 3,
+    "comparison_status": "pass",
+    "scientific_grade": null,
+    "report_sha256": "b415d97cd269a5295a34b9ce88c515ff32f252cf18e7b132b12cd980aebbed68",
+    "journal_object_integrity": "passed"
+  },
+  "public_interface": {
+    "entry": "serve-local",
+    "tools": [
+      "verify_skill"
+    ],
+    "real_internal_stdio_subprocess_acceptance": "passed",
+    "completed_report_recovery_after_lost_planner_response": "passed"
+  },
+  "process_boundary": {
+    "subscription_and_api_environment_fixtures": "passed",
+    "explicit_skill_invocation_receipts": "passed",
+    "real_process_deadline_and_output_ceiling": "passed",
+    "windows_descendant_cleanup": "passed",
+    "source_secret_and_hidden_answer_exclusion": "passed",
+    "live_cli_model_acceptance": "not_run"
+  },
+  "package": {
+    "builder": "python scripts/build_local.py",
+    "archive": "dist/scientific-verifier-local-0.6.0.zip",
+    "checksums": "dist/local-checksums.json",
+    "source_payload_and_extracted_fixture": "passed",
+    "windows_long_path_receipt_fix": "verified by extracted package run",
+    "generated_archives_committed": false
+  },
+  "additional_checks": {
+    "python_311_syntax": "passed",
+    "active_markdown_links": "passed",
+    "git_diff_check": "passed",
+    "legacy_reviewed_registries_and_prior_app_evidence": "unchanged from integrated demo branch"
+  },
+  "not_claimed": [
+    "Live Claude Code invocation",
+    "Installed or authenticated Claude Code",
+    "Independent scientific qualification or grades for local candidates",
+    "Executable submitted skill support",
+    "GitHub evaluator contribution or release automation",
+    "OS sandbox isolation"
+  ],
+  "git_at_validation": {
+    "checkout": "main",
+    "merge_source": "d4f21195fd8e9f00ffd804a1adabed10c6b36934",
+    "previous_main": "72abc245a44f80bb8a931a0a3168ba1b01098076",
+    "integration_commit": "pending",
+    "remote_publication": "pending",
+    "demo_branch_retirement": "pending"
+  }
+}

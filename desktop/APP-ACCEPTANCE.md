@@ -1,5 +1,7 @@
 # Claude Desktop acceptance record
 
+Current development build: **0.5.0 general safe-skill demo**, with a [new installation guide](DEMO-INSTALL.md). Its automated package checks are recorded in [demo validation](../reviews/demo-validation-2026-09-11.json). Live app acceptance of 0.5.0 remains pending; the evidence below describes the earlier 0.2.0 installation only.
+
 Status: **The three fixture runs and same-run resume pass the saved-record checks. Full app-behavior sign-off remains conditional.** The user performed the tests on September 10, 2026; Codex inspected the committed records without calling runtime controls or modifying the run data. Cancellation and personal submissions were not tested. One source-grounding observation and one conversation-only check remain below.
 
 ## Test environment and provenance

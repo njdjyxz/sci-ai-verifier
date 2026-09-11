@@ -1,0 +1,108 @@
+{
+  "validated_at_utc": "2026-09-11T09:58:49.473016+00:00",
+  "implementation_version": "0.5.0",
+  "branch": "codex/general-skill-demo",
+  "status": "local_and_packaged_tests_passed_live_app_pending",
+  "automated_tests": [
+    {
+      "python": "3.14.0",
+      "tests": 124,
+      "passed": 122,
+      "skipped": 2,
+      "exit_code": 0,
+      "seconds": 55.175
+    },
+    {
+      "python": "3.12.14",
+      "tests": 124,
+      "passed": 122,
+      "skipped": 2,
+      "exit_code": 0,
+      "seconds": 56.156
+    }
+  ],
+  "final_package_tests": {
+    "tests": 9,
+    "passed": 8,
+    "skipped": 1,
+    "exit_code": 0
+  },
+  "skips": [
+    "Actual Python 3.11 interpreter unavailable",
+    "Physical symlink creation requires privileges; Windows junction test passes"
+  ],
+  "mcpb_manifest_validation": {
+    "tool": "@anthropic-ai/mcpb",
+    "version": "2.1.2",
+    "result": "Manifest schema validation passes!"
+  },
+  "packages": [
+    {
+      "file": "scientific-verifier-0.5.0.mcpb",
+      "sha256": "51638c340c26c28bf89c6517ac04643dfec06c2507f5c34cad508c421c10899a",
+      "bytes": 160218
+    },
+    {
+      "file": "scientific-verifier-skill-0.5.0.zip",
+      "sha256": "bfd929644171e836badaefd398d28e4c419bec575bdacd2e7c67d0c67fb4c02d",
+      "bytes": 85447
+    }
+  ],
+  "coverage": [
+    "Default extracted-package general nonchemical inline skill through demo plan, observation and report",
+    "General local path outside the default submission folder; inline origin disclosure",
+    "Immutable plans and observations, recovery, cancellation, complete/empty/not-tested reports",
+    "Deterministic text/JSON failures override proposed same-chat success",
+    "Chemical registered and generic bundle paths, per-trial scoring, grades separate from verdicts",
+    "Stale plans/locks/audits, pinned method/resources, changed source, output identity and run budgets",
+    "Interrupted subject calls retained without automatic replay; no oracle in subject input",
+    "Preserved Stage 2/Stage 3 extracted-package profiles, catalog fixtures and compatibility"
+  ],
+  "original_app_records_read_only": [
+    {
+      "run_id": "125ceb03-30a0-446a-841c-84138ed0718b",
+      "writer": "0.2.0",
+      "profile": "stage2",
+      "compatibility": "passed",
+      "event_sha256": "4bc19fca3dbbff136cca6f6db79e74d0bf0088617955c9b4f0b7c30b247a84a2",
+      "original_event_unchanged": true
+    },
+    {
+      "run_id": "264f715c-3a79-4c9a-a7b3-3a9dc8a6ee6b",
+      "writer": "0.2.0",
+      "profile": "stage2",
+      "compatibility": "passed",
+      "event_sha256": "6992aa134416bcaddf2c2b84bb600c907c971475b494d9d98b0e52584470c54c",
+      "original_event_unchanged": true
+    },
+    {
+      "run_id": "3c5dc584-2c29-4618-97f1-53f92d8b5aae",
+      "writer": "0.2.0",
+      "profile": "stage2",
+      "compatibility": "passed",
+      "event_sha256": "9148e5956e9308d3a360152a983e7e6e7634c35171a4c12c557a9f3dfa028343",
+      "original_event_unchanged": true
+    },
+    {
+      "run_id": "3e3011c6-e951-4fd0-b427-d3cbdef1903b",
+      "writer": "0.2.0",
+      "profile": "stage2",
+      "compatibility": "passed",
+      "event_sha256": "c1d7bbf7c9604c6d1394cbba3c81b71b6625db3a0a9a56ae9ff1291dc3383df0",
+      "original_event_unchanged": true
+    }
+  ],
+  "not_claimed": [
+    "Live Claude Desktop acceptance of version 0.5.0",
+    "Independent verification of a random skill",
+    "Actual separate model/provider execution or exact model identity",
+    "Scientific catalog approval or publication",
+    "Full-host sandbox conformance",
+    "Installation into the user app",
+    "Commit or push"
+  ],
+  "execution_modes": {
+    "demo": "same-chat caller-supplied examples; no scientific grade",
+    "verification": "bounded chemical method tested with explicitly synthetic subject fixtures"
+  }
+}

@@ -41,8 +41,8 @@ def validate(value, schema, field="arguments"):
         for key, child in value.items():
             validate(child, properties[key], f"{field}.{key}")
     elif kind == "array":
-        if len(value) > schema["maxItems"]:
-            raise Fault("invalid_arguments", f"{field} has too many entries.", [field])
+        if not schema.get("minItems", 0) <= len(value) <= schema["maxItems"]:
+            raise Fault("invalid_arguments", f"{field} has an invalid entry count.", [field])
         for i, child in enumerate(value):
             validate(child, schema["items"], f"{field}[{i}]")
     elif kind == "string":

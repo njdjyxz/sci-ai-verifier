@@ -239,7 +239,7 @@ The review is finished when a reader agrees that each of the eight findings is c
 
 ### Current stage and status
 
-Final local repair round completed after reviewing Claude's published repairs at `6a7e3ea`. Stage 2 now has actual app evidence: the user completed the three fixtures and a same-run resume test, and all four saved runs pass the independent artifact audit. Full instruction-conflict sign-off still needs review of the Chat's other tool activity, and the resumed manifest has a source-grounding observation. Cancellation and personal submissions were not tested. Stage 3 routing/catalog lookup and subsequent evaluation/grading remain unimplemented.
+Stage 2 retains its recorded app evidence and unresolved conversation-only follow-up. At the user's request to start Stage 3 and prepare the remaining project work, version 0.3.0 now implements claim routing, catalog release verification/cache activation, immutable catalog pins and per-claim evaluator selection. It stops at `stage3_complete` with scientific verification still pending. This supersedes the earlier same-day recommendation to prepare contracts only. The user selected **chemical formula and mass calculations** for the first complete scientific path; its candidate evaluator and review package are prepared, not registered as approved.
 
 ### What has been done
 
@@ -257,6 +257,14 @@ Final local repair round completed after reviewing Claude's published repairs at
 - Recorded one extraction-fidelity follow-up: resumed run `125ceb03-30a0-446a-841c-84138ed0718b` adds an isotope-selection definition to `expected_behavior` that the fixture does not provide. The primary claim and quotation remain correct; this is a source-grounding observation, not a judgment of the definition's scientific truth or a resume/storage failure. Preserve the original manifest and tighten guidance before treating that extra definition as a submitted requirement. The conflict manifest's self-report that no outside tools were used is not independent evidence; the user is unsure how to identify such calls, and no matching local transcript was available. That one app-behavior check remains pending.
 - Product direction clarified in the intervening discussion: the user wants one public **verify this skill** action, with claim extraction and other stages kept internal rather than offered as standalone features. The long prompts are development acceptance instructions. Restart-first recovery was discussed as a simplification; no resume/cancel function was removed and no public-interface redesign was implemented. The existing Stage 3 scope covers routing and catalog lookup only; evaluation planning/execution, assessment, and reporting require additional implementation phases before full verification is available.
 
+- Implemented the dedicated [Stage 3 contract](skills/scientific-verifier/references/stage3-contract.md) with matching state/tool and artifact updates. New desktop runs use Stage 3; Stage 2 remains an explicit operator profile and older completed runs are never reopened. Tightened extraction guidance so absent behavior/scope stays `Not specified`, including isotope conventions; preserved all original app manifests.
+- Added [catalog verification](src/sci_ai_verifier/catalog.py), [routing](src/sci_ai_verifier/routing.py) and the [release utility](scripts/catalog_release.py). Downloads use this project's fixed GitHub repository, exact commit and independently supplied manifest digest; assets/interfaces are verified before activation, offline caches require exact receipts, and active runs use immutable objects. No model-triggered downloads or runtime writes to reviewed registries exist. Initial `catalog/` mirrors the empty reviewed registries; it is local and unpublished.
+- Added three routing tools, atomic complete-manifest assignment, run-local provisional types, strongest-grade lookup, registered preference, A-C interface pairing and D fallback without a runner. Missing implementations/runners produce distinct claim-local operational artifacts while other claims continue. Lookup results are bounded, carry exact version/resource pins and never produce a scientific verdict.
+- Prepared [the chemical mass pilot](reviews/CHEMICAL-MASS-PILOT.md), three provisional type definitions, two provisional capability descriptions, NIST isotope reference values, a narrow candidate formula parser and per-trial numeric scorer. Boundary, known-answer and deliberately wrong-observation tests pass. These helpers are not installed, approved or connected to a subject runner; no submitted skill has been evaluated by them.
+- Added [the full-project completion checklist](reviews/PROJECT-COMPLETION.md) and [0.3.0 installation guide](desktop/STAGE3-INSTALL.md), refreshed README and built the MCPB/skill ZIP. The single public action remains **verify this skill**; extraction and routing are internal steps. No installed app settings, original app data or legacy files were changed.
+- Validation: the expanded suite contains **77 tests; 75 passed and two skipped** on Python 3.14 and bundled Python 3.12. The skips remain actual Python 3.11 availability and privileged symlink creation. Both extracted-package profiles and archive reproducibility pass. The new reader's compatibility validator also accepts the four original 0.2.0 app journal states through a read-only inspection; this is not a new live resume test. See [Stage 3 validation](reviews/stage3-validation-2026-09-10.json) for precise evidence and limits.
+- All Stage 3 source and documentation changes remain local, uncommitted and unpushed. Remote transport success is fixture-tested; no newly published GitHub catalog or live 0.3.0 app test is claimed. Maintainer/scientific review of the seed collection remains required before promotion.
+
 ### Contract organization and lifecycle
 
 Claude's note recommends keeping **the Stage 2 profile itself as one file**; it does not recommend merging every contract. Retain separate workflow, tool, runtime, artifact, resource, and evidence documents because they answer different questions. Link shared rules instead of copying them. The Stage 2 contract is the active implementation profile, including scope, exceptions, limits, persistence, and compatibility; it is not a throwaway development file.
@@ -265,70 +273,111 @@ Clarification of Claude's proposed deletion condition: a restricted host alone d
 
 ### Urgent next steps, if any
 
-No runtime blocker was found in the performed app tests. Before claiming complete instruction-conflict acceptance, inspect that Chat's tool activity for non-verifier calls. The user has confirmed the model label and new-Chat resume but cannot confidently identify other tools. Before a later stage consumes `expected_behavior` as a requirement, address or explicitly review the source-grounding observation above. These are distinct from the passing persistence and recovery checks. Python 3.11 support, exact MCP handshake details, and an independent client check remain unverified; cancellation and personal submissions remain untested live.
+No local routing implementation blocker. Before claiming a complete scientific verifier, review/promote the candidate chemical catalog, identify the actual submitted skill and approved subject invocation boundary, and implement planning, resource locks, audit, isolated execution, independent assessment where required, and reporting. The reviewed registries currently contain no evaluator or subject runner. The initial catalog is not published, and 0.3.0 has not been installed/tested live.
 
-Automatic retransmission still has no request-ID idempotency: recover a lost response with `get_verifier_context` before issuing another workflow request. Full power-loss durability is not claimed. These limits remain explicit; no new protocol implementation or dependency was added.
+Preserve the earlier limitations: instruction-conflict Chat tool activity remains uninspected; exact model identity is unavailable; cancellation/personal submissions were not tested live; Python 3.11 and an independent MCP client remain unverified. No automatic retransmission idempotency or full power-loss durability is claimed.
 
 ### Suggested next move
 
-**Proceed with Stage 3 contract and fixture preparation using the recorded Stage 2 evidence, while closing the narrow source-grounding and conversation-review follow-ups.** This supersedes the earlier recommendation to rerun the first app acceptance: those runs now exist and their records check out. Do not rerun them merely to obtain another manifest. A complete scientific-verifier test is still premature because routing, evaluation, and grading do not exist yet.
-
-The three fixtures under [examples/submissions](examples/submissions) have been exercised. Personal submissions are optional broader coverage, not a requirement to validate these fixture results. Complete context was returned server-side and the workflow proceeded; exact client rendering and absence of outside-tool calls cannot be proved from the verifier journal alone. Cancellation was skipped by the user and is recorded as not tested, not passed.
+Review the [chemical mass pilot](reviews/CHEMICAL-MASS-PILOT.md) and [completion checklist](reviews/PROJECT-COMPLETION.md), then connect the first scientifically reviewed evaluator to a controlled subject runner through the existing plan/audit contracts. Keep Stage 3 acceptance separate from scientific performance. The earlier suggestion to rerun Stage 2 fixtures remains superseded by their recorded evidence.
 
 ### Recommended next action
 
-Review the source-grounding rule for extracted expected behavior before changing prompts or code, and inspect/export the instruction-conflict Chat's tool activity to close the remaining human-evidence gap. Then prepare a Stage 3 design package containing: a small proposed claim-type taxonomy; a few reviewed evaluator entries with provenance and expected matching/nonmatching claims; a catalog release manifest with schema/interface compatibility and asset digests; version pinning and verified offline-cache rules; and expected routing/lookup artifacts for success, no match, unavailable catalog, and incompatible release. Use the existing GitHub repository and preserve maintainer-reviewed publication. Incorporate the user's single public verification action into the future integration design without silently changing the current tested tool surface.
-
-Begin Stage 3 implementation after the app acceptance passes and the routing state/tool matrix, catalog contract, and fixture expectations agree. Stage 3 should stop after routing and evaluator selection; evaluation execution and grades remain later work. This entry records the recommendation and preparation checklist, not approval or implementation of Stage 3.
+Review the concrete Stage 3 implementation and candidate chemical scope/fixtures, then run the packaged 0.3.0 short-prompt acceptance in a fresh Claude Desktop Chat. Confirm exact catalog pins, source-grounded routing, per-claim operational outcomes, and resume preservation. In parallel with that human evidence, the next implementation boundary is `commit_evaluation_plan` plus revision-bound resource locks for the chosen chemical mass pilot. A complete scientific test begins only after the subject runner and reference/scoring policy are reviewed and auditable; a routing checkpoint is never a finished report.
 
 ## Codex: 2026-09-11
 
 ### Current stage and status
 
-Version 0.5.0 is the general safe-skill demo on the user-requested branch `codex/general-skill-demo`. The stricter chemical workflow is implemented through reports and tested with fixtures. The demo can exercise general safe skills through same-chat observations, but it does not establish independent scientific validation. The Stage 3, chemical verification and demo implementation is on that development branch; `main` retains the accepted Stage 2 runtime and receives this updated plan separately.
+**Latest user direction:** retire `codex/general-skill-demo`, resume unfinished work,
+audit this plan, and build the personal/local first version on `main`. This
+supersedes today's earlier demo-first branch/publication recommendation.
 
-**Latest approved direction:** use **Claude Code/CLI as both the interactive platform and the subject-runner technology**. Keep the single public action **verify this skill**. The verifier's orchestration session must invoke the submitted skill in a fresh, separately controlled Claude Code session, with only the pinned skill, test inputs and permitted tools/resources. Hidden reference answers, evaluator state and verifier conversation must not enter the subject context. Claude Code supplies the model/tool loop; Python owns deterministic enforcement, records and evaluation interfaces. A separate virtual machine is not a prerequisite: choose execution isolation according to the skill's executable code and access needs, and do not treat a separate context or worktree as an operating-system sandbox.
+Version 0.6.0 implements a bounded local engineering release: one public
+**verify this skill** action; Claude Code's native planner/tool loop; fresh
+restricted Claude Code subject sessions; local reference discovery, mechanical
+candidate qualification and offline reuse; immutable observations and reports.
+The implementation scope for this increment is plain text skills and installed
+exact/numeric reference comparisons. These provisional methods produce comparison
+outcomes, not scientific status or grades. Full scientific qualification, executable
+methods, and GitHub contribution/release automation remain later work.
 
-**Latest approved catalog direction:** claim types, evaluators, runner capabilities and reference resources should grow through agent-driven discovery and contributions. The user should not have to hand-author an initial domain catalog. This supersedes the earlier manual seed-collection and human-only contribution requirement as the intended design. An empty catalog triggers discovery; unavailable independent evidence still results in a provisional or inconclusive outcome. Agent authorship or a successful GitHub push does not establish scientific validity.
-
-These decisions replace the earlier recommendation to prioritize Claude Desktop Chat demo installation and acceptance. The user currently has no Claude usage available and requested **plan updates and publication of both branches only**. Live execution is deferred; the new runner and discovery pipeline are approved future work, not implemented or tested by this update. Existing runtime contracts must be reconciled with these decisions before dependent behavior changes.
+The approved design still requires temporary recognized skill loading and explicit
+invocation, separation of candidate/subject/publication storage, configurable
+subscription or API authentication, hidden-answer exclusion, exact version pins,
+and honest unsupported outcomes. No live acceptance is claimed: this environment
+has Python 3.14 but the initial check found no native Claude executable, and the
+prior decision deferred model usage. Fixture evidence is not a live model run.
 
 ### What has been done
 
-Branch record: this `main` update changes only the development plan. The implementation bullets below describe work preserved on `codex/general-skill-demo` at commit `d4f21195fd8e9f00ffd804a1adabed10c6b36934`. Links to files available only in that implementation use its exact GitHub commit.
+Earlier today, completed the bounded chemical workflow through reports and the
+same-chat 0.5.0 demo, with 124 tests and historical package validation. Published
+that implementation on `codex/general-skill-demo` at `d4f2119`, while main at
+`72abc24` received only the roadmap. The subsequent uncommitted approved details
+about temporary loading, storage separation and authentication were preserved
+before integration. Those earlier implementation and app-acceptance records remain
+historical evidence, not evidence for the new CLI runner.
 
-- Finished the bounded chemical implementation begun September 10: exact plans and revision-bound resources, bundle construction/validation, run-local registration/promotion, audits, configurable subject observations, independent per-trial numeric comparison, immutable results and JSON/Markdown reports. Correct, wrong, invalid, partial, interrupted and mixed-claim paths have dedicated tests. The seven-case CHNOPS policy supports C only; scientific registry approval and a live provider remain separate.
-- Created the requested branch while preserving all existing local work. No Claude CLI runner was found in PATH or the standard user install locations. For the immediate no-credential app demo, added a clearly separate same-chat profile instead of claiming an independent model was executed.
-- Added `start_inline_demo_run`, `commit_demo_plan` and `record_demo_observation`. Local submissions may use the exact path selected by the user outside the usual submission folder; attached/pasted skill text is recorded with explicit caller-supplied provenance. The demo extracts general stated behaviors, fixes examples before outputs, applies deterministic exact/contains/JSON checks, retains qualitative review attribution and reports unavailable capabilities as not tested.
-- Removed chemical/catalog/provider eligibility gates from the demo, expanded repair/step/resume budgets, and retained source identity, secret exclusions, immutable records and truthful reporting. No same-chat output receives a scientific grade. Earlier Stage 2/3 and chemical runs keep their own profiles and pinned instructions.
-- Updated workflow legality, tool/artifact contracts, uploaded skill instructions, installation guides and package metadata together. Prepared both 0.5.0 installation files. Added [the quick demo guide](https://github.com/njdjyxz/sci-ai-verifier/blob/d4f21195fd8e9f00ffd804a1adabed10c6b36934/desktop/DEMO-INSTALL.md); users must replace both their old extension and uploaded skill, then start a fresh Chat.
-- Automated acceptance and exact package evidence are recorded in [demo validation](https://github.com/njdjyxz/sci-ai-verifier/blob/d4f21195fd8e9f00ffd804a1adabed10c6b36934/reviews/demo-validation-2026-09-11.json). The suite contains 124 tests, including an extracted-package default demo on a general nonchemical inline skill. The official cached MCPB manifest validator passes. Live Claude behavior has not been observed for this version.
-- Reviewed registries, original app-run data and legacy source remain untouched. Before this publication request, the Stage 3, chemical workflow and demo changes were local and uncommitted/unpushed. This update accompanies their source publication on `codex/general-skill-demo` and a plan-only update on `main`; confirm publication against the remote branch tips after pushing. Generated installation archives remain under gitignored `dist/`, with source, build instructions and validation records included in the development branch. No production scientific approval is implied.
-- Updated this same daily entry with the user's approved Claude Code/CLI runner and automatic catalog process. No new runner, discovery agent, repository automation or model execution is implemented in this planning/publication update. The previous fixture and package results above remain historical validation evidence, not live acceptance of the newly approved design.
+Current work:
 
-Approved automatic process for implementation:
+- Audited the code, contracts and branch differences in [the local v1 audit](reviews/LOCAL-V1-AUDIT.md). Integrated the useful Stage 3, chemical and demo history onto main without losing the local plan revision. Final branch/commit disposition is recorded with validation below.
+- Reconciled the [local contract](skills/scientific-verifier/references/local-contract.md), workflow/tool matrix, artifact/runtime/resource policies, skill, README and project instructions before and alongside implementation. Removed the obsolete human-only local candidate requirement.
+- Added a public CLI and one-tool MCP interface, a run-bound private MCP server, and a native Claude Code adapter. Python validates and executes bounded operations; Claude Code retains the model/tool loop. The subject receives only its pinned skill and fixed input, with a recognized temporary plugin, explicit successful Skill invocation evidence, and separate requested versus observed model identity.
+- Implemented isolated configuration outside subject-readable directories, a fresh repository boundary, CLAUDE.md exclusions, disabled hooks/memory/dynamic skill commands, restricted tool sets, allowlisted credential environments, process time/output limits, and cleanup. Subscription tokens and API keys are never copied into saved verifier configuration or passed as command arguments.
+- Added public HTTPS reference retrieval, immutable quote-backed exact/numeric candidates, positive/negative/boundary controls, per-claim selection before execution, local reuse, raw request/observation receipts, interruption without replay, and JSON/Markdown reports. Mechanical qualification explicitly leaves scientific authority, applicability and representative coverage unresolved.
+- Preserved historical saved-run compatibility and kept reviewed global registries, old app evidence and legacy source intact. Added [local setup instructions](LOCAL-INSTALL.md), a checkout launcher, and an isolated synthetic fixture that cannot seed a live candidate pool.
 
-1. **Look up existing entries.** Reuse compatible claim types, evaluators, runner capabilities and reference resources; record exact versions and provenance.
-2. **Discover missing material.** When lookup is insufficient, let the agent search scientific sources, datasets, benchmarks and reference implementations. Record sources, versions, licenses, applicability and unresolved assumptions; do not require a manually populated domain catalog first.
-3. **Build a candidate contribution.** Create missing type definitions, evaluator configurations or implementations, reference records and reproducible tests. Keep newly discovered executable code outside trusted execution until it passes the relevant qualification checks.
-4. **Qualify it separately.** Test against independent reference results, known incorrect answers and boundary cases, including held-out checks where applicable. Keep expected answers separate from the submitted skill's execution. Record the supported scientific scope and distinguish provisional, qualified and registered status; an agent's own generated answer or another agent's agreement alone is insufficient evidence.
-5. **Contribute it to GitHub.** With configured repository authorization, the agent pushes a contribution branch and opens a pull request containing the proposed entries/code and reproducible validation evidence. Publication is a contribution, not automatic scientific approval. Failed publication must retain the local candidate and evidence for retry without rerunning the subject unnecessarily.
-6. **Register a version after checks pass.** Established, mechanically checkable contribution classes may qualify and merge automatically under an explicit policy. Escalate scientific assumptions or new executable methods only when the qualification process cannot establish eligibility; do not require manual authoring or approval for every entry. Publish immutable catalog versions, reuse exact pins in later runs, and preserve earlier runs' versions and verified offline caches.
+Final automated validation: **151 tests, 149 passed, 2 skipped, 0 failures** on
+Python 3.14 (49.300 seconds). The skipped checks are an actual Python 3.11
+interpreter and physical symlink creation privileges; Python 3.11 syntax and
+Windows junction rejection pass. Real child-process deadline, output-ceiling and
+descendant cleanup tests pass, as do public-to-private MCP subprocess acceptance,
+lost planner-response recovery, offline candidate reuse and historical packages.
 
-The initial engineering work is the reusable runner, discovery interfaces, candidate records, qualification rules and GitHub contribution/release pipeline. It is not manual initialization of every scientific domain. Discovery may find no adequate reference or method; such a run must report its limitation without manufacturing a scientific pass or treating missing infrastructure as scientific failure.
+Built the editable local source package (`dist/scientific-verifier-local-0.6.0.zip`)
+and ran its extracted synthetic fixture. This exposed a Windows long-path issue;
+short stable claim-directory names fixed it, and the extracted run now completes.
+The final saved fixture has 9 journal events, 24 verified objects and 3 passing
+reference comparisons, with null scientific grade. Reports now show fixed inputs,
+expected values, actual outputs, references and outcomes directly. Syntax,
+active-document links and formatting checks pass. Exact evidence is in
+[local validation](reviews/local-validation-2026-09-11.json).
+
+At validation, the integration is still an uncommitted merge on main. The prepared
+release retains demo commit `d4f2119`; publication and branch retirement follow
+only after the integration commit. No live model, scientific registry approval,
+GitHub evaluator contribution or scientific grade has been produced.
 
 ### Urgent next steps, if any
 
-None requiring a live Claude test now. Record the approved direction and publish the prepared work to both branches. Preserve the current fixture evidence and defer model-backed acceptance until usage is available.
-
-Before implementing the next behavior, reconcile the human-only registry rule in [CLAUDE.md](CLAUDE.md), the approved-harness restrictions, catalog retrieval policy and workflow/tool contracts with the contribution lifecycle above. Specify the clean subject-session boundary, file/tool enforcement, cancellation and resource limits, credential handling and observable model/session identity. Configure repository contribution permissions and release checks as infrastructure; this should not become a request for the user to seed scientific entries manually.
+No additional scientific catalog authoring is required to start local discovery.
+Live use requires a native Claude Code installation with the supported restricted
+mode and a user-supplied subscription token or API key with available usage.
+Credentials remain user setup; do not retrieve them from saved account files.
+The native CLI's actual invocation/tool boundary still needs live acceptance.
 
 ### Suggested next move
 
-Resume the original independent-verification objective using Claude Code/CLI. Implement the controlled subject runner and automatic discovery/contribution path after their contracts are aligned. Keep the existing demo as a reproducible development checkpoint. Broader scientific coverage must come from qualified methods and independent resources; removing a catalog gate alone does not establish it.
+Run a short personal text skill through the local public action when Claude usage
+is available. Inspect explicit pinned-skill invocation, actual model/session IDs,
+reference provenance, hidden-answer exclusion, interruption and the final report.
+Then qualify a narrowly defined scientific method independently and connect its
+approved grading policy. Expand subject tools only with an enforced execution
+boundary suitable for the submitted code.
+
+Keep the approved broader contribution lifecycle as a subsequent increment:
+lookup, discover missing material, build a local candidate, qualify against
+independent reference/negative/boundary evidence, prepare an authorized GitHub
+contribution, and register an immutable version only after its policy checks pass.
+Unknown or non-redistributable licenses allow no automatic public resource copy;
+publication failure must retain local evidence for retry without rerunning subjects.
 
 ### Recommended next action
 
-After this publication, prepare a bounded contract update covering Claude Code/CLI orchestration and fresh subject sessions, discovery after an empty or insufficient lookup, candidate qualification, automated GitHub contributions and versioned registration. Define fixture acceptance for: no initial catalog; reuse after a successful contribution; rejected or inconclusive qualification; unavailable discovery sources; publication failure/retry; hidden-answer exclusion; and interrupted subject execution. Align affected workflow and tool definitions together before implementing behavior.
-
-Then build the runner adapter and one complete discovery-to-registration path with fixtures first. Once Claude usage is available, live acceptance should run an actual safe submitted skill in a separate session, qualify its evaluator against independent evidence, record the contribution outcome and produce a report that distinguishes scientific findings from unsupported capabilities. That later acceptance is not a prerequisite for this plan update or branch publication, and is not claimed complete here.
+Publish the validated integration on main and retire the demo branch after its
+history is safely retained. Then perform the first live local acceptance when
+Claude Code and eligible usage are available. Live acceptance
+is finished only after a real submitted skill is invoked in a fresh Claude Code
+session and the saved report/receipts are independently inspected. It is not
+established by the deterministic fixture or a successful package build.

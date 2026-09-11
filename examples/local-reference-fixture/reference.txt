@@ -1,0 +1,5 @@
+Synthetic acceptance reference, not a fetched or reviewed scientific source.
+One kilometer equals 1000 meters.
+One hour equals 3600 seconds.
+One day equals 86400 seconds.
+These illustrative cases test the local verifier's mechanics only.

@@ -19,7 +19,7 @@ from .common import Fault, canonical, digest, utc_now
 # There is no automatic migration: an unsupported record is rejected, never rewritten.
 SCHEMA_VERSION = 1
 SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION})
-SUPPORTED_IMPLEMENTATION_VERSIONS = frozenset({"0.2.0"})
+SUPPORTED_IMPLEMENTATION_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"})
 REQUIRED_STATE_FIELDS = frozenset({
     "schema_version", "implementation_version", "profile", "run_id", "created_at",
     "updated_at", "last_activity_at", "revision", "state_token", "run_state",
@@ -107,11 +107,24 @@ def compatible(state):
                 raise ValueError()
         except (TypeError, ValueError, OverflowError):
             reject(f"Invalid saved timestamp: {field}.")
-    if (state["profile"] != "stage2" or state["run_state"] not in
-            {"created", "source_ready", "stage2_complete", "incomplete"}
-            or state["verification_complete"] is not False):
+    permitted = {"local": {"created", "source_ready", "active", "reporting", "completed", "incomplete"},
+                 "stage2": {"created", "source_ready", "stage2_complete", "incomplete"},
+                 "stage3": {"created", "source_ready", "claims_ready", "active", "stage3_complete", "incomplete"},
+                 "verification": {"created", "source_ready", "claims_ready", "active", "reporting", "completed", "incomplete"},
+                 "demo": {"created", "source_ready", "demo_planning", "demo_execution", "reporting", "completed", "incomplete"}}
+    if (state["profile"] not in permitted or state["run_state"] not in permitted[state["profile"]]
+            or state["verification_complete"] is not (state["run_state"] == "completed")):
         reject("Unsupported saved profile, state, or verification flag.")
-    if any(value != "routing" for value in state["claim_states"].values()):
+    claim_states = {"routing"} if state["profile"] == "stage2" else {
+        "routing", "capability_selection", "planning", "terminal_operational"}
+    if state["profile"] == "verification":
+        claim_states |= {"resource_resolution", "bundle_construction", "provisional_registration", "audit",
+                         "execution", "result_commit", "terminal_result"}
+    if state["profile"] == "demo":
+        claim_states = {"demo_planning", "demo_execution", "terminal_demo"}
+    if state["profile"] == "local":
+        claim_states = {"local_lookup", "local_discovery", "local_ready", "terminal_result", "terminal_operational"}
+    if any(value not in claim_states for value in state["claim_states"].values()):
         reject("Unsupported saved claim state.")
     if state["completion_reason"] is not None and not isinstance(state["completion_reason"], str):
         reject("Invalid saved completion reason.")
@@ -124,6 +137,94 @@ def compatible(state):
     for key in [*refs, *state["operational_refs"]]:
         if not object_ref(key) or key not in state["objects"]:
             reject("A saved artifact reference is invalid or absent from the object list.")
+    if state["profile"] in {"stage3", "verification"}:
+        if (writer not in {"0.3.0", "0.4.0", "0.5.0", "0.6.0"} or not {"catalog_ref", "routing_ref", "intended_grade"} <= set(state)
+                or state["intended_grade"] != "A"):
+            reject("Invalid Stage 3 profile fields or writer.")
+        for field in ("catalog_ref", "routing_ref"):
+            value = state[field]
+            if value is not None and (not object_ref(value) or value not in state["objects"]):
+                reject("Invalid Stage 3 artifact reference.")
+        if state["run_state"] != "incomplete" and not state["catalog_ref"]:
+            reject("A Stage 3 run requires its pinned catalog.")
+        if state["run_state"] in {"active", "stage3_complete"} and state["claim_states"] and not state["routing_ref"]:
+            reject("A routed run requires its routing artifact.")
+    if state["profile"] == "verification":
+        required = {"claim_work", "report_ref", "report_markdown_ref", "subject_config", "subject_calls_used",
+                    "execution_limits", "resource_assets", "method_ref", "case_formulas"}
+        if writer not in {"0.4.0", "0.5.0", "0.6.0"} or not required <= set(state):
+            reject("Unsupported verification-profile record.")
+        if (not isinstance(state["claim_work"], dict) or not isinstance(state["subject_config"], dict)
+                or not isinstance(state["resource_assets"], dict) or not isinstance(state["case_formulas"], list)
+                or type(state["subject_calls_used"]) is not int or state["subject_calls_used"] < 0
+                or not isinstance(state["execution_limits"], dict)):
+            reject("Invalid verification-profile field types.")
+        identity = state["subject_config"]
+        if (set(identity) != {"adapter_id", "model_id", "synthetic"}
+                or type(identity["synthetic"]) is not bool
+                or any(not isinstance(identity[key], str) or not 1 <= len(identity[key]) <= 200
+                       for key in ("adapter_id", "model_id"))):
+            reject("Invalid saved subject identity.")
+        if any(not isinstance(key, str) or not re.fullmatch(r"claim-[0-9a-f]{64}", key)
+               for key in state["claim_states"]):
+            reject("Invalid saved claim identity.")
+        for name in ("max_subject_calls", "max_response_bytes", "request_timeout_seconds"):
+            if type(state["execution_limits"].get(name)) is not int or state["execution_limits"][name] < 1:
+                reject("Invalid execution limit.")
+        execution_refs = [state[key] for key in ("report_ref", "report_markdown_ref", "method_ref") if state[key]]
+        for claim_id, work in state["claim_work"].items():
+            fields = {"plan_ref", "search_ref", "lock_ref", "bundle_ref", "validation_ref",
+                      "registration_ref", "audit_ref", "execution_ref", "result_ref"}
+            if (claim_id not in state["claim_states"] or not isinstance(work, dict)
+                    or set(work) != fields | {"revision"}):
+                reject("Invalid claim work map.")
+            if type(work.get("revision")) is not int or work["revision"] < 0:
+                reject("Invalid plan revision.")
+            execution_refs.extend(work[key] for key in fields if work[key] is not None)
+        for resource_id, entry in state["resource_assets"].items():
+            if (not isinstance(entry, dict) or not object_ref(entry.get("sha256"))
+                    or entry.get("id") != resource_id or not isinstance(entry.get("version"), str)):
+                reject("Invalid installed resource pin.")
+            execution_refs.append(entry["sha256"])
+        if state["run_state"] != "incomplete" and (not state["method_ref"] or not state["resource_assets"]):
+            reject("An active verification run needs its method and resource pins.")
+        if any(not object_ref(key) or key not in state["objects"] for key in execution_refs):
+            reject("An execution artifact reference is missing or invalid.")
+        if state["run_state"] == "completed" and (not state["report_ref"] or not state["report_markdown_ref"]):
+            reject("Completed run requires both report objects.")
+    if state["profile"] == "demo":
+        if (writer not in {"0.5.0", "0.6.0"} or not {"demo_plan_ref", "demo_observation_refs", "report_ref", "report_markdown_ref", "submission_origin"} <= set(state)
+                or not isinstance(state["demo_observation_refs"], dict) or not isinstance(state["submission_origin"], dict)):
+            reject("Unsupported demo profile record.")
+        for key in (state["demo_plan_ref"], state["report_ref"], state["report_markdown_ref"], *state["demo_observation_refs"].values()):
+            if key is not None and (not object_ref(key) or key not in state["objects"]):
+                reject("Invalid demo artifact reference.")
+        if any(not isinstance(key, str) or not re.fullmatch(r"test-[0-9a-f]{64}", key) for key in state["demo_observation_refs"]):
+            reject("Invalid demo test identity.")
+        if state["run_state"] == "demo_execution" and not state["demo_plan_ref"]:
+            reject("Demo execution requires its committed plan.")
+        if state["run_state"] == "completed" and (not state["report_ref"] or not state["report_markdown_ref"]):
+            reject("Completed demo requires both report objects.")
+    if state["profile"] == "local":
+        if (writer != "0.6.0" or not {"local_work", "local_method_ref", "subject_config", "subject_calls_used", "report_ref", "report_markdown_ref"} <= set(state)
+                or not isinstance(state["local_work"], dict) or not isinstance(state["subject_config"], dict)
+                or type(state["subject_calls_used"]) is not int or state["subject_calls_used"] < 0):
+            reject("Invalid local profile record.")
+        local_refs = [state["local_method_ref"], state["report_ref"], state["report_markdown_ref"]]
+        for work in state["local_work"].values():
+            if not isinstance(work, dict):
+                reject("Invalid local claim work.")
+            for field, value in work.items():
+                if field.endswith("_ref"):
+                    local_refs.append(value)
+                elif field.endswith("_refs") and isinstance(value, list):
+                    local_refs.extend(value)
+                else:
+                    reject("Invalid local artifact field.")
+        if any(key is not None and (not object_ref(key) or key not in state["objects"]) for key in local_refs):
+            reject("Invalid local artifact reference.")
+        if state["run_state"] == "completed" and (not state["report_ref"] or not state["report_markdown_ref"]):
+            reject("Completed local run requires report objects.")
     for entry in state["context_manifest"]:
         if (not isinstance(entry, dict) or not isinstance(entry.get("identity"), str)
                 or entry.get("trust_class") != "verifier_instruction"
@@ -135,8 +236,10 @@ def compatible(state):
                 or type(entry.get("start")) is not int or type(entry.get("end")) is not int
                 or not 0 <= entry["start"] <= entry["end"]):
             reject("Invalid saved read receipt.")
-    if ((state["run_state"] in {"source_ready", "stage2_complete"} and not state["source_ref"])
-            or (state["run_state"] == "stage2_complete" and not state["manifest_ref"])):
+    if ((state["run_state"] in {"source_ready", "stage2_complete", "claims_ready", "active", "stage3_complete", "reporting", "completed", "demo_planning", "demo_execution"}
+         and not state["source_ref"])
+            or (state["run_state"] in {"stage2_complete", "claims_ready", "active", "stage3_complete", "reporting", "completed", "demo_planning", "demo_execution"}
+                and not state["manifest_ref"])):
         reject("The saved state lacks its required snapshot or manifest.")
 
 
@@ -259,8 +362,7 @@ class Store:
                 previous = saved_digest
             state = event["state_after"]
             compatible(state)
-            if (state["run_id"] != run_id or state["revision"] != len(files)
-                    or state["profile"] != "stage2"):
+            if state["run_id"] != run_id or state["revision"] != len(files):
                 raise ValueError()
             projection = no_links(directory / "run.json")
             if projection.exists():
@@ -304,9 +406,29 @@ class Store:
                 pass  # A missing/corrupt cache never rolls back a journal commit.
         write_projection(directory / "run.json", data=canonical(state))
         for key, filename in (("source_ref", "source-snapshot.json"),
-                              ("manifest_ref", "claim-manifest.json")):
+                              ("manifest_ref", "claim-manifest.json"),
+                              ("catalog_ref", "catalog-lock.json"), ("routing_ref", "routing.json"),
+                              ("report_ref", "report-card.json"), ("report_markdown_ref", "report-card.md")):
             if state.get(key):
                 write_projection(directory / filename, key=state[key])
+        if state.get("demo_plan_ref"):
+            write_projection(directory / "demo-plan.json", key=state["demo_plan_ref"])
+        for test_id, key in state.get("demo_observation_refs", {}).items():
+            write_projection(directory / "demo-observations" / (test_id + ".json"), key=key)
+        for claim_id, work in state.get("claim_work", {}).items():
+            for field, key in work.items():
+                if field.endswith("_ref") and key:
+                    write_projection(directory / "claims" / claim_id / (field.removesuffix("_ref") + ".json"), key=key)
+            if work.get("registration_ref"):
+                write_projection(self.root / "registry" / "evaluators" / f'{state["run_id"]}-{claim_id}.json',
+                                 key=work["registration_ref"])
+        if state.get("routing_ref"):
+            try:
+                proposals = self.get_json(state["routing_ref"])["proposed_types"]
+                write_projection(self.root / "registry" / "claim-types" / f'{state["run_id"]}.json',
+                                 data=canonical({"run_id": state["run_id"], "claim_types": proposals}))
+            except (Fault, KeyError):
+                pass
         for key in state["operational_refs"]:
             try:
                 outcome = self.get_json(key)

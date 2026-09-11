@@ -15,6 +15,56 @@ For `profile: stage2`, use this matrix and the [Stage 2 contract](stage2-contrac
 
 Accepted claims record their future `routing` state, but this profile authorizes no routing operation. Context/start/resume/cancel controls are host operations defined in the Stage 2 contract. A valid `stage2_complete` with no next tools is an intentional stop, not a runner error. This profile also specifies the desktop host's actual context, concurrency, limits, and termination guarantees.
 
+## Stage 3 profile
+
+For `profile: stage3`, apply the [Stage 3 contract](stage3-contract.md) and this matrix. Stage 2 saved runs retain the matrix above.
+
+| Run state | Legal workflow tools | Successful transition |
+|---|---|---|
+| `created` | `load_submitted_skill` | `source_ready` |
+| `source_ready` | `read_snapshot_file`, `commit_claim_manifest` | Read stays here; nonempty manifest -> `claims_ready`; empty manifest -> `stage3_complete` |
+| `claims_ready` | `list_claim_types`, `commit_claim_type_assignments` | List stays here; assignment of every claim -> `active` |
+| `active` | `find_registered_evaluators`, only for claims in `capability_selection` | Match -> future `planning`; unavailable -> `terminal_operational`; last selection -> `stage3_complete` |
+| `stage3_complete` | none | Routing checkpoint; scientific verification remains pending. |
+| `incomplete` | none | Run-level operational termination. |
+
+Matched claims do not execute planning in this profile. Wrong claim-state requests consume the illegal-transition budget. Other claims continue after an unmatched selection. The three lookup tools' outcome names retain their full-target meanings, but every Stage 3 result declares only the tools implemented and legal here.
+
+## Verification profile
+
+The implemented `verification` profile extends the routing profile through the full claim-state matrix below, using the bounded [verification contract](verification-contract.md). Its run states are `created`, `source_ready`, `claims_ready`, `active`, `reporting`, `completed` and `incomplete`. Empty manifests go to reporting. `active` declares the union of tools legal for its nonterminal claims; only the claim named by a request may transition. After all claims become terminal, only `write_report_card` is legal. Stage 2/3 runs keep their original checkpoints.
+
+This profile uses the full run/claim legality tables below. Its compact requests and artifact bindings are defined in the verification-profile sections of the tool/artifact contracts and in `verification-contract.md`. The general target's richer requests and unsupported branches are not callable substitutes. The following explicit specializations govern successful transitions in version 0.4.0:
+
+| Tool or condition | Outcome | Next claim/run state |
+|---|---|---|
+| `commit_evaluation_plan`, supported C method | `resource_resolution_required` | claim `resource_resolution` |
+| Plan uses unavailable method, scope, runner, resources or independent assessor | `implementation_required`, `subject_runner_unavailable`, `resource_unavailable`, or `assessor_unavailable` | claim `terminal_operational` |
+| `materialize_resources` | `all_roles_locked` | claim `bundle_construction` for target; `audit` for registered |
+| `register_evaluator` | `provisional_evaluator_registered` | claim `planning`; new registered revision required |
+| Audit has unsupported/uncertain semantic findings | `plan_revision_required` | claim `planning` |
+| Audit or execution detects changed installed method | `implementation_required` | claim `terminal_operational` |
+| Execution detects changed subject identity | `subject_runner_unavailable` | claim `terminal_operational` |
+| Completed sample has invalid numeric observations | `assessor_unavailable` | claim `terminal_operational`; raw sample retained without grade |
+| Explicit cancel after a manifest | `run_completed` or `run_completed_with_cleanup_warnings` | unfinished claims get cancellation outcomes; run `completed` with report |
+
+This delivery has no independent documentary assessor. It therefore resolves the unavailable D fallback directly to an operational outcome, without constructing an unusable D plan or manufacturing D/U results. Only C is executable under the installed pilot policy; A/B, other scientific methods and general external resource discovery remain unsupported. Fatal integrity, persistence, expiry and step/repair-limit errors retain the desktop profile's run-level `incomplete` termination. Other successful transitions use the shared tables below.
+
+## General demo profile
+
+For `profile: demo`, the [demo contract](demo-contract.md) replaces scientific routing, evaluator registration and grading with explicitly labeled same-chat examples. This profile is the 0.5.0 desktop default. It never produces an independent scientific result.
+
+| Run state | Legal workflow tools | Successful transition |
+|---|---|---|
+| `created` | `load_submitted_skill` | `source_ready` |
+| `source_ready` | `read_snapshot_file`, `commit_claim_manifest` | Reads stay here; nonempty manifest -> `demo_planning`; empty -> `reporting` |
+| `demo_planning` | `commit_demo_plan` | `demo_plan_committed` -> `demo_execution` |
+| `demo_execution` | `record_demo_observation` | Save one immutable case; last observation -> `reporting` |
+| `reporting` | `write_report_card` | `demo_report_completed` -> `completed` |
+| `completed`, `incomplete` | none | Completed report or operational termination |
+
+Host controls include `start_inline_demo_run`, which creates a normal demo run from explicitly supplied Chat text. Claims advance together from `demo_planning` to `demo_execution` and become `terminal_demo` when all their cases are recorded. Explicit cancellation after a manifest writes a demo report with unfinished cases/claims not tested. Fatal storage/integrity/expiry/limit failures preserve run-level incomplete termination. The shared scientific claim-state tables do not govern this separate demonstration profile.
+
 ## Ownership
 
 You are the semantic orchestrator. Interpret claims, compare scientific meanings, design evidence strategies, select candidates returned by approved tools, repair retryable requests, relay independently assessed grade-D findings, and explain limitations. Do not invent workflow states, tools, resources, evaluator implementations, operational outcomes, or successful transitions.
@@ -442,3 +492,21 @@ Request `write_report_card` with the run ID and those IDs. Never compose an oper
 The runner-owned finalizer preserves reproducibility artifacts, removes eligible scratch data and secrets, applies retention policy, and records what was retained, discarded, or could not be cleaned. It runs on successful reporting, fatal termination, explicit cancellation, or expiration of the resumption window.
 
 The report card separates scientific results from operational outcomes and includes source-snapshot provenance, requested and achieved grades, downgrades, evaluator/harness/bundle/resource versions, the subject-runner identity with its subject model, trial count, aggregation rule and observed variance, deterministic decision rules or documentary rubric, metrics, coverage and exclusions, AI involvement, limitations, warnings, provisional assets, review recommendations, operational-outcome IDs, and finalization status. It never assigns an overall scientific grade unless a separately reviewed aggregation policy exists.
+## Local profile
+
+Version 0.6.0's personal/local entry point uses the [local contract](local-contract.md).
+Claude Code owns the planner loop. This matrix specializes the broader target.
+
+| Run / claim state | Legal workflow tools | Resulting state |
+| --- | --- | --- |
+| created | load_submitted_skill | source_ready |
+| source_ready | read_snapshot_file, commit_claim_manifest | source_ready or active (reporting if empty) |
+| active / local_lookup | list_local_candidates, record_local_limitation | local_discovery or terminal_operational |
+| active / local_discovery | fetch_local_reference, qualify_local_candidate, select_local_candidate, record_local_limitation | local_discovery, local_ready or terminal_operational |
+| active / local_ready | execute_local_claim, record_local_limitation | terminal_result or terminal_operational |
+| reporting | write_report_card | completed |
+| completed / incomplete | none | terminal |
+
+Reporting becomes legal only after all accepted claims are terminal. Lookup and
+qualification do not execute the subject; qualification is mechanical, not a
+scientific grade. Recovery and cancellation retain the common host controls.
