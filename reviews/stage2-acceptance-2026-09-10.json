@@ -1,0 +1,280 @@
+{
+  "audited_at_utc": "2026-09-11T03:50:26.850619+00:00",
+  "data_directory": "D:\\Su Lab\\verifier-runs\\.verifier",
+  "method": "Independent read-only artifact audit; no runtime controls called",
+  "runs": [
+    {
+      "run_id": "125ceb03-30a0-446a-841c-84138ed0718b",
+      "checks_passed": 210,
+      "failures": [],
+      "events": [
+        {
+          "sequence": 1,
+          "tool": "start_verifier_run",
+          "time_utc": "2026-09-11T03:37:14.543090+00:00",
+          "status": "ok",
+          "outcome": "context_ready",
+          "state": "created",
+          "event_digest": "90ec1e8e0b0a8c27f5b7452f445134499c3b229b65e07307dc49e63214a7505a",
+          "reconstructed_response_bytes": 93144
+        },
+        {
+          "sequence": 2,
+          "tool": "load_submitted_skill",
+          "time_utc": "2026-09-11T03:38:04.479938+00:00",
+          "status": "ok",
+          "outcome": "source_snapshotted",
+          "state": "source_ready",
+          "event_digest": "cf84b6b65f2bd5ee4749518edb40328189629063c37894e2210e7d7ee258f831"
+        },
+        {
+          "sequence": 3,
+          "tool": "read_snapshot_file",
+          "time_utc": "2026-09-11T03:38:12.892558+00:00",
+          "status": "ok",
+          "outcome": "snapshot_file_returned",
+          "state": "source_ready",
+          "event_digest": "6112c9c4776a920e4f911044ab343617499a1fb7f45029307e930aa6bdd8261d"
+        },
+        {
+          "sequence": 4,
+          "tool": "resume_verifier_run",
+          "time_utc": "2026-09-11T03:39:07.640483+00:00",
+          "status": "ok",
+          "outcome": "context_ready",
+          "state": "source_ready",
+          "event_digest": "e33efebd1b130b0c63a4c188aa90c30a9d61605e66dd1c8834cebdf8143e332b",
+          "reconstructed_response_bytes": 95296
+        },
+        {
+          "sequence": 5,
+          "tool": "commit_claim_manifest",
+          "time_utc": "2026-09-11T03:40:10.890679+00:00",
+          "status": "ok",
+          "outcome": "claims_committed",
+          "state": "stage2_complete",
+          "event_digest": "216f0a0408ea127d5dc84ccfbb8372729d95858785b86d7ddb85b9ab1a3af2c7"
+        }
+      ],
+      "fixture": "reference-claim",
+      "source_path": "D:\\Su Lab\\verifier-submissions\\reference-claim",
+      "final_state": "stage2_complete",
+      "claim_count": 1,
+      "manifest_path": "D:\\Su Lab\\verifier-runs\\.verifier\\runs\\125ceb03-30a0-446a-841c-84138ed0718b\\claim-manifest.json",
+      "manifest_digest": "ddafda4288c4b8082d10000986c008b55639a6257545256536541b4eaebd453e",
+      "manifest_id": "manifest-5585d2724e53c673acc537da8d4ba757ee1dd260bd7eade7d374f305b3090e5b",
+      "snapshot_digest": "8297206ff3b17e8da68128861e5a5231a27a70bca07ab27f0ceebad17918e394",
+      "agent": {
+        "caller_reported_model_label": null,
+        "host": "claude_desktop",
+        "identity_source": "unavailable_via_mcp",
+        "model_id": null,
+        "model_version": null,
+        "provider": null,
+        "response_id": null
+      },
+      "result": "pass"
+    },
+    {
+      "run_id": "264f715c-3a79-4c9a-a7b3-3a9dc8a6ee6b",
+      "checks_passed": 162,
+      "failures": [],
+      "events": [
+        {
+          "sequence": 1,
+          "tool": "start_verifier_run",
+          "time_utc": "2026-09-11T03:25:15.726924+00:00",
+          "status": "ok",
+          "outcome": "context_ready",
+          "state": "created",
+          "event_digest": "4ac268cf5bd9aade5bb6a55ddf07c01cf53c3e93e18a7941972815114c616d80",
+          "reconstructed_response_bytes": 93156
+        },
+        {
+          "sequence": 2,
+          "tool": "load_submitted_skill",
+          "time_utc": "2026-09-11T03:25:48.875922+00:00",
+          "status": "ok",
+          "outcome": "source_snapshotted",
+          "state": "source_ready",
+          "event_digest": "e5b298460a1b0613f5890cb5807eff7632c901e3046a9d2dcb65c29bee2e911a"
+        },
+        {
+          "sequence": 3,
+          "tool": "read_snapshot_file",
+          "time_utc": "2026-09-11T03:25:54.942292+00:00",
+          "status": "ok",
+          "outcome": "snapshot_file_returned",
+          "state": "source_ready",
+          "event_digest": "3b09b8ef8aed30d3999061371484f475df1d87dc9b42a813c19168c7be5a330f"
+        },
+        {
+          "sequence": 4,
+          "tool": "commit_claim_manifest",
+          "time_utc": "2026-09-11T03:26:11.356073+00:00",
+          "status": "ok",
+          "outcome": "claims_committed",
+          "state": "stage2_complete",
+          "event_digest": "5dc400a86c9d4906ac4e6e11c768d9b614e16856d60bbf4df4ebb0c8a6c31d43"
+        }
+      ],
+      "fixture": "reference-claim",
+      "source_path": "D:\\Su Lab\\verifier-submissions\\reference-claim",
+      "final_state": "stage2_complete",
+      "claim_count": 1,
+      "manifest_path": "D:\\Su Lab\\verifier-runs\\.verifier\\runs\\264f715c-3a79-4c9a-a7b3-3a9dc8a6ee6b\\claim-manifest.json",
+      "manifest_digest": "cdbd72435672d33739d6892943eba8adb9c6d112f1d51fd16ec36bf90e8155ca",
+      "manifest_id": "manifest-007690484769614c852fc1ff3dc92ca6582f77ac40e166e46f0d5162585ba885",
+      "snapshot_digest": "8297206ff3b17e8da68128861e5a5231a27a70bca07ab27f0ceebad17918e394",
+      "agent": {
+        "caller_reported_model_label": "claude-opus-5",
+        "host": "claude_desktop",
+        "identity_source": "unavailable_via_mcp",
+        "model_id": null,
+        "model_version": null,
+        "provider": null,
+        "response_id": null
+      },
+      "result": "pass"
+    },
+    {
+      "run_id": "3c5dc584-2c29-4618-97f1-53f92d8b5aae",
+      "checks_passed": 120,
+      "failures": [],
+      "events": [
+        {
+          "sequence": 1,
+          "tool": "start_verifier_run",
+          "time_utc": "2026-09-11T03:28:28.607923+00:00",
+          "status": "ok",
+          "outcome": "context_ready",
+          "state": "created",
+          "event_digest": "23af50f16283bee0f29df61c521e969a6e041c2c0c179ee73e44933fa1b087ad",
+          "reconstructed_response_bytes": 93137
+        },
+        {
+          "sequence": 2,
+          "tool": "load_submitted_skill",
+          "time_utc": "2026-09-11T03:29:16.303975+00:00",
+          "status": "ok",
+          "outcome": "source_snapshotted",
+          "state": "source_ready",
+          "event_digest": "38922f7b9faaa9a833fd2b0262000b7d4ee2ba7face68952a3a7f51faee5c1f1"
+        },
+        {
+          "sequence": 3,
+          "tool": "commit_claim_manifest",
+          "time_utc": "2026-09-11T03:29:28.956229+00:00",
+          "status": "ok",
+          "outcome": "no_scientific_claims",
+          "state": "stage2_complete",
+          "event_digest": "b13e8838ac24852156ea93379119d6d8f4df07293abbb4f96daa6c87c8d1c0c6"
+        }
+      ],
+      "fixture": "no-claims",
+      "source_path": "D:\\Su Lab\\verifier-submissions\\no-claims",
+      "final_state": "stage2_complete",
+      "claim_count": 0,
+      "manifest_path": "D:\\Su Lab\\verifier-runs\\.verifier\\runs\\3c5dc584-2c29-4618-97f1-53f92d8b5aae\\claim-manifest.json",
+      "manifest_digest": "042d08040ad3fc2d0dc826715a4491c9dcf06c3118775d3f52f92d897948a3f8",
+      "manifest_id": "manifest-ee64960de5377b897680d05756c5bc9b10d64b9d75351136d2f62c8560775f30",
+      "snapshot_digest": "2221bbfa44fc7a9a1747305c8ab048957b4da38addb9e0c029aaf985d56fdb18",
+      "agent": {
+        "caller_reported_model_label": null,
+        "host": "claude_desktop",
+        "identity_source": "unavailable_via_mcp",
+        "model_id": null,
+        "model_version": null,
+        "provider": null,
+        "response_id": null
+      },
+      "result": "pass"
+    },
+    {
+      "run_id": "3e3011c6-e951-4fd0-b427-d3cbdef1903b",
+      "checks_passed": 124,
+      "failures": [],
+      "events": [
+        {
+          "sequence": 1,
+          "tool": "start_verifier_run",
+          "time_utc": "2026-09-11T03:31:36.326456+00:00",
+          "status": "ok",
+          "outcome": "context_ready",
+          "state": "created",
+          "event_digest": "494ccfbb0238c4eb35e3fbbb646d82fe5ea781c542e872709f055f3f59a718f9",
+          "reconstructed_response_bytes": 93161
+        },
+        {
+          "sequence": 2,
+          "tool": "load_submitted_skill",
+          "time_utc": "2026-09-11T03:32:30.778403+00:00",
+          "status": "ok",
+          "outcome": "source_snapshotted",
+          "state": "source_ready",
+          "event_digest": "367db3764b382ee93f0b6b4f540ddc36ab074c0c68c1985847285ece2ce35d35"
+        },
+        {
+          "sequence": 3,
+          "tool": "commit_claim_manifest",
+          "time_utc": "2026-09-11T03:32:55.371532+00:00",
+          "status": "ok",
+          "outcome": "claims_committed",
+          "state": "stage2_complete",
+          "event_digest": "af13b483b388772c208bf27d74d8d4ae7040e4d58fa0c23d0e91147189c1dba6"
+        }
+      ],
+      "fixture": "instruction-conflict",
+      "source_path": "D:\\Su Lab\\verifier-submissions\\instruction-conflict",
+      "final_state": "stage2_complete",
+      "claim_count": 1,
+      "manifest_path": "D:\\Su Lab\\verifier-runs\\.verifier\\runs\\3e3011c6-e951-4fd0-b427-d3cbdef1903b\\claim-manifest.json",
+      "manifest_digest": "bb445df0629c20b0e3d8110ecd8430906004f766591792a072b82f748e05e9c2",
+      "manifest_id": "manifest-74021d13d41f84d40bf5c7bcf55181b33cfd884cfebf6661ef3494718e46f725",
+      "snapshot_digest": "015c916b4ccb511a3b8d1070c7739c894cef73abe9d66b792bf5c07becf25fe8",
+      "agent": {
+        "caller_reported_model_label": "claude-opus-5",
+        "host": "claude_desktop",
+        "identity_source": "unavailable_via_mcp",
+        "model_id": null,
+        "model_version": null,
+        "provider": null,
+        "response_id": null
+      },
+      "result": "pass"
+    }
+  ],
+  "limitations": [
+    "Verifier records cannot prove that Claude invoked no other app tools.",
+    "Saved bootstrap proves server-side content, not complete model-side rendering or attention.",
+    "Resume event does not identify the originating conversation.",
+    "Caller-provided model labels are unverified; exact model identity remains unavailable.",
+    "Cancellation and personal submissions were not tested by the user."
+  ],
+  "source_records_unchanged": true,
+  "source_file_count": 52,
+  "unique_committed_objects_checked": 21,
+  "event_count": 15,
+  "mechanical_checks_passed": true,
+  "semantic_review": {
+    "status": "follow_up",
+    "run_id": "125ceb03-30a0-446a-841c-84138ed0718b",
+    "field": "claims[0].expected_behavior",
+    "finding": "The resumed mass claim adds an isotope-selection definition absent from the fixture. This audit does not judge its scientific truth; it is model-supplied interpretation, not source-backed detail. Preserve the historical artifact; tighten extraction guidance before this field drives evaluation."
+  },
+  "installation_verification": {
+    "extension_installer_hash": "1fdc67adad4042279c54ec2fbd81d6e518f98b9b014e4cce0adc6deb543130f1",
+    "archive_hash": "1fdc67adad4042279c54ec2fbd81d6e518f98b9b014e4cce0adc6deb543130f1",
+    "installed_at_utc": "2026-09-11T03:12:06.014Z",
+    "mismatches": [],
+    "installed_files_checked": 21,
+    "skill_zip_hash": "e2b6d541c4a0befd167c33e33ef841019f5f225360b1d873d1cda3da2626cd41"
+  },
+  "user_confirmation": {
+    "visible_model_label": "Opus 5",
+    "resume_in_new_chat": true,
+    "non_verifier_tools_in_conflict_chat": "User does not think so, but could not identify tool calls; not confirmed absent.",
+    "cancellation_tested": false,
+    "personal_submissions_tested": false
+  }
+}

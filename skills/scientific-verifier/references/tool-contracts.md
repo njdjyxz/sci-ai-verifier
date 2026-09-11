@@ -25,6 +25,8 @@ These are planned boundaries, not permission for the verifier agent to call arbi
 
 Every tool returns exactly one status.
 
+Stage 2 host controls can reject a request before trusted run state is available. Their explicit `host` scope, null state/budget fields, and refresh guidance are defined in the [Stage 2 host-error envelope](stage2-contract.md#enforcement-and-app-limitations). These host rejections do not spend a run's budgets.
+
 State fields describe the operation's declared `scope`: `run`, `claim`, or `routing_batch`. Run-scoped tools return the run state; claim-scoped tools return `claim_id`, that claim's committed state, and its legal next tools. Routing tools return `affected_claim_ids` and one identical state/legal-tool set for all of them; only `commit_claim_type_assignments` changes their states. Each result also includes `run_state` and the current `claim_states` map so the host can schedule independent claims without treating a union of tool names as permission for the wrong claim. `find_registered_evaluators` is claim-scoped and never returns divergent nested transitions. The examples below show a claim-scoped result; run/batch forms omit `claim_id`, with batch forms providing `affected_claim_ids` instead. Fatal operational scope remains `claim` or `run` even if the attempted operation was a routing batch.
 
 Successful operation or ordinary workflow outcome:

@@ -84,6 +84,9 @@ class Runtime:
         except Fault as error:
             raise ConfigurationError(f"Instruction directory: {error}. Reinstall the extension "
                                      "or restore the reviewed instruction files.") from None
+        except UnicodeError:
+            raise ConfigurationError("Instruction directory: a required file is not valid UTF-8. "
+                                     "Restore the reviewed instruction files.") from None
         try:  # `.verifier` itself may be unusable even when its parent is fine.
             self.store = Store(workspace)
         except Fault as error:
@@ -109,7 +112,9 @@ class Runtime:
                 return persistence_failure(error.code, str(error))
             return {"status": "retryable", "error": {
                 "code": error.code, "message": str(error), "repair_fields": error.fields,
-                "scope": "host", "committed_state": None, "next_legal_tools": [],
+                "scope": "host", "run_state": None, "committed_state": None, "next_legal_tools": [],
+                "details": {}, "refresh_required": error.code == "run_busy",
+                "retries_remaining": None, "illegal_transitions_remaining": None,
             }}
         except OSError:
             return persistence_failure("storage_failure",

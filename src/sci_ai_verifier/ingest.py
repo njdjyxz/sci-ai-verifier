@@ -10,6 +10,7 @@ from .common import Fault, canonical, digest, normalize
 from .storage import no_links
 
 POLICY = "stage2-snapshot-v1"
+MAX_DIRECTORY_DEPTH = 64
 EXCLUDED_DIRS = {
     ".git", ".hg", ".svn", ".verifier", ".venv", "venv", "env",
     "node_modules", "__pycache__", ".pytest_cache", "tmp", "temp", "dist", "build",
@@ -77,11 +78,15 @@ def snapshot(store, state):
     total = 0
     visited = 0
 
-    def add(path, relative):
-        nonlocal total, visited
+    def visit():
+        nonlocal visited
         visited += 1
         if visited > limits["max_files"] * 10:
             raise Fault("source_too_large", "Source traversal limit exceeded.", fatal=True)
+
+    def add(path, relative):
+        nonlocal total
+        visit()
         no_links(path)
         if not valid_relative(relative) or relative.casefold() in seen:
             raise Fault("unsafe_source", "Ambiguous or unsafe snapshot path.", fatal=True)
@@ -121,8 +126,10 @@ def snapshot(store, state):
                       "encoding": encoding, "normalization": normalization})
 
     if source.is_dir():
-        def walk(directory):
+        def walk(directory, depth=0):
             nonlocal visited
+            if depth > MAX_DIRECTORY_DEPTH:
+                raise Fault("source_too_large", "Source directory depth exceeds 64 levels.", fatal=True)
             # Bound enumeration before sorting; do not consume an unbounded directory.
             entries = []
             with os.scandir(directory) as iterator:
@@ -135,11 +142,11 @@ def snapshot(store, state):
                 relative = path.relative_to(source).as_posix()
                 no_links(path)
                 if path.is_dir():
-                    visited += 1
+                    visit()
                     if name.lower() in EXCLUDED_DIRS:
                         excluded.append({"path": relative, "reason": "excluded_directory"})
                     else:
-                        walk(path)
+                        walk(path, depth + 1)
                 else:
                     add(path, relative)
         walk(source)

@@ -25,6 +25,9 @@ class DesktopPackageTests(unittest.TestCase):
                        cwd=ROOT, capture_output=True, check=True)
 
     def test_extracted_package_runs_full_stdio_flow(self):
+        self.check_stdio_flow(sys.executable)
+
+    def check_stdio_flow(self, interpreter):
         parent = ROOT / ".verifier" / "package-tests"
         parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=parent, prefix="desktop-") as temporary:
@@ -38,7 +41,7 @@ class DesktopPackageTests(unittest.TestCase):
             manifest = json.loads((package / "manifest.json").read_bytes())
             values = {
                 "${__dirname}": str(package),
-                "${user_config.python_path}": sys.executable,
+                "${user_config.python_path}": interpreter,
                 "${user_config.data_directory}": str(base / "data"),
                 "${user_config.submission_directory}": str(ROOT / "examples/submissions"),
             }
@@ -193,27 +196,27 @@ class DesktopPackageTests(unittest.TestCase):
 
     def test_stdio_flow_under_the_declared_minimum_interpreter(self):
         interpreter = None
-        for candidate in (os.environ.get("VERIFIER_PY311"), "python3.11"):
-            if candidate and shutil.which(candidate):
-                interpreter = shutil.which(candidate)
-        if interpreter is None and os.name == "nt":
+        candidates = [os.environ.get("VERIFIER_PY311"), "python3.11"]
+        if sys.version_info[:2] == (3, 11):
+            candidates.insert(0, sys.executable)
+        if os.name == "nt" and shutil.which("py"):
             found = subprocess.run(["py", "-0p"], capture_output=True, text=True)
             for line in found.stdout.splitlines():
-                if line.strip().startswith(("-V:3.11", "-V:3.12", "-V:3.13")):
-                    interpreter = line.split(maxsplit=1)[-1].strip(" *")
+                if line.strip().startswith("-V:3.11"):
+                    candidates.append(line.split(maxsplit=1)[-1].strip(" *"))
+        for candidate in candidates:
+            resolved = shutil.which(candidate) if candidate else None
+            if resolved:
+                version = subprocess.run(
+                    [resolved, "-I", "-c", "import sys; print('.'.join(map(str, sys.version_info[:2])))"],
+                    capture_output=True, text=True, timeout=10)
+                if version.returncode == 0 and version.stdout.strip() == "3.11":
+                    interpreter = resolved
+                    break
         if interpreter is None:
-            self.skipTest("No interpreter older than the development one is installed; "
+            self.skipTest("No Python 3.11 interpreter is available; "
                           "the 3.11 floor in pyproject.toml and manifest.json is unverified.")
-        result = subprocess.run(
-            [interpreter, "-I", "-B", str(ROOT / "desktop/server.py"), "request",
-             "--workspace", str(Path(tempfile.mkdtemp())),
-             "--source-root", str(ROOT / "examples/submissions"),
-             "--instructions", str(ROOT / "skills/scientific-verifier")],
-            input=json.dumps({"name": "start_verifier_run", "arguments": {
-                "source_path": str(ROOT / "examples/submissions/no-claims")}}).encode(),
-            capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
-        self.assertEqual(json.loads(result.stdout)["status"], "ok")
+        self.check_stdio_flow(interpreter)
 
     def test_manifest_declares_exactly_the_published_tools(self):
         sys.path.insert(0, str(ROOT / "src"))

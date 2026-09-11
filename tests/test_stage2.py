@@ -1,3 +1,4 @@
+import errno
 import io
 import json
 import os
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import sci_ai_verifier.agent as agent
+import sci_ai_verifier.ingest as ingest
 import sci_ai_verifier.storage as storage
 from sci_ai_verifier.agent import ConfigurationError, Runtime
 from sci_ai_verifier.common import Fault, canonical, digest
@@ -268,10 +270,12 @@ class Stage2Tests(unittest.TestCase):
     def test_corrupt_journal_does_not_claim_durable_recovery(self):
         loaded = self.load()
         directory = self.runtime.store.run_dir(loaded["run_id"])
-        (directory / "events/00000002.json").write_bytes(b"{}")
-        result = self.runtime.call("resume_verifier_run", {"run_id": loaded["run_id"]})
-        self.assertEqual(result["error"]["code"], "operational_outcome_persistence_failed")
-        self.assertIsNone(result["error"]["operational_outcome_id"])
+        for damaged in (b"{}", b"null", b"[]"):
+            with self.subTest(journal=damaged):
+                (directory / "events/00000002.json").write_bytes(damaged)
+                result = self.runtime.call("resume_verifier_run", {"run_id": loaded["run_id"]})
+                self.assertEqual(result["error"]["code"], "operational_outcome_persistence_failed")
+                self.assertIsNone(result["error"]["operational_outcome_id"])
 
     def test_corrupt_manifest_keeps_durable_failure_response(self):
         loaded = self.load()
@@ -412,6 +416,8 @@ class Stage2Tests(unittest.TestCase):
         self.assertEqual(host["status"], "retryable")
         self.assertEqual(host["error"]["code"], "invalid_path")
         self.assertEqual(host["error"]["repair_fields"], ["source_path"])
+        nul_path = self.runtime.call("start_verifier_run", {"source_path": str(self.skill) + "\x00"})
+        self.assertEqual(nul_path["error"]["code"], "invalid_path")
         self.assertFalse((self.runtime.store.root / "runs").exists())
         created = self.start()
         result = self.call(created, "load_submitted_skill", source_path=quoted)
@@ -441,8 +447,21 @@ class Stage2Tests(unittest.TestCase):
     def test_incompatible_saved_run_is_rejected_and_never_rewritten(self):
         for label, mutate in (
                 ("unsupported schema", lambda s: s.__setitem__("schema_version", 99)),
+                ("boolean schema", lambda s: s.__setitem__("schema_version", True)),
+                ("list schema", lambda s: s.__setitem__("schema_version", [])),
+                ("unsupported writer", lambda s: s.__setitem__("implementation_version", "9.9.9")),
                 ("missing field", lambda s: s.pop("read_receipts")),
-                ("missing limit", lambda s: s["limits"].pop("max_claims"))):
+                ("missing limit", lambda s: s["limits"].pop("max_claims")),
+                ("invalid limit", lambda s: s["limits"].update(max_steps="64")),
+                ("invalid timestamp", lambda s: s.update(last_activity_at="invalid")),
+                ("naive timestamp", lambda s: s.update(last_activity_at="2026-09-10T00:00:00")),
+                ("unknown state", lambda s: s.update(run_state="routing")),
+                ("missing snapshot", lambda s: s.update(run_state="source_ready")),
+                ("invalid objects", lambda s: s.update(objects=None)),
+                ("invalid outcome reference", lambda s: s.update(operational_refs=[None])),
+                ("invalid context", lambda s: s.update(context_manifest=[{}])),
+                ("invalid receipt", lambda s: s.update(read_receipts=[{}])),
+                ("invalid counter", lambda s: s.update(retries_remaining=True))):
             with self.subTest(label=label):
                 created = self.start()
                 event = self.runtime.store.run_dir(created["run_id"]) / "events/00000001.json"
@@ -458,6 +477,91 @@ class Stage2Tests(unittest.TestCase):
                 self.assertIsNone(result["error"]["run_state"])
                 self.assertEqual(event.read_bytes(), saved)
                 self.assertEqual(len(list(event.parent.glob("*.json"))), 1)
+
+    def test_malformed_projection_is_rebuilt_but_missing_journal_tail_is_fatal(self):
+        created = self.start()
+        directory = self.runtime.store.run_dir(created["run_id"])
+        projection = directory / "run.json"
+        journal = (directory / "events/00000001.json").read_bytes()
+        for cached in ([], None, {"revision": "broken"}, {"revision": True}):
+            with self.subTest(projection=cached):
+                projection.write_bytes(canonical(cached))
+                result = self.runtime.call("get_verifier_context", {"run_id": created["run_id"]})
+                self.assertEqual(result["status"], "ok", result)
+                self.assertEqual(json.loads(projection.read_bytes())["revision"], 1)
+                self.assertEqual((directory / "events/00000001.json").read_bytes(), journal)
+        projection.write_bytes(canonical({"revision": 2}))
+        result = self.runtime.call("resume_verifier_run", {"run_id": created["run_id"]})
+        self.assertEqual(result["error"]["details"]["reason_code"], "corrupted_state")
+        self.assertEqual(len(list((directory / "events").glob("*.json"))), 1)
+
+    def test_deep_source_records_bounded_operational_failure(self):
+        directory = self.skill
+        for _ in range(ingest.MAX_DIRECTORY_DEPTH + 1):
+            directory = directory / "d"
+            directory.mkdir()
+        created = self.start()
+        result = self.call(created, "load_submitted_skill", source_path=str(self.skill))
+        self.assertEqual(result["error"]["code"], "source_too_large")
+        self.assertEqual(result["error"]["run_state"], "incomplete")
+        self.assertIsNotNone(result["error"]["operational_outcome_id"])
+        state, _ = self.runtime.store.read(created["run_id"])
+        self.assertEqual(state["run_state"], "incomplete")
+        self.assertIsNone(state["source_ref"])
+
+    def test_lock_io_failure_is_not_reported_as_contention(self):
+        created = self.start()
+        event = self.runtime.store.run_dir(created["run_id"]) / "events/00000001.json"
+        saved = event.read_bytes()
+        def fail():
+            raise OSError(errno.EIO, "simulated lock device error")
+        with patch.object(storage, "file_lock", return_value=(fail, lambda: None)):
+            result = self.runtime.call("resume_verifier_run", {"run_id": created["run_id"]})
+        self.assertEqual(result["status"], "fatal")
+        self.assertEqual(result["error"]["details"]["reason_code"], "storage_failure")
+        self.assertEqual(event.read_bytes(), saved)
+
+    def test_empty_directories_share_the_global_traversal_budget(self):
+        source = self.sources / "directory-limit"
+        (source / "aaa").mkdir(parents=True)
+        (source / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+        for number in range(8):
+            (source / "aaa" / str(number)).mkdir()
+        (source / "zzz").mkdir()
+        self.runtime = Runtime(self.base / "limited-directories", self.sources, INSTRUCTIONS,
+                               limits={"max_files": 1})
+        created = self.start(source)
+        result = self.call(created, "load_submitted_skill", source_path=str(source))
+        self.assertEqual(result["error"]["code"], "source_too_large")
+        self.assertIsNotNone(result["error"]["operational_outcome_id"])
+
+    def test_host_errors_report_unknown_budgets_and_refresh_after_contention(self):
+        created = self.start()
+        with patch.object(self.runtime.store, "lock", side_effect=Fault("run_busy", "held")):
+            result = self.runtime.call("get_verifier_context", {"run_id": created["run_id"]})
+        error = result["error"]
+        self.assertEqual(error["scope"], "host")
+        self.assertTrue(error["refresh_required"])
+        for key in ("run_state", "committed_state", "retries_remaining", "illegal_transitions_remaining"):
+            self.assertIsNone(error[key])
+        self.assertEqual(error["details"], {})
+        self.assertEqual(error["next_legal_tools"], [])
+
+    def test_invalid_utf8_instructions_report_actionable_startup_failure(self):
+        copied = self.base / "instructions"
+        shutil.copytree(INSTRUCTIONS, copied)
+        (copied / "SKILL.md").write_bytes(b"\xff")
+        process = subprocess.run(
+            [sys.executable, str(ROOT / "desktop/server.py"), "serve",
+             "--workspace", str(self.base / "data"), "--source-root", str(self.sources),
+             "--instructions", str(copied)],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        self.assertEqual(process.returncode, 2)
+        self.assertEqual(process.stdout, "")
+        self.assertNotIn("Traceback", process.stderr)
+        self.assertIn("Instruction directory", process.stderr)
+        self.assertIn("UTF-8", process.stderr)
+        self.assertEqual(len(process.stderr.strip().splitlines()), 1)
 
     def test_saved_state_shape_matches_the_compatibility_contract(self):
         created = self.start()

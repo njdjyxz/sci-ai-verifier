@@ -1,5 +1,6 @@
 """Content-addressed objects and an atomic event journal with readable projections."""
 
+import errno
 import json
 import os
 import re
@@ -7,6 +8,7 @@ import stat
 import tempfile
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -17,6 +19,7 @@ from .common import Fault, canonical, digest, utc_now
 # There is no automatic migration: an unsupported record is rejected, never rewritten.
 SCHEMA_VERSION = 1
 SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION})
+SUPPORTED_IMPLEMENTATION_VERSIONS = frozenset({"0.2.0"})
 REQUIRED_STATE_FIELDS = frozenset({
     "schema_version", "implementation_version", "profile", "run_id", "created_at",
     "updated_at", "last_activity_at", "revision", "state_token", "run_state",
@@ -41,15 +44,15 @@ def no_links(path):
     except (OSError, ValueError):
         raise Fault("invalid_path", f"Not a usable filesystem path: {path!r}") from None
     for part in [*reversed(path.parents), path]:
-        if part.is_symlink():
-            raise Fault("unsafe_path", f"Links are not permitted: {part}", fatal=True)
         try:
             info = part.lstat()
         except FileNotFoundError:
             continue
-        except OSError:
+        except (OSError, ValueError):
             # A malformed path is a correctable request, not a storage failure.
             raise Fault("invalid_path", f"Not a usable filesystem path: {part}") from None
+        if stat.S_ISLNK(info.st_mode):
+            raise Fault("unsafe_path", f"Links are not permitted: {part}", fatal=True)
         if getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
             raise Fault("unsafe_path", f"Reparse points are not permitted: {part}", fatal=True)
     return path
@@ -57,12 +60,21 @@ def no_links(path):
 
 def compatible(state):
     """Reject a saved run this implementation cannot read; never rewrite it."""
+    def reject(reason):
+        raise Fault("incompatible_run_record", reason + " No migration or rewrite was performed.",
+                    fatal=True)
+
+    if not isinstance(state, dict):
+        reject("The committed state must be an object.")
     found = state.get("schema_version")
-    if found not in SUPPORTED_SCHEMA_VERSIONS:
+    if type(found) is not int or found not in SUPPORTED_SCHEMA_VERSIONS:
         raise Fault("incompatible_run_record",
                     f"This run was written with record schema {found!r}; implementation "
                     f"{__version__} reads {sorted(SUPPORTED_SCHEMA_VERSIONS)} and performs no "
                     "migration. Read it with the implementation that wrote it.", fatal=True)
+    writer = state.get("implementation_version")
+    if not isinstance(writer, str) or writer not in SUPPORTED_IMPLEMENTATION_VERSIONS:
+        reject(f"Unsupported saved-run implementation {writer!r}.")
     limits = state.get("limits")
     missing = sorted(REQUIRED_STATE_FIELDS - set(state)) or (
         [] if isinstance(limits, dict) and REQUIRED_LIMIT_FIELDS <= set(limits)
@@ -71,6 +83,61 @@ def compatible(state):
         raise Fault("incompatible_run_record",
                     f"The saved run record is missing required fields: {', '.join(missing)}. "
                     "It was not written by a compatible implementation.", fatal=True)
+    shapes = {
+        str: ("profile", "run_id", "state_token", "run_state", "source_path", "source_root"),
+        dict: ("claim_states", "finalization", "agent"),
+        list: ("objects", "context_manifest", "operational_refs", "read_receipts", "host_limitations"),
+    }
+    for kind, fields in shapes.items():
+        for field in fields:
+            if type(state[field]) is not kind:
+                reject(f"Invalid saved field: {field}.")
+    for field in ("revision", "steps_used", "retries_remaining", "illegal_transitions_remaining"):
+        if type(state[field]) is not int or state[field] < (1 if field == "revision" else 0):
+            reject(f"Invalid saved counter: {field}.")
+    for field in REQUIRED_LIMIT_FIELDS:
+        if type(limits[field]) is not int or limits[field] < 1:
+            reject(f"Invalid saved limit: {field}.")
+    for field in ("created_at", "updated_at", "last_activity_at", "finished_at"):
+        if field == "finished_at" and state[field] is None:
+            continue
+        try:
+            parsed = datetime.fromisoformat(state[field])
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError()
+        except (TypeError, ValueError, OverflowError):
+            reject(f"Invalid saved timestamp: {field}.")
+    if (state["profile"] != "stage2" or state["run_state"] not in
+            {"created", "source_ready", "stage2_complete", "incomplete"}
+            or state["verification_complete"] is not False):
+        reject("Unsupported saved profile, state, or verification flag.")
+    if any(value != "routing" for value in state["claim_states"].values()):
+        reject("Unsupported saved claim state.")
+    if state["completion_reason"] is not None and not isinstance(state["completion_reason"], str):
+        reject("Invalid saved completion reason.")
+    def object_ref(value):
+        return isinstance(value, str) and re.fullmatch("[0-9a-f]{64}", value) is not None
+
+    if not all(object_ref(key) for key in state["objects"]):
+        reject("Invalid committed object list.")
+    refs = [key for key in (state["source_ref"], state["manifest_ref"]) if key is not None]
+    for key in [*refs, *state["operational_refs"]]:
+        if not object_ref(key) or key not in state["objects"]:
+            reject("A saved artifact reference is invalid or absent from the object list.")
+    for entry in state["context_manifest"]:
+        if (not isinstance(entry, dict) or not isinstance(entry.get("identity"), str)
+                or entry.get("trust_class") != "verifier_instruction"
+                or not object_ref(entry.get("digest")) or entry["digest"] not in state["objects"]):
+            reject("Invalid saved instruction context.")
+    for entry in state["read_receipts"]:
+        if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str)
+                or not object_ref(entry.get("digest")) or entry["digest"] not in state["objects"]
+                or type(entry.get("start")) is not int or type(entry.get("end")) is not int
+                or not 0 <= entry["start"] <= entry["end"]):
+            reject("Invalid saved read receipt.")
+    if ((state["run_state"] in {"source_ready", "stage2_complete"} and not state["source_ref"])
+            or (state["run_state"] == "stage2_complete" and not state["manifest_ref"])):
+        reject("The saved state lacks its required snapshot or manifest.")
 
 
 def file_lock(fileno):
@@ -130,7 +197,9 @@ class Store:
                 try:
                     acquire()
                     break
-                except OSError:
+                except OSError as error:
+                    if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                        raise
                     if time.monotonic() >= deadline:
                         # Contention leaves the saved run exactly as it was.
                         raise Fault("run_busy", "Another request holds this run; "
@@ -180,6 +249,8 @@ class Store:
         try:
             for sequence, path in enumerate(files, 1):
                 event = json.loads(no_links(path).read_bytes())
+                if not isinstance(event, dict):
+                    raise ValueError("Journal events must be objects.")
                 saved_digest = event.pop("digest")
                 if (path.name != f"{sequence:08d}.json" or digest(canonical(event)) != saved_digest
                         or event["previous_digest"] != previous or event["sequence"] != sequence
@@ -187,6 +258,7 @@ class Store:
                     raise ValueError()
                 previous = saved_digest
             state = event["state_after"]
+            compatible(state)
             if (state["run_id"] != run_id or state["revision"] != len(files)
                     or state["profile"] != "stage2"):
                 raise ValueError()
@@ -196,11 +268,11 @@ class Store:
                     cached = json.loads(projection.read_bytes())
                 except (ValueError, UnicodeError):
                     cached = {}
-                if cached.get("revision", 0) > state["revision"]:
+                revision = cached.get("revision") if isinstance(cached, dict) else None
+                if type(revision) is int and revision > state["revision"]:
                     raise ValueError("Journal tail is missing.")
         except (KeyError, TypeError, ValueError, OSError):
             raise Fault("corrupted_state", "The event journal failed validation.", fatal=True) from None
-        compatible(state)
         if verify_objects:
             for key in state["objects"]:
                 self.get(key)
