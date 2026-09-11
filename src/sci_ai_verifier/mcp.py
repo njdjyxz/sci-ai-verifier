@@ -1,4 +1,4 @@
-"""Minimal synchronous MCP stdio transport for the fixed Stage 2 surface.
+"""Minimal synchronous MCP stdio transport for the fixed verifier tool surface.
 
 Uses MCP lifecycle/tools with newline-delimited JSON-RPC. No network or model APIs.
 """

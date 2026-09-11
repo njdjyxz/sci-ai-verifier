@@ -1,3 +1,3 @@
-"""Scientific verifier's deterministic tools; no model or subject execution."""
+"""Deterministic verifier tools and explicitly labeled general-skill demonstrations."""
 
-__version__ = "0.2.0"
+__version__ = "0.5.0"

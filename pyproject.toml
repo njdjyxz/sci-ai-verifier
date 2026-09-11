@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sci-ai-verifier"
-version = "0.2.0"
-description = "Deterministic Stage 2 tools for the Scientific Verifier Claude Desktop skill"
+version = "0.5.0"
+description = "General safe-skill demos and bounded scientific verification in Claude Desktop"
 requires-python = ">=3.11"
 dependencies = []
 

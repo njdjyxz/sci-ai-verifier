@@ -27,13 +27,22 @@ class DesktopPackageTests(unittest.TestCase):
     def test_extracted_package_runs_full_stdio_flow(self):
         self.check_stdio_flow(sys.executable)
 
-    def check_stdio_flow(self, interpreter):
+    def test_extracted_package_runs_stage3(self):
+        self.check_stdio_flow(sys.executable, "stage3")
+
+    def test_extracted_package_chemical_profile_reaches_report(self):
+        self.check_stdio_flow(sys.executable, "verification")
+
+    def test_extracted_package_default_handles_general_inline_skill(self):
+        self.check_stdio_flow(sys.executable, "demo")
+
+    def check_stdio_flow(self, interpreter, profile="stage2"):
         parent = ROOT / ".verifier" / "package-tests"
         parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=parent, prefix="desktop-") as temporary:
             base = Path(temporary)
             package = base / "package with spaces"
-            with zipfile.ZipFile(ROOT / "dist/scientific-verifier-0.2.0.mcpb") as archive:
+            with zipfile.ZipFile(ROOT / "dist/scientific-verifier-0.5.0.mcpb") as archive:
                 self.assertIsNone(archive.testzip())
                 for name in archive.namelist():
                     self.assertTrue((package / name).resolve().is_relative_to(package.resolve()))
@@ -52,6 +61,8 @@ class DesktopPackageTests(unittest.TestCase):
                 return value
             config = manifest["server"]["mcp_config"]
             command = [expand(config["command"]), *map(expand, config["args"])]
+            if profile != "demo":
+                command += ["--profile", profile]
             process = subprocess.Popen(command, cwd=base, stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             responses = queue.Queue()
@@ -88,28 +99,76 @@ class DesktopPackageTests(unittest.TestCase):
                     "protocolVersion": "2025-06-18", "capabilities": {},
                     "clientInfo": {"name": "scripted-package-acceptance", "version": "1"},
                 })
-                self.assertEqual(initialized["serverInfo"]["version"], "0.2.0")
+                self.assertEqual(initialized["serverInfo"]["version"], "0.5.0")
                 request("notifications/initialized", notification=True)
                 listed = request("tools/list")
-                self.assertEqual(len(listed["tools"]), 7)
+                self.assertEqual(len(listed["tools"]), 23)
                 source = str(ROOT / "examples/submissions/reference-claim")
-                created = call("start_verifier_run", {"source_path": source, "model_label": "scripted-no-model"})
+                quote = "The skill calculates a molecule's monoisotopic mass from its molecular formula."
+                source_file = "references/mass.md"
+                if profile == "demo":
+                    quote = "Convert comma-separated words into a JSON list of trimmed nonempty strings."
+                    source_file = "SKILL.md"
+                    created = call("start_inline_demo_run", {"source_name": "General list formatter", "source_text": quote})
+                    source = next(block["content"]["source_path"] for block in created["context_blocks"]
+                                  if block["identity"] == "authorized-parameters")
+                else:
+                    created = call("start_verifier_run", {"source_path": source, "model_label": "scripted-no-model"})
                 loaded = call("load_submitted_skill", {
                     "run_id": created["run_id"], "state_token": created["state_token"], "source_path": source,
                 })
                 parent_args = {"run_id": loaded["run_id"], "snapshot_id": loaded["snapshot"]["id"],
                                "snapshot_digest": loaded["snapshot"]["digest"]}
                 read = call("read_snapshot_file", {
-                    **parent_args, "state_token": loaded["state_token"], "path": "references/mass.md",
+                    **parent_args, "state_token": loaded["state_token"], "path": source_file,
                 })
-                quote = "The skill calculates a molecule's monoisotopic mass from its molecular formula."
                 finished = call("commit_claim_manifest", {
                     **parent_args, "state_token": read["state_token"], "claims": [{
-                        "statement": quote, "scope": "Not specified", "expected_behavior": "Calculate mass.",
-                        "source_path": "references/mass.md", "source_quote": quote, "report_note": "",
+                        "statement": quote, "scope": "Not specified", "expected_behavior": "Return a JSON list" if profile == "demo" else "Calculate mass.",
+                        "source_path": source_file, "source_quote": quote, "report_note": "",
                     }],
                 })
-                self.assertEqual(finished["run_state"], "stage2_complete")
+                def step(previous, name, **extra):
+                    return call(name, {"run_id": previous["run_id"], "state_token": previous["state_token"], **extra})
+                if profile == "demo":
+                    self.assertEqual(finished["run_state"], "demo_planning")
+                    planned = step(finished, "commit_demo_plan", manifest_id=finished["manifest"]["id"],
+                        summary="General nonchemical demo", tests=[{
+                            "claim_id": finished["manifest"]["claims"][0]["claim_id"], "input": "apple, pear, , orange",
+                            "purpose": "Whitespace and empty entries", "checks": [
+                                {"kind": "equals", "description": "Three trimmed entries", "expected": '["apple", "pear", "orange"]'}]}])
+                    observed = step(planned, "record_demo_observation", plan_id=planned["demo_plan"]["id"],
+                        test_id=planned["demo_plan"]["tests"][0]["test_id"], output='["apple", "pear", "orange"]',
+                        assessment="met_expectations", reason="Scripted package acceptance; no live Chat execution")
+                    reported = step(observed, "write_report_card")
+                    self.assertEqual(reported["run_state"], "completed")
+                    self.assertFalse(reported["report"]["independent_verification"])
+                    self.assertEqual(reported["report"]["counts"]["met_expectations"], 1)
+                    self.assertTrue(Path(reported["report_markdown_path"]).is_file())
+                elif profile in {"stage3", "verification"}:
+                    self.assertEqual(finished["run_state"], "claims_ready")
+                    index = step(finished, "list_claim_types")
+                    self.assertEqual(index["claim_types"], [])
+                    claim = finished["manifest"]["claims"][0]
+                    routed = step(index, "commit_claim_type_assignments", manifest_id=finished["manifest"]["id"],
+                                  index_digest=index["index_digest"], assignments=[{
+                                      "claim_id": claim["claim_id"], "claim_type_id": "", "report_note": "",
+                                      "proposal": {"name": "mass", "definition": "Calculate mass from formula",
+                                                   "inputs": "formula", "outputs": "mass", "boundaries": "Not specified"}}])
+                    selected = step(routed, "find_registered_evaluators", claim_id=claim["claim_id"],
+                                    route_id=routed["routing"]["routes"][0]["route_id"], scope=claim["scope"], intended_grade="A")
+                    self.assertEqual(selected["run_state"], "stage3_complete" if profile == "stage3" else "reporting")
+                    self.assertEqual(selected["outcome"], "implementation_required")
+                    self.assertIsNotNone(selected["selection"]["operational_outcome_id"])
+                    self.assertTrue(Path(selected["routing_path"]).is_file())
+                    self.assertFalse(selected["verification_complete"])
+                    if profile == "verification":
+                        reported = step(selected, "write_report_card")
+                        self.assertEqual(reported["run_state"], "completed")
+                        self.assertEqual(reported["report"]["operational_claims"], 1)
+                        self.assertTrue(Path(reported["report_json_path"]).is_file())
+                else:
+                    self.assertEqual(finished["run_state"], "stage2_complete")
                 self.assertFalse(finished["verification_complete"])
                 data = json.loads(Path(finished["manifest_path"]).read_bytes())
                 self.assertEqual(data["count"], 1)
@@ -236,7 +295,7 @@ class DesktopPackageTests(unittest.TestCase):
         for record in after:
             path = ROOT / "dist" / record["file"]
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), record["sha256"])
-        with zipfile.ZipFile(ROOT / "dist/scientific-verifier-skill-0.2.0.zip") as archive:
+        with zipfile.ZipFile(ROOT / "dist/scientific-verifier-skill-0.5.0.zip") as archive:
             names = archive.namelist()
             self.assertIn("scientific-verifier/SKILL.md", names)
             self.assertTrue(all(n.startswith("scientific-verifier/") for n in names))

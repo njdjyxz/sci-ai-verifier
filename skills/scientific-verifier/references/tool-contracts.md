@@ -1,6 +1,6 @@
 # Python Tool Contracts
 
-This file names the complete intended Python tool surface. Stage 2 implements the first three workflow tools and bootstrap controls under the [Claude Desktop profile](stage2-contract.md). Later tools remain specifications. Interface changes require a documentation update first.
+This file names the complete intended Python tool surface. Stage 2 implements the first three workflow tools and bootstrap controls under the [Claude Desktop profile](stage2-contract.md). Stage 3 implements the three routing tools under its separate profile. Planning and subsequent tools remain specifications. Interface changes require a documentation update first.
 
 ## Planned runtime files
 
@@ -169,9 +169,11 @@ Fatal conditions: source-snapshot ID or digest mismatch, storage failure, or cor
 
 ## Routing tools
 
+The implemented `stage3` request schemas, immutable catalog source, provisional-type isolation and checkpoint exceptions are specified in [stage3-contract.md](stage3-contract.md#state-and-tool-protocol). Every implemented request includes `run_id` and `state_token`. The descriptions below retain the broader target's merged-registry and later planning behavior; they do not authorize it in a Stage 3 run.
+
 ### `list_claim_types`
 
-Planned implementation: `routing.py`
+Implementation: `routing.py` for the Stage 3 profile; full target below.
 
 Purpose: return the complete controlled claim-type index for semantic comparison.
 
@@ -187,7 +189,7 @@ Fatal conditions: malformed or unsupported index schema.
 
 ### `commit_claim_type_assignments`
 
-Planned implementation: `routing.py` and `storage.py`
+Implementation: `routing.py` and `storage.py` for the Stage 3 profile; full target below.
 
 Purpose: validate exactly one type assignment per accepted claim and persist necessary provisional types.
 
@@ -205,7 +207,7 @@ Fatal conditions: registry corruption or storage failure.
 
 ### `find_registered_evaluators`
 
-Planned implementation: `routing.py`
+Implementation: `routing.py` for the Stage 3 profile; full target below.
 
 Purpose: resolve a usable capability for exactly one accepted claim, including lower-grade fallback: an evaluator-or-harness plus subject runner for A through C, or an approved documentary capability without subject execution for D.
 
@@ -231,7 +233,36 @@ Retryable conditions: missing/unknown claim or route IDs, mismatched scope, or i
 
 Fatal conditions: malformed or unsupported evaluator, harness, or subject-runner registry, or storage failure. Record the affected scope; registry corruption is not an ordinary empty catalog.
 
+## General demo tools
+
+The 0.5.0 `demo` profile uses [demo-contract.md](demo-contract.md) and its [workflow matrix](workflow.md#general-demo-profile). `start_inline_demo_run(source_name, source_text)` accepts text from Chat without requiring a local submission path. The existing local bootstrap and source/manifest tools remain usable; extraction includes general skill behaviors and does not require scientific claims.
+
+`commit_demo_plan(run_id, state_token, manifest_id, summary, tests)` commits an immutable set of examples covering every claim. Each test supplies a claim ID, input, purpose and checks (`kind`, `description`, `expected`). Python assigns identities and fixes snapshot/manifest parents. `record_demo_observation(run_id, state_token, plan_id, test_id, output, assessment, reason)` commits one actual same-chat example or an explicit not-tested record. Exact/contains/JSON failures override a claimed success; qualitative judgments remain same-chat assessments.
+
+`write_report_card` is profile-aware and produces a demo report when all cases are accounted for. Reports explicitly deny independent verification and assign no scientific grade. No catalog or provider is required. These tools cannot create scientific execution results in the chemical profile. The published definitions remain stable; profile/state legality is enforced separately.
+
+## Verification profile tools
+
+Version 0.4.0 implements the compact requests in [verification-contract.md](verification-contract.md). The stable machine-readable tool definitions are supplied in bootstrap and are the request schema for this profile. All workflow calls carry `run_id` and `state_token`; plan-dependent calls additionally carry `claim_id`, `plan_id` and `plan_revision`.
+
+| Tool | Additional request fields | Authoritative effect |
+|---|---|---|
+| `commit_evaluation_plan` | claim ID, selection ID, match index, exact scope, trial count, report note | Pin exact method/policy/resources/subject; revise plan and invalidate downstream refs |
+| `find_resources` | none | Return exact installed candidates |
+| `materialize_resources` | search ID | Create a complete revision-bound lock |
+| `build_evaluation_bundle` | none | Construct fixed cases and separate expected values |
+| `validate_evaluation_bundle` | bundle ID | Validate locked cases and fixed scope |
+| `register_evaluator` | bundle ID | Persist run-local provisional registration; require replan |
+| `commit_plan_audit` | resource-lock ID, scope/fairness findings, proposed status, limitations | Check exact bindings; derive audit status from objective checks and bounded semantic findings |
+| `execute_evaluation_plan` | audit ID, exact request budget | Call operator adapter, preserve raw outputs, score trials independently |
+| `commit_claim_result` | execution ID; optional status and grade | Copy authoritative completed verdict; reject overrides |
+| `write_report_card` | run/token only | Require complete terminal accounting; write JSON and Markdown |
+
+The [workflow specialization](workflow.md#verification-profile) is normative for unsupported methods, missing infrastructure, invalid observations and cancellation. The general target sections below remain the specification for future broader capabilities. No callable parameters accept arbitrary code, endpoints, wrappers, expected values, tolerances, provider settings or independent-assessor text. Controls and the first six workflow tools retain the shared desktop/routing contracts.
+
 ## Planning tool
+
+The bounded verification profile's implemented request forms and installed-method restrictions are specified in [verification-contract.md](verification-contract.md). Committed references omitted from its compact request schemas are populated and checked by Python, never inferred by the model. The broader target behavior below remains authoritative where the profile does not explicitly narrow available capabilities.
 
 ### `commit_evaluation_plan`
 

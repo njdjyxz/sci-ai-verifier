@@ -16,7 +16,9 @@
 
 ## This repository
 
-Stage 1 is the reviewed Markdown specification. Stage 2 implements a small Claude Desktop MCP runtime under `src/sci_ai_verifier/`, after reconciling the contracts in `skills/scientific-verifier/references/stage2-contract.md`. Only bootstrap controls and the first three workflow tools are in scope. Update the reviewed contracts before extending executable behavior; keep policy reviewable in Markdown.
+On 2026-09-11 the user requested branch `codex/general-skill-demo` and a quick demo for arbitrary safe skills in Claude Chat. Version 0.5.0 defaults to `demo`, with local or inline submissions, fixed examples, same-chat observations and reports. It bypasses scientific catalog/provider prerequisites without inventing independent scientific grades. Its governing contract is `skills/scientific-verifier/references/demo-contract.md`. Existing scientific and checkpoint profiles remain explicit and compatible. Retain truthful provenance, secret exclusions and immutable evidence; do not silently represent same-chat judgments as independent verification.
+
+Stage 1 is the reviewed Markdown specification. Version 0.4.0 of the Claude Desktop MCP runtime under `src/sci_ai_verifier/` preserves Stage 2/3 and adds the bounded `verification` profile in `skills/scientific-verifier/references/verification-contract.md`. It implements plans, fixed resources, bundles, audit, configurable subject observations and reports for the C-only chemical-mass pilot. The user chose fixtures for now; no live provider is enabled. Candidate entries under `examples/catalog/` remain provisional, reviewed registries remain empty, and synthetic catalog approvals are test data only. Update contracts before behavior; keep policy reviewable in Markdown.
 
 The authoritative documents, in dependency order:
 

@@ -86,7 +86,7 @@ UTF-8 text without NUL is normalized from CRLF/CR to LF; undecodable known text 
 
 ## Stage 3 dependency: independently released catalog
 
-Stage 3 will retrieve a reviewed catalog from this project's existing GitHub repository. A release manifest must identify catalog/schema version, minimum compatible runtime/skill interfaces, each asset's exact version/digest, and its reviewed provenance. Runs pin a verified manifest and evaluator/resource versions at start; updates never change an active run. Verify downloaded bytes before caching or use, reject incompatible manifests explicitly, and permit offline reuse only of a previously verified compatible cache. A missing cache/download is an operational availability result, not an empty successful search. Candidate run contributions stay local until user-authorized submission and maintainer review. New executable methods still require reviewed code. No catalog downloads or publication are implemented in Stage 2.
+The implemented routing profile and independently released catalog protocol now live in [stage3-contract.md](stage3-contract.md); bounded execution and reporting are defined in [verification-contract.md](verification-contract.md), and the separate general demonstration is in [demo-contract.md](demo-contract.md). Stage 2 itself still performs no registry lookup, download or publication. Existing Stage 2 records retain their original pinned instructions and checkpoint. The 0.5.0 reader supports schema-1 runs written by 0.2.0, 0.3.0, 0.4.0 and 0.5.0; unsupported writers are rejected without migration.
 
 ## MCP compatibility target
 

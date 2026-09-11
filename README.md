@@ -1,92 +1,59 @@
-# Scientific AI Verifier
+# Skill Verifier Demo
 
-Scientific AI Verifier extracts atomic scientific claims from submitted AI skills, then is intended to route, evaluate, and report those claims with reproducible evidence. **Stage 2 currently implements claim extraction only.** It does not run the submitted skill, evaluate scientific accuracy, assign evidence grades, or produce a scientific report card.
+Version **0.5.0**, on branch `codex/general-skill-demo`, can demonstrate a random safe skill in your existing Claude Desktop Chat. It accepts a specifically selected local skill or attached/pasted instructions, fixes useful example tests, records actual outputs and produces a report. **No chemical scope, reviewed catalog, separate subject runner or API key is required for this demo.**
 
-## Current stage
+[Install the demo and test your skill](desktop/DEMO-INSTALL.md).
 
-The reviewed Stage 1 specification describes the full future workflow. The active Stage 2 Python runtime implements three workflow tools and bootstrap controls for **Claude Desktop Chat**. The desktop app owns the conversation; Python owns exact validation, snapshots, state, and saved records. No Claude Code CLI or separate model API loop is required.
+## Quick start
 
-The installable deliverables are a custom skill ZIP and a local MCP desktop extension. Python 3.11+ is required, with no third-party runtime dependencies. See the [desktop installation guide](desktop/INSTALL.md), [Stage 2 contract and acceptance checklist](skills/scientific-verifier/references/stage2-contract.md), and [development plan](DEVELOPMENT-PLAN.md).
+1. Install `dist/scientific-verifier-0.5.0.mcpb` and enable **Skill Verifier Demo**.
+2. Replace the uploaded verifier skill with `dist/scientific-verifier-skill-0.5.0.zip`.
+3. Start a new Chat and say **Verify this skill: <full local path>**, or attach its instructions and say **Verify this attached skill**.
 
-The packages are prepared for installation. Scripted tests do not establish that the Claude app loaded the skill, followed its instructions, or extracted scientifically appropriate claims. The live desktop acceptance step remains separate.
+Keep the existing Python interpreter and result-folder settings. Updating the checkout or only one package does not update both installed components. Old runs retain their original profile; start a new run to try the demo.
 
-## Architecture
-
-```text
-Claude Desktop Chat + uploaded scientific-verifier skill
-    -> start/resume a run through the local MCP extension
-    -> receive pinned instructions, committed state, and authorized source path
-    -> load_submitted_skill
-    -> read_snapshot_file for relevant reference files
-    -> commit_claim_manifest
-    -> stage2_complete (scientific verification remains pending)
-```
-
-Every workflow request includes the current run ID and an opaque state token. Python checks schemas, legality, source authorization, snapshot integrity, exact source quotes, and independent retry budgets. Calls formed from the same token cannot both execute. Tool results are authoritative for the saved workflow.
-
-Submitted source text stays untrusted data. The runtime never executes it or follows its links. It can read only within the operator's configured submission directory and writes run artifacts only below the configured data directory's `.verifier/`.
-
-Claude Desktop controls its other tools, model selection, message context, and billing. A local extension cannot enforce all of those controls or attest the model's exact identity. The [desktop host profile](skills/scientific-verifier/references/stage2-contract.md#enforcement-and-app-limitations) makes those limits explicit. The prototype is not a fully isolated verifier host.
+The report includes example inputs, outputs, expectations met or failed, untested cases and limitations. Claude generates and qualitatively reviews examples in the same Chat. Python preserves the fixed plan and raw outputs and applies explicit exact/contains/JSON checks. Reports label this **same-chat demo**, with no independent scientific grade. Unavailable external programs, accounts, devices or actions must be marked not tested.
 
 ## Build and validate
 
-From the repository root in PowerShell:
+Python 3.11+ is required, with no third-party runtime dependencies.
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -q
 python scripts/build_desktop.py
 ```
 
-The build creates these local outputs under `dist/`:
+The builder creates the MCPB, skill ZIP, install guides, configuration example and checksums under `dist/`. It does not install or publish them. The automated suite includes an extracted-package general-skill flow; live Claude app behavior is a separate acceptance check.
 
-- `scientific-verifier-0.2.0.mcpb`: local Python tools and pinned specification files.
-- `scientific-verifier-skill-0.2.0.zip`: the skill folder for upload to Claude.
-- `claude_desktop_config.example.json`: a manual configuration alternative using this checkout.
-- `checksums.json`: package SHA-256 digests.
+## Profiles
 
-Generated packages and run data are gitignored; source files and the reproducible builder are kept in Git. The desktop package test builds and launches the extracted extension over stdio without importing the checkout's runtime.
+| Profile | Behavior |
+|---|---|
+| `demo` (desktop/CLI default) | General safe-skill examples and a same-chat report; no catalog/provider required |
+| `verification` | Bounded neutral CHNOPS scientific workflow: plans, locked references, bundles, audit, configured observations, C-only independent comparison and reporting |
+| `stage3` | Preserved claim routing/catalog checkpoint |
+| `stage2` | Preserved extraction checkpoint |
 
-## Review order
+The strict chemical workflow is implemented and fixture-tested; scientific catalog approval and a live subject adapter remain pending. Run `python scripts/run_fixture_demo.py` for its reproducible synthetic example, with `--variant wrong` or `--variant invalid` to inspect failure paths. Synthetic approvals never enter the reviewed registries. See [the chemical pilot](reviews/CHEMICAL-MASS-PILOT.md) and [completion record](reviews/PROJECT-COMPLETION.md).
 
-1. [SKILL.md](skills/scientific-verifier/SKILL.md): agent responsibilities and bootstrap.
-2. [Stage 2 contract](skills/scientific-verifier/references/stage2-contract.md): current implementation boundary, schemas, persistence, and acceptance cases.
-3. [Workflow](skills/scientific-verifier/references/workflow.md): authoritative state/tool tables, including the explicit Stage 2 profile.
-4. [Tool contracts](skills/scientific-verifier/references/tool-contracts.md): deterministic responsibilities.
-5. [Runtime contract](skills/scientific-verifier/references/runtime-contract.md): full-host target and desktop exceptions.
-6. [Artifact contracts](skills/scientific-verifier/references/artifact-contracts.md), [resource policy](skills/scientific-verifier/references/resource-policy.md), and [evidence rubric](skills/scientific-verifier/references/evidence-rubric.md).
-7. [Review guide](reviews/REVIEW-GUIDE.md): background on the Stage 1 review and scientific workflow branches.
+## Records and boundaries
 
-## Active repository structure
+Records live under `<result folder>/.verifier/runs/<run-id>/`. Open `report-card.md` first; `report-card.json` retains exact provenance and detailed evidence. Plans, outputs and reports are content-addressed, journaled and recoverable. A lost response should trigger context recovery, not replacement of an example. Cancellation preserves completed examples and records the remaining ones as untested.
 
-```text
-CLAUDE.md, README.md, DEVELOPMENT-PLAN.md, pyproject.toml
-skills/scientific-verifier/       Reviewed instructions and contracts
-src/sci_ai_verifier/              Small deterministic Stage 2 runtime
-  agent.py                       Bootstrap, pinned context, and recovery
-  tools.py                       Tool schemas, legality, and dispatch
-  storage.py                     Content-addressed objects and event journal
-  ingest.py                      Source snapshots and exact file reads
-  claims.py                      Structural claim and quote validation
-  mcp.py, __main__.py             Local stdio transport and diagnostics
-  common.py                      Shared deterministic primitives
-desktop/                         Extension manifest, entry point, install guide
-scripts/build_desktop.py         Reproducible MCPB and skill ZIP builder
-tests/                           Deterministic and packaged-protocol acceptance
-examples/submissions/            Reference, zero-claim, and conflict fixtures
-registry/, evaluators/           Reviewed catalogs; later-stage use only
-tmp/legacy_fixed_workflow/        Preserved earlier implementation
-```
+The demo allows the exact local path selected by the user, including outside the usual submission directory. It retains link/junction rejection, credential exclusions, snapshot identity and finite size/request bounds. Pasted text is recorded as caller-supplied text; original attachment bytes and model identity are not independently attested. `verification_complete` means report accounting finished, not that a skill passed scientific validation.
 
-## Storage and scientific principles
+## Repository map
 
-Runs use `.verifier/runs/<run-id>/`. Immutable SHA-256 objects live in `.verifier/store/`. An atomic hash-linked event journal is the commit record; readable `run.json`, `source-snapshot.json`, and `claim-manifest.json` projections can be reconstructed. UTF-8 text is normalized to LF before hashing. Reads and resumption use the immutable snapshot, even if the original source changes.
+| Path | Purpose |
+|---|---|
+| `skills/scientific-verifier/` | Uploaded skill and profile/workflow/tool/artifact contracts |
+| `src/sci_ai_verifier/` | Demo, scientific runtime, snapshots, routing, execution and storage |
+| `registry/`, `catalog/` | Reviewed registry source and distributable catalogs; currently empty |
+| `examples/catalog/` | Provisional scientific proposals |
+| `examples/submissions/` | Extraction fixtures |
+| `examples/chemical-mass-fixture/` | Synthetic chemical subject, with answers separate from submitted instructions |
+| `desktop/`, `scripts/` | Install guides, packaging and reproducible chemical fixture demo |
+| `tests/`, `reviews/` | Automated checks and precisely scoped acceptance records |
+| `tmp/legacy_fixed_workflow/` | Preserved historical code; never imported by the active runtime |
 
-The full workflow keeps scientific verdicts separate from evidence strength and operational failures. Grades A through C require independently scored evidence; D requires a completed independent documentary assessment; U never supports a scientific pass or fail. These later-stage rules are specified, not implemented by Stage 2.
-
-Git's `registry/` contains reviewed entries only. Future runs write provisional metadata under `.verifier/registry/`; promotion requires a human-reviewed commit. Stage 2 touches neither layer. The preserved [legacy implementation](tmp/legacy_fixed_workflow/) remains reference material and is never imported by the active package.
-
-## Next implementation stage
-
-Complete the live Claude Desktop installation and bounded fixture acceptance, recording the app version, visible model label, actual tool results, and any unavailable exact model metadata. Assess extracted claim quality separately from Python's structural validation.
-
-Stage 3 then adds claim-type routing, reviewed evaluator lookup, and an independently released GitHub catalog with compatibility checks, digest verification, pinned versions, and explicit offline behavior. Its [distribution contract](skills/scientific-verifier/references/stage2-contract.md#stage-3-dependency-independently-released-catalog) is defined; retrieval and publication are not implemented in Stage 2.
+The [demo contract](skills/scientific-verifier/references/demo-contract.md) and its [workflow matrix](skills/scientific-verifier/references/workflow.md#general-demo-profile) define this branch's broader demonstration. The stricter scientific contracts remain explicit and do not silently confer their grades on demo observations.

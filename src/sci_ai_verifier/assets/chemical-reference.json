@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "version": "nist-web-2026-09-10-candidate-1",
+  "review_status": "candidate_pending_scientific_review",
+  "description": "Selected neutral isotope masses. Not standard atomic weights; not a claim about the full periodic table.",
+  "accessed_on": "2026-09-10",
+  "isotopes": {
+    "H": {"mass_number": 1, "mass_da": "1.00782503223", "uncertainty_da": "0.00000000009", "source": "https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=H"},
+    "C": {"mass_number": 12, "mass_da": "12", "uncertainty_da": "0", "source": "https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=C"},
+    "N": {"mass_number": 14, "mass_da": "14.00307400443", "uncertainty_da": "0.00000000020", "source": "https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=N"},
+    "O": {"mass_number": 16, "mass_da": "15.99491461957", "uncertainty_da": "0.00000000017", "source": "https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=O"},
+    "P": {"mass_number": 31, "mass_da": "30.97376199842", "uncertainty_da": "0.00000000070", "source": "https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=P"},
+    "S": {"mass_number": 32, "mass_da": "31.9720711744", "uncertainty_da": "0.0000000014", "source": "https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=S"}
+  }
+}

@@ -88,6 +88,8 @@ Claims may come from any file in the snapshot, not only the top-level `SKILL.md`
 
 ## Routing artifact
 
+For the implemented Stage 3 profile, [stage3-contract.md](stage3-contract.md#routing-artifacts-and-provisional-types) specifies catalog-lock and routing object fields, run-local provisional types, and the selection-only stopping point. The full target below does not imply that execution is implemented.
+
 Target path: `.verifier/runs/<run-id>/routing.json`
 
 Contains one route per accepted claim:
@@ -113,7 +115,27 @@ Python searches grades A through D at or below the intended ceiling for complete
 
 An evaluator match records capability only. It is not evidence that an evaluator ran or that a claim passed.
 
+## General demo artifacts
+
+Schema-1 writer 0.5.0 adds the separate `demo` profile with `demo_plan_ref`, `demo_observation_refs` keyed by assigned test ID, report refs and `submission_origin`. Local paths remain exact pinned targets. Inline submissions are explicitly caller-supplied Chat text, persisted before source snapshotting; they do not attest the original attachment.
+
+Demo plans bind the manifest/source refs and record the case inputs and criteria before outputs. Immutable observations retain raw text, check results, proposed and derived demo assessments, explanations and `assessment_basis: same_chat_demo`. Reports preserve all claims and examples, not-tested cases, provenance and limitations. They state `independent_verification: false` and `scientific_grade: null`; no scientific claim result is manufactured. Readable plan/observation/report projections can be reconstructed from the journal and objects.
+
+## Verification profile artifacts
+
+Schema-1 runs written by 0.4.0 add `claim_work` with a revision counter and immutable object references for each claim's plan, search, lock, bundle, validation, registration, audit, execution and result. Earlier revisions remain in the journal/object store. Readable claim projections are caches. A revision clears downstream references; registration is reusable only for the same selected capability. The compact profile retains these authoritative bindings:
+
+- Plans: source snapshot ID/digest, selected catalog capability/runner versions, requested/planned grades, exact scope, fixed method and policy digests, pinned resources, subject identity, trial count and call budget.
+- Locks and bundles: exact plan ID/revision, resource content digests, unique cases, separate inputs/expected answers, coverage and exclusions.
+- Audits: exact plan/lock/bundle object refs, method/policy refs, bounded semantic findings, objective checks, derived status and any runtime-only promotion.
+- Execution: raw request/output refs, independent per-trial scores, agreement, requested/attempted/obtained/evaluated/invalid/missing counts, authoritative status/grade or null, coverage and synthetic marker.
+- Results/reports: immutable evidence parents, independent verdict and grade, all accepted claims paired with a result or an operational outcome, finalization and explicit fixture warnings. JSON is authoritative; Markdown is reconstructed from the same report inputs. No overall grade is inferred.
+
+These are profile-specific representations of the general artifacts below. The bound subject adapter is operator code; its identity must change when its implementation or configuration changes. In the bundled replay adapter, the configuration bytes are included in its identity. No credentials are accepted by the tool schemas.
+
 ## Evaluation plan
+
+The bounded [verification profile](verification-contract.md) stores plan, resource-search/lock, bundle, validation, registration, audit, execution and result objects by digest, retaining prior revisions. Readable per-claim projections are derived from the event journal. Plans and their locks bind the source snapshot, selection, exact capability/runner, method/policy and resources before any subject observation. No mutable file or prose claim substitutes for those bindings.
 
 Target path: `.verifier/runs/<run-id>/plans/<claim-id>.json`
 

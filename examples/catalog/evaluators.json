@@ -1,0 +1,72 @@
+{
+  "schema_version": 2,
+  "revision": 1,
+  "evaluators": [],
+  "harnesses": [
+    {
+      "version": "proposal-1",
+      "status": "provisional",
+      "provenance": "Proposed by Codex on 2026-09-10; maintainer and scientific review pending",
+      "claim_type_ids": [
+        "chem.monoisotopic_mass"
+      ],
+      "scopes": [
+        "neutral CHNOPS formulas; H-1 C-12 N-14 O-16 P-31 S-32"
+      ],
+      "limitations": [
+        "Candidate only. No submitted skill, evaluator execution, or evidence grade has been validated."
+      ],
+      "resources": [
+        {
+          "id": "chemical-pilot-cases",
+          "version": "chemical-pilot-cases-1",
+          "sha256": "aa8ea514c9fae9805fb8f55bf081f6d0471bd3f80113ebed3a8f972f33bd6965"
+        },
+        {
+          "id": "nist-chnops-isotopes",
+          "version": "nist-web-2026-09-10-candidate-1",
+          "sha256": "772db0ecfa54279706d8788fcabdd2811806b504e0aad326b872b3afc02f65f4"
+        }
+      ],
+      "id": "chem.mass.numeric.v1",
+      "grades": [
+        "C"
+      ],
+      "input_interface": "chemical-formula-v1",
+      "output_interface": "mass-daltons-v1",
+      "configuration_contract": "reviews/CHEMICAL-MASS-PILOT.md#candidate-contract",
+      "scoring_contract": "plain nonnegative decimal in Da; inclusive absolute error 0.000001",
+      "aggregation_contract": "Every trial scored separately; no averaging of subject outputs",
+      "trial_grade_policy": "chemical-mass-comparison version 1; C only; scientific approval pending",
+      "method": "chemical_mass_v1",
+      "policy_sha256": "9593f436248a65de205a63d284fd3be759965e46f584f96a21182cc314b89802"
+    },
+    {
+      "version": "proposal-1",
+      "status": "provisional",
+      "provenance": "Proposed by Codex on 2026-09-10; maintainer and scientific review pending",
+      "claim_type_ids": [
+        "chem.monoisotopic_mass"
+      ],
+      "scopes": [
+        "neutral CHNOPS formulas; H-1 C-12 N-14 O-16 P-31 S-32"
+      ],
+      "limitations": [
+        "Candidate only. No submitted skill, evaluator execution, or evidence grade has been validated."
+      ],
+      "resources": [
+        {
+          "id": "nist-chnops-isotopes",
+          "version": "nist-web-2026-09-10-candidate-1",
+          "sha256": "772db0ecfa54279706d8788fcabdd2811806b504e0aad326b872b3afc02f65f4"
+        }
+      ],
+      "id": "chem.mass.documentary.v1",
+      "grades": [
+        "D"
+      ],
+      "rubric": "Compare documented grammar, isotope convention, units and supported elements to independent references",
+      "assessor_contract": "Identified independent human or separate assessment session; orchestrator may not assess its own design"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "revision": 1,
+  "claim_types": [
+    {
+      "version": "proposal-1",
+      "status": "provisional",
+      "provenance": "Proposed by Codex on 2026-09-10; maintainer and scientific review pending",
+      "id": "chem.formula_composition",
+      "name": "Chemical formula composition",
+      "definition": "Map a molecular formula to integer counts for each element.",
+      "inputs": "A formula using the supported grammar",
+      "outputs": "Element-count mapping",
+      "boundaries": "Declare grammar; do not infer charge, isotope labels, or molecular structure."
+    },
+    {
+      "version": "proposal-1",
+      "status": "provisional",
+      "provenance": "Proposed by Codex on 2026-09-10; maintainer and scientific review pending",
+      "id": "chem.monoisotopic_mass",
+      "name": "Monoisotopic formula mass",
+      "definition": "Calculate a formula mass using the expressly named isotope for each element.",
+      "inputs": "Formula and declared isotope convention",
+      "outputs": "Mass in daltons",
+      "boundaries": "Neutral species only in initial candidate; explicitly list elements and exclusions."
+    },
+    {
+      "version": "proposal-1",
+      "status": "provisional",
+      "provenance": "Proposed by Codex on 2026-09-10; maintainer and scientific review pending",
+      "id": "chem.average_mass",
+      "name": "Average formula mass",
+      "definition": "Calculate formula mass under a declared set of average atomic weights.",
+      "inputs": "Formula and named atomic-weight table",
+      "outputs": "Average formula mass",
+      "boundaries": "Distinct from monoisotopic mass; table edition and interval treatment must be fixed."
+    }
+  ]
+}

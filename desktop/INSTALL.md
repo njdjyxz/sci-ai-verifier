@@ -1,5 +1,9 @@
 # Install and test Stage 2 in Claude Desktop
 
+For the current 0.5.0 general safe-skill demo, use [DEMO-INSTALL.md](DEMO-INSTALL.md). The procedure below remains historical Stage 2 acceptance evidence.
+
+This guide preserves the original 0.2.0 extraction acceptance procedure. The [chemical verification guide](VERIFICATION-INSTALL.md) describes the 0.4.0 implementation, retained as an explicit profile. New default runs use the general demo; `--profile stage2` remains available for regression testing. The [Stage 3 guide](STAGE3-INSTALL.md) preserves the 0.3.0 checkpoint procedure.
+
 Use **Chat in the installed Claude desktop app**. This delivery does not require Claude Code CLI. Install both packages: the skill supplies instructions; the extension runs the local Python tools.
 
 Stage 2 tests claim extraction and source traceability. It does not execute the submitted skill, check scientific accuracy, select evaluators, or assign grades. The instructions below are a live acceptance procedure; following this document is still required to establish app compatibility.

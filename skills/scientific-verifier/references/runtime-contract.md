@@ -2,7 +2,9 @@
 
 `workflow.md` defines *what* the verifier does. This file defines what the **host process** must do so that definition holds when the verifier agent is a large language model rather than a subroutine. Nothing here changes a scientific rule; everything here is an obligation on the runner.
 
-Sections 1 through 5 describe the full host target. The implemented desktop prototype uses the explicit [Stage 2 profile](stage2-contract.md), including narrower observable/enforceable host guarantees. Section 6 describes that integration instead of the superseded direct model API host.
+Sections 1 through 5 describe the full host target. The implemented desktop profiles use the explicit [Stage 2 host guarantees](stage2-contract.md), extended for routing by [Stage 3](stage3-contract.md) and for bounded execution/reporting by the [verification profile](verification-contract.md). They retain the narrower observable/enforceable desktop guarantees. Section 6 describes that integration instead of the superseded direct model API host.
+
+The 0.5.0 [general demo profile](demo-contract.md) is a separately labeled same-chat demonstration, not full-host scientific conformance. Its source/plan/observation records are deterministic, while example generation and qualitative review occur in Claude Chat. The stable surface now has five host controls and eighteen workflow tools, with profile-specific legality.
 
 ## 1. Declared legality versus authorization
 
@@ -63,7 +65,7 @@ An `agent_unavailable` outcome never becomes grade U and never becomes a scienti
 
 ## 6. Implemented Claude Desktop host
 
-The approved integration target is Claude Desktop Chat, using an uploaded skill ZIP and a local MCP extension. The app owns model calls and the conversation. Python implements deterministic bootstrap controls and the first three workflow tools; it does not maintain a model message loop or configure model API features.
+The approved integration target is Claude Desktop Chat, using an uploaded skill ZIP and a local MCP extension. The app owns planner model calls and the conversation. Python exposes five host controls and eighteen workflow tools, with profile-specific legality. The verification profile includes a host-injected subject interface and explicit replay fixtures; it does not maintain a planner model loop or implement a live provider. Replay observations are always synthetic. In-process adapter callbacks are not an isolation boundary; future live adapters must enforce their own deadlines and confinement.
 
 The [Stage 2 contract](stage2-contract.md) records the exact enforced boundaries and exceptions to the full host target above: state-token serialization instead of assistant-turn inspection, immutable supplied context instead of guaranteed privileged message placement, bounded local tool requests instead of model billing control, and explicit recovery/cancellation instead of observing private model stop reasons. Other app tools cannot be disabled by this MCP server. Exact model and response identifiers remain null when the desktop client does not expose them.
 
