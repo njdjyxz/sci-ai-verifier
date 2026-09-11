@@ -344,10 +344,18 @@ expected values, actual outputs, references and outcomes directly. Syntax,
 active-document links and formatting checks pass. Exact evidence is in
 [local validation](reviews/local-validation-2026-09-11.json).
 
-At validation, the integration is still an uncommitted merge on main. The prepared
-release retains demo commit `d4f2119`; publication and branch retirement follow
-only after the integration commit. No live model, scientific registry approval,
-GitHub evaluator contribution or scientific grade has been produced.
+Committed the validated integration on main as `a8d6045`, with both prior main
+`72abc24` and demo `d4f2119` as merge parents. Removed the local demo branch after
+confirming its history is reachable from main. The official cached MCPB 2.1.2
+manifest validator also passes. After automatic approval review initially required
+explicit publication authorization, the user approved publishing and remote demo
+deletion. Pushed `a8d6045` to `origin/main`, deleted the remote demo branch with
+an exact-tip lease, and verified that main points to the integration and the demo
+branch is absent remotely. Both local and remote demo branches are now retired;
+their complete history remains reachable from main. This documentation update
+records the completed publication. Generated local archives remain gitignored.
+No live model, scientific registry approval, GitHub evaluator contribution or
+scientific grade has been produced.
 
 ### Urgent next steps, if any
 
@@ -375,9 +383,9 @@ publication failure must retain local evidence for retry without rerunning subje
 
 ### Recommended next action
 
-Publish the validated integration on main and retire the demo branch after its
-history is safely retained. Then perform the first live local acceptance when
-Claude Code and eligible usage are available. Live acceptance
+Install/configure the native Claude Code dependency and perform the first live
+local acceptance when eligible usage is available. Branch integration, publication
+and demo retirement are complete. Live acceptance
 is finished only after a real submitted skill is invoked in a fresh Claude Code
 session and the saved report/receipts are independently inspected. It is not
 established by the deterministic fixture or a successful package build.

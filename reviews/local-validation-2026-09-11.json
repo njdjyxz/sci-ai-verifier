@@ -55,7 +55,12 @@
     "python_311_syntax": "passed",
     "active_markdown_links": "passed",
     "git_diff_check": "passed",
-    "legacy_reviewed_registries_and_prior_app_evidence": "unchanged from integrated demo branch"
+    "legacy_reviewed_registries_and_prior_app_evidence": "unchanged from integrated demo branch",
+    "mcpb_manifest_schema": {
+      "tool": "@anthropic-ai/mcpb",
+      "version": "2.1.2",
+      "result": "passed"
+    }
   },
   "not_claimed": [
     "Live Claude Code invocation",
@@ -69,8 +74,10 @@
     "checkout": "main",
     "merge_source": "d4f21195fd8e9f00ffd804a1adabed10c6b36934",
     "previous_main": "72abc245a44f80bb8a931a0a3168ba1b01098076",
-    "integration_commit": "pending",
-    "remote_publication": "pending",
-    "demo_branch_retirement": "pending"
+    "integration_commit": "a8d6045657c5a2a10fdfb4f9ec139f60b73e31f2",
+    "remote_publication": "integration commit a8d6045 verified at origin/main after explicit user approval",
+    "demo_branch_retirement": "local and remote branches deleted; exact remote tip lease enforced",
+    "demo_history_preserved_as_merge_parent": true,
+    "publication_authorization": "User explicitly approved publishing and remote deletion in this task"
   }
 }
