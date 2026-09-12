@@ -19,7 +19,7 @@ from .common import Fault, canonical, digest, utc_now
 # There is no automatic migration: an unsupported record is rejected, never rewritten.
 SCHEMA_VERSION = 1
 SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION})
-SUPPORTED_IMPLEMENTATION_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"})
+SUPPORTED_IMPLEMENTATION_VERSIONS = frozenset({"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0"})
 REQUIRED_STATE_FIELDS = frozenset({
     "schema_version", "implementation_version", "profile", "run_id", "created_at",
     "updated_at", "last_activity_at", "revision", "state_token", "run_state",
@@ -123,7 +123,7 @@ def compatible(state):
     if state["profile"] == "demo":
         claim_states = {"demo_planning", "demo_execution", "terminal_demo"}
     if state["profile"] == "local":
-        claim_states = {"local_lookup", "local_discovery", "local_ready", "terminal_result", "terminal_operational"}
+        claim_states = {"local_lookup", "local_discovery", "local_ready", "local_documentary", "terminal_result", "terminal_operational"}
     if any(value not in claim_states for value in state["claim_states"].values()):
         reject("Unsupported saved claim state.")
     if state["completion_reason"] is not None and not isinstance(state["completion_reason"], str):
@@ -138,7 +138,7 @@ def compatible(state):
         if not object_ref(key) or key not in state["objects"]:
             reject("A saved artifact reference is invalid or absent from the object list.")
     if state["profile"] in {"stage3", "verification"}:
-        if (writer not in {"0.3.0", "0.4.0", "0.5.0", "0.6.0"} or not {"catalog_ref", "routing_ref", "intended_grade"} <= set(state)
+        if (writer not in {"0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0"} or not {"catalog_ref", "routing_ref", "intended_grade"} <= set(state)
                 or state["intended_grade"] != "A"):
             reject("Invalid Stage 3 profile fields or writer.")
         for field in ("catalog_ref", "routing_ref"):
@@ -152,7 +152,7 @@ def compatible(state):
     if state["profile"] == "verification":
         required = {"claim_work", "report_ref", "report_markdown_ref", "subject_config", "subject_calls_used",
                     "execution_limits", "resource_assets", "method_ref", "case_formulas"}
-        if writer not in {"0.4.0", "0.5.0", "0.6.0"} or not required <= set(state):
+        if writer not in {"0.4.0", "0.5.0", "0.6.0", "0.7.0"} or not required <= set(state):
             reject("Unsupported verification-profile record.")
         if (not isinstance(state["claim_work"], dict) or not isinstance(state["subject_config"], dict)
                 or not isinstance(state["resource_assets"], dict) or not isinstance(state["case_formulas"], list)
@@ -193,7 +193,7 @@ def compatible(state):
         if state["run_state"] == "completed" and (not state["report_ref"] or not state["report_markdown_ref"]):
             reject("Completed run requires both report objects.")
     if state["profile"] == "demo":
-        if (writer not in {"0.5.0", "0.6.0"} or not {"demo_plan_ref", "demo_observation_refs", "report_ref", "report_markdown_ref", "submission_origin"} <= set(state)
+        if (writer not in {"0.5.0", "0.6.0", "0.7.0"} or not {"demo_plan_ref", "demo_observation_refs", "report_ref", "report_markdown_ref", "submission_origin"} <= set(state)
                 or not isinstance(state["demo_observation_refs"], dict) or not isinstance(state["submission_origin"], dict)):
             reject("Unsupported demo profile record.")
         for key in (state["demo_plan_ref"], state["report_ref"], state["report_markdown_ref"], *state["demo_observation_refs"].values()):
@@ -206,11 +206,15 @@ def compatible(state):
         if state["run_state"] == "completed" and (not state["report_ref"] or not state["report_markdown_ref"]):
             reject("Completed demo requires both report objects.")
     if state["profile"] == "local":
-        if (writer != "0.6.0" or not {"local_work", "local_method_ref", "subject_config", "subject_calls_used", "report_ref", "report_markdown_ref"} <= set(state)
+        if (writer not in {"0.6.0","0.7.0"} or not {"local_work", "local_method_ref", "subject_config", "subject_calls_used", "report_ref", "report_markdown_ref"} <= set(state)
                 or not isinstance(state["local_work"], dict) or not isinstance(state["subject_config"], dict)
                 or type(state["subject_calls_used"]) is not int or state["subject_calls_used"] < 0):
             reject("Invalid local profile record.")
         local_refs = [state["local_method_ref"], state["report_ref"], state["report_markdown_ref"]]
+        if writer=="0.7.0":
+            if not {"local_settings_ref","local_catalog_ref"}<=set(state):
+                reject("Current local runs require pinned operator settings and catalog inventory.")
+            local_refs.extend((state["local_settings_ref"],state["local_catalog_ref"]))
         for work in state["local_work"].values():
             if not isinstance(work, dict):
                 reject("Invalid local claim work.")

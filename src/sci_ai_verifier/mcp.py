@@ -89,6 +89,8 @@ class Server:
 
 
 def serve(runtime, source, destination):
+    if getattr(runtime,"interruptible",False):
+        return serve_interruptible(runtime,source,destination)
     server = Server(runtime)
     while True:
         line = source.readline(MAX_FRAME_BYTES + 1)
@@ -111,3 +113,79 @@ def serve(runtime, source, destination):
         if response is not None:
             destination.write(canonical(response) + b"\n")
             destination.flush()
+
+
+def serve_interruptible(runtime, source, destination):
+    """Keep reading control messages while one public verification is running."""
+    import threading
+    from .execution_control import Control
+    server=Server(runtime)
+    output_lock=threading.Lock()
+    active=None
+    connected=True
+
+    def send(message):
+        if message is None:
+            return
+        with output_lock:
+            if connected:
+                destination.write(canonical(message)+b"\n")
+                destination.flush()
+
+    def perform(request,control):
+        try:
+            response=server.handle(request)
+        except Exception:
+            response=rpc_error(request.get("id"),-32603,"Verification failed; inspect its saved workflow log.")
+        if not control.cancelled.is_set():
+            try:
+                send(response)
+            except OSError:
+                control.cancelled.set()
+
+    try:
+        while True:
+            line=source.readline(MAX_FRAME_BYTES+1)
+            if not line:
+                break
+            if len(line)>MAX_FRAME_BYTES:
+                send(rpc_error(None,-32700,"MCP frame exceeds 1 MiB."))
+                break
+            try:
+                request=parse_json(line)
+            except (ValueError,UnicodeError,RecursionError):
+                send(rpc_error(None,-32700,"Invalid JSON."))
+                continue
+            if isinstance(request,dict) and request.get("jsonrpc")=="2.0" and request.get("method")=="notifications/cancelled" and "id" not in request:
+                params=request.get("params",{})
+                request_id=params.get("requestId") if isinstance(params,dict) else None
+                if active and type(request_id) in (str,int) and request_id==active["id"] and active["thread"].is_alive():
+                    active["control"].cancelled.set()
+                continue
+            if isinstance(request,dict) and request.get("method")=="tools/call" and type(request.get("id")) in (str,int) and server.ready:
+                if active and active["thread"].is_alive():
+                    send(rpc_error(request["id"],-32000,"A verification is already running on this connection; wait for it to finish or cancel it."))
+                    continue
+                params=request.get("params",{})
+                metadata=params.get("_meta",{}) if isinstance(params,dict) else {}
+                progress_token=metadata.get("progressToken") if isinstance(metadata,dict) else None
+                def progress(value,message,token=progress_token):
+                    if type(token) in (str,int):
+                        send({"jsonrpc":"2.0","method":"notifications/progress",
+                              "params":{"progressToken":token,"progress":value,"message":message}})
+                control=Control(runtime.configuration.get("timeout",1800),progress)
+                runtime.control=control
+                worker=threading.Thread(target=perform,args=(request,control))
+                active={"id":request["id"],"thread":worker,"control":control}
+                worker.start()
+            else:
+                try:
+                    send(server.handle(request))
+                except Exception:
+                    send(rpc_error(request.get("id") if isinstance(request,dict) else None,-32603,"Internal server error."))
+    finally:
+        connected=False
+        if active:
+            active["control"].cancelled.set()
+            active["thread"].join()
+        runtime.control=None

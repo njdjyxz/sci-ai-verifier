@@ -553,11 +553,43 @@ The Local profile matrix in workflow.md governs their legality.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim with a semantic applicability explanation.
   Never imply reviewed scientific approval. Enter local_ready.
-- `execute_local_claim`: in local_ready, run every fixed case once in a fresh
+- `execute_local_claim`: in local_ready, run every fixed case for its audited trial count in fresh
   answer-blind subject session, save requests before invocation, and score returned
   observations. No uncertain trial retries. Produce a result or operational record.
 - `record_local_limitation`: in a nonterminal local claim, save a bounded code and
   explanation and continue independent claims.
 - `write_report_card`: in reporting, derive JSON and Markdown from all terminal
-  claims. Reference comparison status is separate from null scientific verdict
-  and null grade. Pin qualification, scope and execution limitations.
+  claims. Comparison status is separate from scientific verdict and grade under
+  the independently authorized policy. Pin qualification, scope and limitations.
+## Additional local resource and evaluator tools
+
+Resource tools are legal in local_discovery/local_documentary; evaluator
+qualification is legal only in local_discovery. They preserve the common run
+token and claim binding. The workflow matrix is authoritative.
+
+- `load_local_resource`: import by operator-configured name and declared format
+  (text, JSON, CSV, TSV, ZIP or binary). Verify the preselected digest and limits;
+  retain version, license, units, schema inspection and exact original bytes.
+- `fetch_local_asset`: obtain a public HTTPS asset with expected digest, format,
+  version, license and units. Reject redirects, private addresses, mismatched
+  bytes, oversized files and unsafe archive members. Never extract an archive
+  on the host. A configured reference-host restriction also applies here.
+- `qualify_local_evaluator`: accept a bounded JSON evaluator specification with
+  Python scoring code, source-backed cases and positive/negative/boundary/held-out
+  controls. Run each control in a disposable pinned container. Store its inputs,
+  outputs and code/image digests. Mechanical success does not grant scientific
+  approval. Generated evaluators cannot run on the host.
+
+`assess_local_documentary` is legal in local_discovery/local_documentary. It
+accepts bounded quote/reference pairs and limitations, pins a packet containing
+the exact claim and installed rubric, and starts a fresh host-selected assessor
+session. It excludes the planning conversation, proposed verdict and subject
+answers. Python validates the JSON assessment and exact citations. A reviewed
+operator authorization of the rubric is required for D; absent authorization is
+reported as an ungraded documentary assessment. Assessor unavailability is an
+operational outcome. The planner cannot replace the assessor's verdict.
+
+`record_local_unverified` is legal in those same states only after catalog lookup
+and an explicit evidence-search account. It means no acceptable A-through-D
+evidence was found, not that an operation failed. It preserves any comparison
+evidence and records U/inconclusive; failures must use record_local_limitation.

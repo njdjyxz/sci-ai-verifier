@@ -122,7 +122,12 @@ class Runtime:
         except OSError as error:
             raise ConfigurationError(f"Verifier data directory: {workspace} is not writable "
                                      f"({error.strerror}). Choose a writable folder.") from None
-        self.limits = {**DEFAULT_LIMITS, **({"max_steps": 256} if profile != "stage2" else {}), **(limits or {})}
+        source_limits={}
+        if profile=="local" and getattr(self.subject,"settings",None):
+            source_limits={"max_file_bytes":self.subject.settings["max_file_bytes"],
+                           "max_total_bytes":self.subject.settings["max_artifact_bytes"],
+                           "max_files":self.subject.settings["max_artifacts"]}
+        self.limits = {**DEFAULT_LIMITS, **({"max_steps": 256} if profile != "stage2" else {}), **source_limits, **(limits or {})}
         if profile == "demo":
             self.limits.update(max_steps=512, repair_retries=32, illegal_transitions=32,
                                max_files=1000, max_file_bytes=4 * 1024 * 1024, max_total_bytes=32 * 1024 * 1024,
@@ -208,9 +213,22 @@ class Runtime:
             state["objects"].append(method_ref)
             state.update(local_work={}, report_ref=None, report_markdown_ref=None,
                          subject_config=deepcopy(self.subject.identity), subject_calls_used=0, local_method_ref=method_ref)
+            from .local_config import load_configuration
+            settings=deepcopy(getattr(self.subject,"settings",None) or {**load_configuration(),"trial_count":1,"documentary_assessment":False})
+            state["local_settings_ref"]=self.store.put_json(settings)
+            state["objects"].append(state["local_settings_ref"])
+            from .local_catalog import sync_catalogs
+            catalogs=sync_catalogs(self.store,settings,log=getattr(self.subject,"log",None))
+            state["local_catalog_ref"]=self.store.put_json(catalogs)
+            state["objects"].append(state["local_catalog_ref"])
+            state["objects"].extend(item["catalog_object_ref"] for item in catalogs)
+            for item in catalogs:
+                state["objects"].extend(key for key in item["requalification_refs"] if key not in state["objects"])
             state["agent"].update(host="claude_code", identity_source="controller_receipt_when_available")
-            state["host_limitations"] = ["managed_host_configuration_is_trusted", "not_an_os_sandbox",
-                                        "local_candidates_have_no_scientific_approval", "live_cli_acceptance_required"]
+            state["host_limitations"] = ["managed_host_configuration_is_trusted",
+                                        "local_container_execution" if settings["sandbox_image"] else "text_session_not_an_os_sandbox",
+                                        "scientific_grades_require_independent_operator_review", "live_cli_acceptance_required",
+                                        "external_app_adapters_are_operator_trusted"]
         directory = self.store.run_dir(run_id)
         directory.mkdir(parents=True)
         with self.store.lock(run_id):
@@ -246,8 +264,9 @@ class Runtime:
         contexts = (stage3_context() if self.profile != "stage2" else PINNED_CONTEXT)
         if self.profile == "local":
             contexts = (("references/local-contract.md", None),
+                        ("references/local-evaluator-spec.md",None),
                         ("references/workflow.md", ("Local profile",)),
-                        ("references/tool-contracts.md", ("Local profile tools",)),
+                        ("references/tool-contracts.md", ("Local profile tools","Additional local resource and evaluator tools")),
                         ("references/artifact-contracts.md", ("Local profile artifacts",)))
         if self.profile == "demo":
             contexts = (
@@ -321,6 +340,11 @@ class Runtime:
                 data["report"] = self.store.get_json(state["report_ref"])
         if state["profile"] == "local":
             data["subject_config"] = state["subject_config"]
+            from .local import settings_for
+            settings=settings_for(self.store,state)
+            data["local_configuration"]={key:value for key,value in settings.items() if key not in {"resources","external_tools","scientific_reviews","documentary_review","docker_executable","catalogs"}}
+            data["local_configuration"]["resources"]={name:{key:value for key,value in item.items() if key!="path"} for name,item in settings["resources"].items()}
+            data["local_configuration"]["external_tools"]={name:item["description"] for name,item in settings["external_tools"].items()}
             data["local_work"] = state["local_work"]
             data["local_artifacts"] = {claim: {field: self.store.get_json(value) if field.endswith("_ref")
                 else [self.store.get_json(key) for key in value]

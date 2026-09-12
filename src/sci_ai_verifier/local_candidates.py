@@ -47,7 +47,7 @@ class PageText(HTMLParser):
             self.parts.append(data)
 
 
-def fetch_public(url):
+def fetch_bytes(url, *, max_bytes=MAX_REFERENCE, text_only=False):
     """Pin the connection to a checked public IP; no proxy, redirect or DNS rebind."""
     try:
         parts = urlsplit(url)
@@ -76,7 +76,7 @@ def fetch_public(url):
             if response.status != 200:
                 raise Fault("reference_unavailable", "Reference must return HTTP 200 without redirection.")
             content_type = response.getheader("Content-Type", "").lower()
-            if not any(value in content_type for value in ("text/", "json", "xml")):
+            if text_only and not any(value in content_type for value in ("text/", "json", "xml")):
                 raise Fault("reference_unsupported", "Local v1 reads text/JSON/XML references only.")
             chunks, count, deadline = [], 0, time.monotonic() + 20
             while True:
@@ -85,20 +85,25 @@ def fetch_public(url):
                     raise OSError("Reference deadline exceeded")
                 if connection.sock:
                     connection.sock.settimeout(remaining)
-                chunk = response.read1(min(8192, MAX_REFERENCE + 1 - count))
+                chunk = response.read1(min(8192, max_bytes + 1 - count))
                 if not chunk:
                     break
                 chunks.append(chunk)
                 count += len(chunk)
-                if count > MAX_REFERENCE:
+                if count > max_bytes:
                     break
             raw = b"".join(chunks)
         finally:
             connection.close()
     except (OSError, http.client.HTTPException, ValueError):
         raise Fault("reference_unavailable", "The bounded public reference download failed.") from None
-    if len(raw) > MAX_REFERENCE or SECRET_BYTES.search(raw):
+    if len(raw) > max_bytes or SECRET_BYTES.search(raw):
         raise Fault("reference_rejected", "Reference exceeds its byte limit or contains credential-like material.")
+    return raw,content_type
+
+
+def fetch_public(url):
+    raw,content_type=fetch_bytes(url,text_only=True)
     try:
         text = raw.decode("utf-8")
     except UnicodeError:
@@ -134,6 +139,10 @@ def compare(method, actual, expected):
 
 
 def qualify(proposal, references):
+    from .common import validate
+    from .local import schemas
+    from .tools import obj,string
+    validate({**proposal,"claim_id":"candidate"},schemas({},obj,string)["qualify_local_candidate"])
     safe_payload(proposal)
     problems, controls = [], []
     method = proposal["method"]
@@ -197,8 +206,11 @@ def candidates(store):
             if digest(raw) != path.stem:
                 raise Fault("candidate_integrity", "A local candidate projection was changed.", fatal=True)
             candidate = store.get_json(path.stem)
-            if candidate["status"] == "qualified_local" and candidate["method_version"] == METHOD_VERSION:
+            from .local_evaluators import METHOD_VERSION as PYTHON_VERSION
+            if candidate["status"] == "qualified_local" and candidate["method_version"] in {METHOD_VERSION,PYTHON_VERSION}:
                 found.append({"candidate_ref": path.stem, "name": candidate["name"],
                               "scope": candidate["scope"], "method": candidate["method"],
                               "limitations": candidate["limitations"], "scientific_approval": "provisional"})
+                from .local_science import fingerprint
+                found[-1]["candidate_fingerprint"]=fingerprint(candidate)
     return found

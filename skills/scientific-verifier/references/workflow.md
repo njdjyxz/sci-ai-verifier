@@ -494,7 +494,7 @@ The runner-owned finalizer preserves reproducibility artifacts, removes eligible
 The report card separates scientific results from operational outcomes and includes source-snapshot provenance, requested and achieved grades, downgrades, evaluator/harness/bundle/resource versions, the subject-runner identity with its subject model, trial count, aggregation rule and observed variance, deterministic decision rules or documentary rubric, metrics, coverage and exclusions, AI involvement, limitations, warnings, provisional assets, review recommendations, operational-outcome IDs, and finalization status. It never assigns an overall scientific grade unless a separately reviewed aggregation policy exists.
 ## Local profile
 
-Version 0.6.0's personal/local entry point uses the [local contract](local-contract.md).
+Version 0.7.0's personal/local entry point uses the [local contract](local-contract.md).
 Claude Code owns the planner loop. This matrix specializes the broader target.
 
 | Run / claim state | Legal workflow tools | Resulting state |
@@ -502,8 +502,9 @@ Claude Code owns the planner loop. This matrix specializes the broader target.
 | created | load_submitted_skill | source_ready |
 | source_ready | read_snapshot_file, commit_claim_manifest | source_ready or active (reporting if empty) |
 | active / local_lookup | list_local_candidates, record_local_limitation | local_discovery or terminal_operational |
-| active / local_discovery | fetch_local_reference, qualify_local_candidate, select_local_candidate, record_local_limitation | local_discovery, local_ready or terminal_operational |
-| active / local_ready | execute_local_claim, record_local_limitation | terminal_result or terminal_operational |
+| active / local_discovery | fetch_local_reference, load_local_resource, fetch_local_asset, qualify_local_candidate, qualify_local_evaluator, select_local_candidate, assess_local_documentary, record_local_unverified, record_local_limitation | local_discovery, local_ready, terminal_result or terminal_operational |
+| active / local_ready | execute_local_claim, record_local_limitation | local_documentary, terminal_result or terminal_operational |
+| active / local_documentary | fetch_local_reference, load_local_resource, fetch_local_asset, assess_local_documentary, record_local_unverified, record_local_limitation | local_documentary, terminal_result or terminal_operational |
 | reporting | write_report_card | completed |
 | completed / incomplete | none | terminal |
 

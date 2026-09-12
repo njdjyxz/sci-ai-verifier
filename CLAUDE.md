@@ -21,17 +21,19 @@ installed Claude Code CLI, desktop Code tab and subscription. The latest
 `DEVELOPMENT-PLAN.md` entry is the single completion roadmap. Computational
 skills, data and tool access, evaluator construction/qualification, audited
 sampling and grading, complete workflow logs, shared catalog contribution and
-release handling, and real local acceptance are remaining work within that goal.
+release handling, and real local acceptance belong to that goal. The development
+log distinguishes implemented behavior from pending live and scientific acceptance.
 Do not redefine completion as a text-only, chemical-only or demonstration release.
 A hosted multiuser/API product is a separate future deployment project.
 
-Version 0.6.0 is an incomplete implementation. Its current enforceable behavior is
+Version 0.7.0 implements the local workflow and awaits manual live acceptance. Its enforceable behavior is
 documented in `skills/scientific-verifier/references/local-contract.md`.
 `verify` and `serve-local` provide one public action; Claude Code owns the planner
 loop and fresh subject sessions. Python owns deterministic tools, bounded
-processes and saved evidence. Current local candidates qualify mechanically and
-have no scientific status or grade. Preserve that truthful behavior until the
-missing scientific qualification and grade policies are implemented and tested.
+processes and saved evidence. Local candidates qualify mechanically; scientific
+status and grade require the exact independently authorized review and policy.
+Never fabricate a review, infer scientific acceptance from fixtures, or silently
+expand configured resource/app permissions.
 
 The earlier Stage 2/3, chemical verification and same-chat demo code is preserved
 for compatibility. Demo is explicit, not the product default. Existing fixtures

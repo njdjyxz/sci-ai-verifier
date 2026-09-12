@@ -689,3 +689,79 @@ change set, including the prior guide refinements and pending log, to
 `https://github.com/njdjyxz/sci-ai-verifier` on `main`. Report the final commit and
 remote verification after publication. No runtime feature, credentials, account
 settings, installations or shared scientific registry entries are changed here.
+
+## Codex: 2026-09-12
+
+### Current stage and status
+
+Implementing the complete local roadmap on `main` as requested after the planning
+publication `ec45894`. Version 0.7.0 connects computation, resources, evaluator
+construction, repeated trials, scientific eligibility, independent documentary
+assessment, catalog reuse and workflow logs. Implementation, documentation and
+automated validation are ready for the user's manual acceptance. This entry
+accompanies the 0.7.0 source publication; the final handoff records its commit
+and remote verification.
+The user will perform real CLI/desktop, Docker and app acceptance manually;
+automated fixtures do not establish that acceptance or scientific validity.
+
+### What has been done
+
+- Added operator configuration, pinned Linux containers for scripts and binary
+  artifacts, bounded resource import/download and trusted read-only app adapters.
+  Text subjects use a private file reader; computational subjects use private
+  container tools. Submitted code has no native host shell tool.
+- Added generated Python evaluator controls, immutable test plans, repeated
+  observations, per-trial scoring and A/B/C eligibility bound to independent
+  reviews of exact source, environment, model and method pins. Added a separate
+  documentary assessor and explicit unverified/operational outcomes. Default
+  generated methods remain ungraded until real independent review exists.
+- Added redacted, bounded observable workflow timelines, hash-chained events,
+  partial reports, artifact receipts and interruption recovery. Private model
+  reasoning and unrelated app activity are not recorded.
+- Added exact-digest catalog import/export, offline reuse and retryable opt-in
+  draft proposals. Completed reviewed release envelopes, explicit promotion,
+  version/runtime compatibility, full inventories and retirement. New runs pin
+  the chosen release and fresh requalification receipts; updates cannot alter an
+  active run. No scientific contribution has been published.
+- Added public MCP progress and cancellation while a request is running, one
+  active request per connection, connection-close cleanup and a total attempt
+  deadline. Tests exercise actual child processes and the private text reader's
+  stdio transport; no Claude or Docker behavior is simulated as live acceptance.
+- Updated [installation](LOCAL-INSTALL.md), [configuration](LOCAL-CONFIG.md),
+  contracts and packaging. The install guide includes the user's manual acceptance
+  procedure. No apps were installed, credentials changed or real model calls made.
+- Final completed full suite: **189 tests, 187 passed and 2 skipped**, in 60.585
+  seconds. The skips require Python 3.11 and physical symlink privilege. Tests
+  include repeated trials, binary output/scorer/report integration, no-grade
+  synthetic evidence, catalog qualification/release/retirement/offline/conflict
+  paths, interrupted publication, isolated app working directories, malformed
+  controls and cancellation, including the final catalog receipt preservation
+  change. All **223 local links across 32 Markdown files** resolve. Python 3.11
+  syntax parsing passes for 64 Python files; this does not replace testing with
+  that interpreter. The 120-entry source ZIP passes CRC and normalized source-byte
+  equality checks and excludes local evidence, credentials, caches and legacy tmp.
+  From an extracted package, CLI help, catalog maintenance help and the complete
+  synthetic verification fixture pass. Whitespace checks pass. The source ZIP
+  and its SHA256 record are in gitignored `dist/`; publication contains source
+  and the reproducible builder, not personal evidence.
+
+### Urgent next steps, if any
+
+None requiring user input for implementation. Live acceptance later requires the
+user's installed native Claude CLI, Linux Docker engine and actual skills/apps.
+Apps without the documented read-only adapter need a specific adapter; independent
+scientific review must come from actual evidence and a qualified reviewer.
+
+### Suggested next move
+
+Publish the validated package/source and begin the user's manual acceptance
+procedure. Preserve the ten-workstream roadmap and distinguish implemented
+mechanisms from pending live acceptance and domain-specific integrations.
+
+### Recommended next action
+
+The user follows [the manual acceptance table](LOCAL-INSTALL.md#your-manual-acceptance-tests)
+and supplies observed failures or report/log paths for inspection. Actual app
+adapters, installed scientific dependencies and independent reviews must match
+the user's real workload. Acceptance remains pending until those results are
+inspected; no universal domain coverage or real scientific approval is claimed.

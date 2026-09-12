@@ -49,7 +49,8 @@ class RunnerTests(unittest.TestCase):
         def fake(command, **kwargs):
             directory = Path(kwargs["cwd"])
             directories.append(directory)
-            self.assertEqual(command[command.index("--tools")+1], "Skill,Read")
+            self.assertEqual(command[command.index("--tools")+1], "Skill")
+            self.assertIn("mcp__subject__read_submitted_file",command[command.index("--allowedTools")+1])
             self.assertIn("--restricted", command)
             self.assertIn("--strict-mcp-config", command)
             self.assertIn(SUBJECT_SKILL, kwargs["prompt"])
@@ -86,6 +87,13 @@ class RunnerTests(unittest.TestCase):
                     stream("other-session"), b"not json"):
             with self.subTest(raw=raw), self.assertRaises(Fault):
                 parse_events(raw, expected_session="session", subject=True)
+
+    def test_automatic_end_conversation_is_accepted_without_extra_file_tools(self):
+        events=stream("session").splitlines()
+        events.insert(2,canonical({"type":"assistant","message":{"content":[
+            {"type":"tool_use","id":"end","name":"EndConversation","input":{}}]}}))
+        result=parse_events(b"\n".join(events),expected_session="session",subject=True,extra_tools=("mcp__subject__read_submitted_file",))
+        self.assertTrue(result["invocation_verified"])
 
     def test_dynamic_shell_and_code_are_rejected_before_launch(self):
         for filename, content in (("SKILL.md", "!`echo evil`"), ("SKILL.md", "```!\necho evil\n```"),

@@ -20,7 +20,7 @@ def main():
         for path in sorted((ROOT / directory).rglob("*")):
             if path.is_file() and path.suffix in {".py", ".md", ".json", ".txt", ".toml"} and "__pycache__" not in path.parts:
                 files[path.relative_to(ROOT).as_posix()] = path.read_bytes().replace(b"\r\n", b"\n")
-    for name in ("README.md", "LOCAL-INSTALL.md", "DEVELOPMENT-PLAN.md", "CLAUDE.md", "pyproject.toml", ".gitattributes", ".gitignore"):
+    for name in ("README.md", "LOCAL-INSTALL.md", "LOCAL-CONFIG.md", "DEVELOPMENT-PLAN.md", "CLAUDE.md", "pyproject.toml", ".gitattributes", ".gitignore"):
         files[name] = (ROOT / name).read_bytes().replace(b"\r\n", b"\n")
     if any(SECRET_BYTES.search(payload) for payload in files.values()):
         raise SystemExit("Credential-like bytes found; local package not built.")

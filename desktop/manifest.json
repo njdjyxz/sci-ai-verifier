@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "scientific-verifier",
   "display_name": "Scientific Verifier (historical profiles)",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Historical Desktop verification and checkpoint profiles. The personal local version uses the Claude Code verify command.",
   "author": {
     "name": "sci-ai-verifier contributors"
@@ -158,6 +158,26 @@
     {
       "name": "fetch_local_reference",
       "description": "Internal local verification operation: fetch local reference. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "load_local_resource",
+      "description": "Internal local verification operation: load local resource. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "fetch_local_asset",
+      "description": "Internal local verification operation: fetch local asset. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "qualify_local_evaluator",
+      "description": "Internal local verification operation: qualify local evaluator. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "assess_local_documentary",
+      "description": "Internal local verification operation: assess local documentary. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
+      "name": "record_local_unverified",
+      "description": "Internal local verification operation: record local unverified. Follow the pinned local contract and current claim state. Never grants scientific approval."
     },
     {
       "name": "qualify_local_candidate",
