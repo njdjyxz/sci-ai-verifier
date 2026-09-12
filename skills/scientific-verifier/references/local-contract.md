@@ -1,4 +1,10 @@
-# Personal/local version 1
+# Local profile: current implementation (0.6.0)
+
+This contract describes the incomplete code currently shipped. It is not a
+reduced completion goal. The repository's latest DEVELOPMENT-PLAN.md entry
+defines the full local project, including the capabilities still missing here.
+Until corresponding runtime changes are implemented and tested, the restrictions
+below remain enforceable and reports must continue to disclose them accurately.
 
 This profile supersedes the demo as the default product. Claude Code owns the
 planner conversation and tool loop. Python exposes bounded internal operations,
@@ -8,7 +14,7 @@ or `sci-ai-verifier verify <path>`. Historical profiles remain readable.
 
 ## Scope and evidence
 
-The first local release supports text skills and data-only reference comparisons.
+The current local implementation supports text skills and data-only reference comparisons.
 The planner extracts source-grounded claims, searches for independent primary
 references with WebSearch, and proposes exact or numeric known-answer cases.
 Python retrieves public HTTPS reference bytes itself; agent-authored quotes or
@@ -76,8 +82,9 @@ Authentication requires user setup; the verifier does not extract saved secrets.
 reference evidence. `.verifier/subject-runs/` holds sanitized execution receipts;
 temporary executable workspaces are removed after each process.
 `.verifier/publication/` is reserved for a later opt-in contribution workflow and
-receives no automatic copies. GitHub publishing, merging and scientific catalog
-releases are outside this personal/local increment.
+receives no automatic copies. GitHub contribution and scientific catalog release
+handling remain unimplemented parts of the full local project. Publication and
+promotion must retain their explicit authorization and qualification requirements.
 
 ## Acceptance
 

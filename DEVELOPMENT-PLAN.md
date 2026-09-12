@@ -261,7 +261,7 @@ Stage 2 retains its recorded app evidence and unresolved conversation-only follo
 - Added [catalog verification](src/sci_ai_verifier/catalog.py), [routing](src/sci_ai_verifier/routing.py) and the [release utility](scripts/catalog_release.py). Downloads use this project's fixed GitHub repository, exact commit and independently supplied manifest digest; assets/interfaces are verified before activation, offline caches require exact receipts, and active runs use immutable objects. No model-triggered downloads or runtime writes to reviewed registries exist. Initial `catalog/` mirrors the empty reviewed registries; it is local and unpublished.
 - Added three routing tools, atomic complete-manifest assignment, run-local provisional types, strongest-grade lookup, registered preference, A-C interface pairing and D fallback without a runner. Missing implementations/runners produce distinct claim-local operational artifacts while other claims continue. Lookup results are bounded, carry exact version/resource pins and never produce a scientific verdict.
 - Prepared [the chemical mass pilot](reviews/CHEMICAL-MASS-PILOT.md), three provisional type definitions, two provisional capability descriptions, NIST isotope reference values, a narrow candidate formula parser and per-trial numeric scorer. Boundary, known-answer and deliberately wrong-observation tests pass. These helpers are not installed, approved or connected to a subject runner; no submitted skill has been evaluated by them.
-- Added [the full-project completion checklist](reviews/PROJECT-COMPLETION.md) and [0.3.0 installation guide](desktop/STAGE3-INSTALL.md), refreshed README and built the MCPB/skill ZIP. The single public action remains **verify this skill**; extraction and routing are internal steps. No installed app settings, original app data or legacy files were changed.
+- Added [the full-project completion checklist](https://github.com/njdjyxz/sci-ai-verifier/blob/a8d6045657c5a2a10fdfb4f9ec139f60b73e31f2/reviews/PROJECT-COMPLETION.md) and [0.3.0 installation guide](desktop/STAGE3-INSTALL.md), refreshed README and built the MCPB/skill ZIP. The single public action remains **verify this skill**; extraction and routing are internal steps. No installed app settings, original app data or legacy files were changed.
 - Validation: the expanded suite contains **77 tests; 75 passed and two skipped** on Python 3.14 and bundled Python 3.12. The skips remain actual Python 3.11 availability and privileged symlink creation. Both extracted-package profiles and archive reproducibility pass. The new reader's compatibility validator also accepts the four original 0.2.0 app journal states through a read-only inspection; this is not a new live resume test. See [Stage 3 validation](reviews/stage3-validation-2026-09-10.json) for precise evidence and limits.
 - All Stage 3 source and documentation changes remain local, uncommitted and unpushed. Remote transport success is fixture-tested; no newly published GitHub catalog or live 0.3.0 app test is claimed. Maintainer/scientific review of the seed collection remains required before promotion.
 
@@ -279,7 +279,7 @@ Preserve the earlier limitations: instruction-conflict Chat tool activity remain
 
 ### Suggested next move
 
-Review the [chemical mass pilot](reviews/CHEMICAL-MASS-PILOT.md) and [completion checklist](reviews/PROJECT-COMPLETION.md), then connect the first scientifically reviewed evaluator to a controlled subject runner through the existing plan/audit contracts. Keep Stage 3 acceptance separate from scientific performance. The earlier suggestion to rerun Stage 2 fixtures remains superseded by their recorded evidence.
+Review the [chemical mass pilot](reviews/CHEMICAL-MASS-PILOT.md) and [completion checklist](https://github.com/njdjyxz/sci-ai-verifier/blob/a8d6045657c5a2a10fdfb4f9ec139f60b73e31f2/reviews/PROJECT-COMPLETION.md), then connect the first scientifically reviewed evaluator to a controlled subject runner through the existing plan/audit contracts. Keep Stage 3 acceptance separate from scientific performance. The earlier suggestion to rerun Stage 2 fixtures remains superseded by their recorded evidence.
 
 ### Recommended next action
 
@@ -321,7 +321,7 @@ historical evidence, not evidence for the new CLI runner.
 
 Current work:
 
-- Audited the code, contracts and branch differences in [the local v1 audit](reviews/LOCAL-V1-AUDIT.md). Integrated the useful Stage 3, chemical and demo history onto main without losing the local plan revision. Final branch/commit disposition is recorded with validation below.
+- Audited the code, contracts and branch differences in [the local v1 audit](https://github.com/njdjyxz/sci-ai-verifier/blob/a8d6045657c5a2a10fdfb4f9ec139f60b73e31f2/reviews/LOCAL-V1-AUDIT.md). Integrated the useful Stage 3, chemical and demo history onto main without losing the local plan revision. Final branch/commit disposition is recorded with validation below.
 - Reconciled the [local contract](skills/scientific-verifier/references/local-contract.md), workflow/tool matrix, artifact/runtime/resource policies, skill, README and project instructions before and alongside implementation. Removed the obsolete human-only local candidate requirement.
 - Added a public CLI and one-tool MCP interface, a run-bound private MCP server, and a native Claude Code adapter. Python validates and executes bounded operations; Claude Code retains the model/tool loop. The subject receives only its pinned skill and fixed input, with a recognized temporary plugin, explicit successful Skill invocation evidence, and separate requested versus observed model identity.
 - Implemented isolated configuration outside subject-readable directories, a fresh repository boundary, CLAUDE.md exclusions, disabled hooks/memory/dynamic skill commands, restricted tool sets, allowlisted credential environments, process time/output limits, and cleanup. Subscription tokens and API keys are never copied into saved verifier configuration or passed as command arguments.
@@ -357,6 +357,26 @@ records the completed publication. Generated local archives remain gitignored.
 No live model, scientific registry approval, GitHub evaluator contribution or
 scientific grade has been produced.
 
+After the user requested a beginner-friendly desktop setup guide, rewrote
+[LOCAL-INSTALL.md](LOCAL-INSTALL.md) around the Code tab, a one-time Windows
+installation, an encrypted desktop environment entry for the subscription token,
+and a copyable personal MCP registration command with a credential placeholder.
+Clarified that this implementation requires the standalone native CLI as its
+execution dependency while allowing the desktop app as the everyday interface.
+Added expected results, first-use/report instructions, troubleshooting, and a
+separate optional PowerShell path; updated the README entry point. Checked the
+current official desktop/setup/MCP documentation against the local adapter.
+The prior publication log is committed locally as `c3c0cd0` and is not pushed;
+these guide refinements are local and uncommitted. Live desktop/model acceptance
+remains unperformed. No account settings, credentials or installed apps were
+changed during this documentation revision.
+Documentation validation: all 8 PowerShell blocks parse, 126 local Markdown links
+resolve, and whitespace checks pass. The read-only setup check still returns
+`claude_unavailable`. Rebuilt the local source ZIP with the revised guide and
+checked archive integrity and packaged source/document bytes; runtime code is
+unchanged, so the previous automated test results remain the implementation
+evidence rather than a new live acceptance claim.
+
 ### Urgent next steps, if any
 
 No additional scientific catalog authoring is required to start local discovery.
@@ -389,3 +409,283 @@ and demo retirement are complete. Live acceptance
 is finished only after a real submitted skill is invoked in a fresh Claude Code
 session and the saved report/receipts are independently inspected. It is not
 established by the deterministic fixture or a successful package build.
+
+## Codex: 2026-09-11 19:32 PDT
+
+### Current stage and status
+
+**User-authorized additional same-day entry.** The user explicitly approved a new
+log entry, removal of the narrow goal files, and publication of these changes to
+the existing GitHub remote. This is the permitted exception to the one-entry-per-day
+rule. It supersedes the earlier text-only, chemical-only and demo completion
+boundaries; it does not rewrite their historical test evidence.
+
+**Completion target:** finish the personal/local scientific verifier on `main`,
+using the user's installed Claude Code CLI, the desktop app's Code tab and Claude
+subscription. The public action remains **verify this skill**. Claude owns the
+planner/tool loop; local Python owns execution boundaries, state, evidence and
+reproducible scoring. An Anthropic API key is optional. A hosted multiuser service,
+accounts, subscriptions for customers and server deployment are a separate project.
+Local operation still uses hosted Claude inference and the user's eligible usage.
+
+The project is **incomplete**. Version 0.6.0 supplies a functioning engineering
+foundation, not the complete requested local product. Source snapshots, journals,
+local discovery, exact/numeric comparisons, process limits and reports exist.
+The older chemical profile also supplies reusable planning, resource locks,
+bundle validation, audits, repeated-trial scoring and grade-policy machinery.
+Those parts must be integrated and extended through the actual local public entry;
+a feature in an old profile or a passing replay fixture is not local completion.
+
+This entry is the single project completion roadmap. Runtime contracts continue
+to describe only implemented, enforceable behavior until code and contract changes
+land together. Do not remove truthful limitations, issue unsupported grades, or
+call a milestone the finished project because its narrower tests pass.
+
+### What has been done
+
+- Removed `reviews/LOCAL-V1-AUDIT.md` and `reviews/PROJECT-COMPLETION.md`, which
+  presented narrow releases as completion boundaries. Their history remains in Git.
+- Updated README, project instructions and the setup guide to point to this roadmap.
+  Retained the current local runtime contract as implementation documentation, with
+  its reduced scope clearly identified as unfinished work. Updated the Stage 3
+  roadmap reference. Historical log links point to the preserved old revisions.
+- Preserved the earlier beginner-friendly Windows guide changes and the pending
+  publication-validation log commit `c3c0cd0` for inclusion in the requested push.
+- Audited the remaining work against the full workflow, evidence rubric, local
+  adapter, candidate code and older scientific profile. No missing runtime
+  capability is implemented by this documentation change.
+- Validation and publication for this change are recorded below after the checks.
+
+### Remaining implementation and integration work
+
+Every item below is required to close the full local roadmap. Check individual
+acceptance criteria with saved evidence; do not use a single chemical example as
+proof of general skill support. External applications and scientific domains need
+explicit capability/coverage records, not an impossible promise of universal
+support. Additional app adapters or new domain research discovered during actual
+submissions must be recorded as remaining work rather than silently excluded.
+
+1. **Unify the local workflow and its configuration.** Connect routing, registered
+   evaluator lookup, planning, resource resolution, bundle qualification, audit,
+   execution, assessment and reporting behind `verify_skill`. Reuse tested older
+   modules instead of creating another parallel workflow. Reconcile tool/state and
+   artifact contracts together; preserve old runs and explicit historical profiles.
+   Provide explicit model/authentication, requested/minimum grade, execution/tool
+   permissions, trial and resource limits, and data locations with usable defaults.
+   **Acceptance:** new, reused, repaired, downgraded, empty-claim and mixed-outcome
+   runs all reach the appropriate report through the public local entry, with no
+   manual invocation of internal tools and no unsupported branch advertised as live.
+
+2. **Execute real computational skills.** Support skill folders containing scripts,
+   supporting text, structured data and binary assets; retain original source and
+   transformation identities. Discover and provision declared dependencies with
+   pinned versions. Run the recognized submitted skill in fresh sessions; collect
+   generated files, actual commands/tools, model/session identity and raw outputs.
+   Establish an enforceable Windows execution boundary for shell, filesystem,
+   subprocess and network access; assess the available native/container/VM options
+   before choosing one. Temporary directories and process-tree cleanup alone are
+   insufficient confinement for arbitrary code. Keep expected answers, evaluator
+   code and credentials outside subject-accessible execution and artifacts.
+   **Acceptance:** real scripted skills produce traceable output artifacts; attempts
+   to escape directories, read hidden answers/credentials, invoke undeclared tools,
+   or outlive cancellation are rejected and recorded without corrupting other runs.
+
+3. **Complete resource and external-tool handling.** Extend public text retrieval
+   to local and downloaded datasets, supported structured/binary formats, archives,
+   reference implementations and scientific resources. Validate extraction paths,
+   file/size limits, schema, units, columns, provenance, versions, licensing and
+   answer/input separation before use. Distinguish reference-acquisition access
+   from the submitted skill's own network/app access. Add capability-driven local
+   tools and external-app connections, with operator-configured credentials and
+   permissions; record unavailable installations/services explicitly.
+   **Acceptance:** evidence can be materialized and pinned from both local and
+   remote sources, reused offline when permitted, and rejected with precise reasons
+   when corrupted, incompatible, unauthorized or scientifically mismatched.
+
+4. **Build and qualify missing evaluators.** Implement the approved lifecycle:
+   lookup first, discover missing material, create a local candidate, qualify it,
+   then reuse an immutable version. Extend beyond the two installed comparisons to
+   generated/configured checking code, benchmark transforms and reference methods.
+   Separate candidate generation, subject execution, reference answers and the
+   qualification environment. Record source authority/applicability, independence,
+   units, uncertainty, scope and coverage. Exercise positive, negative, boundary
+   and held-out cases against independent references; include intentionally faulty
+   evaluators to verify rejection. Source quotation and agent self-approval alone
+   cannot establish scientific suitability. Preserve qualification failures.
+   **Acceptance:** a missing method can be constructed, independently checked and
+   reused without a manually authored seed; rejected candidates cannot acquire
+   scoring authority or silently enter the reviewed registry.
+
+5. **Complete planning, audit and repeated sampling.** Pin test design, versions,
+   reference resources, case counts, trial counts, tolerances, metrics, aggregation
+   and grade eligibility before observing subject answers. Replace the local
+   one-trial constant with audited claim-specific policies. Apply scope/fairness,
+   leakage, coverage and resource audits; invalidate affected downstream work on
+   revision. Score each trial before aggregation and retain missing/invalid trials
+   and their denominators. Implement legal repair, reselection and downgrade paths.
+   **Acceptance:** recorded samples and policies reproduce decisions; stale plans,
+   changed resources, biased selection and post-result threshold changes cannot
+   authorize execution or improve a grade.
+
+6. **Finish scientific assessment and reports.** Connect supported A/B/C evidence
+   designs to deterministic checks of their eligibility and verdict rules. Implement
+   an independent documentary assessment path for D, using an identified separate
+   assessor session or provisioned assessor with a bounded evidence packet and
+   rubric, excluding the planner conversation. Implement the no-acceptable-evidence
+   U path and operational-failure distinctions. Record scientific qualification
+   evidence for actual methods; synthetic approvals cannot establish it. Report
+   scope, coverage, variance, uncertainty, requested/achieved grades, downgrades,
+   AI involvement and limitations without inventing an overall skill grade.
+   **Acceptance:** valid and invalid evidence designs exercise A/B/C/D/U and
+   operational outcomes correctly; the planner cannot grade its own packet or
+   override deterministic decisions. Real scientific results retain inspectable
+   qualification evidence, not only a final letter.
+
+7. **Finish local/shared evaluator lifecycle integration.** Connect the existing
+   versioned GitHub catalog retrieval/cache code to the local public workflow.
+   Support compatible updates, retired versions and exact version pins without
+   altering active runs. Complete opt-in preparation/submission of qualified
+   candidates, review/qualification gates, authorized promotion and catalog release
+   handling for the existing repository. Separate personal evidence from publishable
+   material; enforce license, attribution and secret/private-data exclusions.
+   Publication failure must retain a retryable prepared submission without rerunning
+   subject trials. Local verification must work without publishing anything.
+   **Acceptance:** discovery-to-local-reuse and authorized contribution-to-versioned-
+   retrieval both work; offline, rejected, conflicting and failed-publication paths
+   preserve evidence. This lifecycle belongs to the local roadmap and does not
+   require a hosted API product. This planning push does not authorize future
+   publication of arbitrary user submissions or private resources.
+
+8. **Record the complete observable workflow.** Add automatic per-attempt/per-run
+   logs starting before preflight, with timestamps, stage start/end/duration,
+   visible planner searches/tool calls, candidate choices, references, trial inputs
+   and outputs or artifact links, process exits, errors, cancellation and completion.
+   Preserve partial logs on failure; provide a readable timeline plus structured
+   records and useful progress through the public interface. Derive state/results
+   from authoritative records rather than a second conflicting state store. Redact
+   credentials before persistence and keep logs outside subject-readable space.
+   **Acceptance:** a setup failure, stalled search, failed test and interrupted run
+   each leave enough evidence to identify where execution stopped. No access to
+   private model reasoning or unrelated app activity is claimed.
+
+9. **Harden lifecycle and recovery across the expanded path.** Carry budgets and
+   deadlines through planner, downloads, dependencies, subject, evaluator and
+   assessor processes; reserve capacity for reporting. Account for model usage
+   without treating an estimate as a guaranteed bill. Enforce concurrency/state
+   ordering, integrity validation and no replay of uncertain observations. Preserve
+   completed evidence after lost responses; finalize scratch, retained resources
+   and cleanup warnings on success/failure/cancellation. Provide restart-first
+   behavior with clear saved-run outcomes, credential renewal and usage exhaustion.
+   **Acceptance:** meaningful fault-injection tests cover network loss, crashes,
+   corrupted data, disk/write failures, interruption, stale state and exhausted
+   budgets without false completion, scientific failures invented from operational
+   errors, secret leakage or surviving child processes.
+
+10. **Complete installation, compatibility and live acceptance.** Make setup work
+    from a clean checkout/package with resolved Python/CLI paths, subscription
+    token setup, optional API mode, one desktop tool connection, dependency checks,
+    repairable configuration and readable errors. Package the needed code/contracts
+    and dependency information; preserve upgrades and uninstall/user-data choices.
+    Reconcile guides and version labels with actual capabilities. Validate the
+    stated minimum Python version and actual MCP/CLI/desktop behavior. Use a
+    maintained corpus of real personal skills covering text, computation, generated
+    artifacts, resource acquisition, candidate discovery/reuse and documentary
+    assessment, including deliberately wrong and adversarial cases. Inspect saved
+    reports, model/tool invocation and provenance independently after real runs.
+    **Acceptance:** the packaged product passes the corpus through both CLI and
+    desktop entry points, including cancellation/restart and missing-dependency
+    cases. Tests of mocks, replay fixtures or an older app profile cannot substitute
+    for live acceptance. Record remaining domain-specific unsupported capabilities
+    and distinguish them from defects in the promised general workflow.
+
+### Effort estimate and dependencies
+
+This is a rough engineering-effort estimate for the remaining integrated project,
+not a promise about chat duration, model throughput, token usage or calendar time.
+It assumes reuse of the existing journal, workflow and scientific modules, access
+to representative personal skills, and no new scientific research or bespoke
+integration for an unlimited number of external applications.
+
+| Workstream | Estimated hands-on engineering hours |
+| --- | ---: |
+| 1. Workflow/contracts/configuration integration | 6-10 |
+| 2. Computational skill execution and isolation | 20-36 |
+| 3. Resources, dependencies and tool/app connections | 12-24 |
+| 4. Evaluator construction and qualification | 20-36 |
+| 5. Planning, audit and repeated sampling | 10-16 |
+| 6. Scientific assessment and reporting | 12-20 |
+| 7. Catalog reuse, contribution and release integration | 12-20 |
+| 8. Observable workflow logging | 6-10 |
+| 9. Reliability, interruption and recovery | 10-18 |
+| 10. Packaging, compatibility and live acceptance | 12-22 |
+| **Base total** | **120-212** |
+
+Allowing roughly 25% for integration and test-discovered rework gives a planning
+range of **150-270 engineering hours**, approximately **4-7 full-time engineering
+weeks** for one developer. Confidence is low-to-medium until the first real CLI
+run and an executable-skill isolation prototype are tested. AI assistance may
+accelerate implementation, but cannot eliminate model execution, validation or
+scientific qualification. Work can continue across implementation/testing turns
+in this project; the estimate is not a commitment to unattended future work.
+
+The largest uncertainties are Windows confinement/dependency behavior, independent
+scientific qualification, current CLI/desktop interoperability, and the actual
+skills/apps in the acceptance corpus. Waiting for subscription resets, user login,
+external review, installations or access is additional elapsed time. Re-estimate
+at each tested milestone; do not reduce scope silently to meet the estimate.
+
+### Urgent next steps, if any
+
+The most recent preflight could not find a standalone Claude executable. Obtain
+an actual native CLI/version check and user-controlled subscription sign-in before
+live acceptance; never extract saved account credentials. Inventory the intended
+personal skill corpus and installed scientific tools early, then choose and prove
+the execution boundary. Unknown application requirements and scientific coverage
+remain explicit estimation inputs, not reasons to replace the goal with another
+narrow release. Contract/integration and logging work can proceed while these
+inputs are resolved.
+
+### Suggested next move
+
+Implement in reviewable milestones that build toward the whole target: first
+establish the live local entry and logging, then computational execution/resources,
+then evaluator construction/audit/sampling/assessment, then catalog lifecycle and
+final package acceptance. Bring fault tests and documentation forward with each
+change. Early successful examples are checkpoints only; they do not mark the full
+project complete or exempt the remaining checklist.
+
+### Recommended next action
+
+After this requested documentation publication, begin workstreams 1, 8 and the
+initial acceptance checks from 10: map existing scientific modules into the local
+entry, record a complete attempt timeline, and establish one real desktop/CLI
+run. Use that evidence to finalize the execution boundary for workstreams 2-3.
+This turn's authorized deliverable is the roadmap cleanup, new entry, estimate
+and remote publication; it does not claim the listed implementation is done.
+The user subsequently instructed continuation into implementation after this
+publication. Continue against the complete checklist; update this same entry
+with actual progress and validation rather than creating another reduced goal.
+The user will perform live acceptance manually and asked for the installation
+instructions to be updated accordingly. Implement and verify the code with
+automated tests, provide a clear manual acceptance procedure, and leave live
+CLI/desktop and scientific acceptance explicitly pending until the user's
+results are inspected. Do not install apps, change sign-in settings or request
+their token to perform those tests on the user's behalf.
+
+### Validation and publication of this entry
+
+Initial checks resolved all 213 local links across 30 Markdown files and passed
+whitespace validation. A clean-terminal test run exposed an existing import-path
+dependency in the three newer test modules; aligned their source-path setup with
+the older tests so the documented command does not depend on inherited PYTHONPATH.
+The corrected full command passes **151 tests: 149 passed, 2 skipped**, in
+51.476 seconds. The skips are the unavailable Python 3.11 interpreter and
+privileged physical-symlink creation. Runtime source is unchanged in this
+publication; the test import repair makes the existing checks runnable from a
+clean terminal. The rebuilt local package passes CRC/source checks and excludes
+both deleted goal documents. These are automated checks, not live acceptance.
+The user explicitly authorized pushing this
+change set, including the prior guide refinements and pending log, to
+`https://github.com/njdjyxz/sci-ai-verifier` on `main`. Report the final commit and
+remote verification after publication. No runtime feature, credentials, account
+settings, installations or shared scientific registry entries are changed here.

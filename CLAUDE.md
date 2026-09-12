@@ -16,15 +16,22 @@
 
 ## This repository
 
-Version 0.6.0 is the personal/local first version on `main`, governed by
-`skills/scientific-verifier/references/local-contract.md`. The user retired the demo
-branch and resumed the approved Claude Code direction. `verify` and `serve-local`
-provide one public action; Claude Code owns the planner loop and fresh subject
-sessions. Python owns deterministic tools, bounded processes and saved evidence.
-Data-only candidates can qualify mechanically and be reused locally without a
-human-authored seed. They remain scientifically provisional and receive no
-scientific status or grade. GitHub contribution/release automation and executable
-methods are later increments, outside the personal/local release.
+The goal is the complete personal/local scientific verifier, using the user's
+installed Claude Code CLI, desktop Code tab and subscription. The latest
+`DEVELOPMENT-PLAN.md` entry is the single completion roadmap. Computational
+skills, data and tool access, evaluator construction/qualification, audited
+sampling and grading, complete workflow logs, shared catalog contribution and
+release handling, and real local acceptance are remaining work within that goal.
+Do not redefine completion as a text-only, chemical-only or demonstration release.
+A hosted multiuser/API product is a separate future deployment project.
+
+Version 0.6.0 is an incomplete implementation. Its current enforceable behavior is
+documented in `skills/scientific-verifier/references/local-contract.md`.
+`verify` and `serve-local` provide one public action; Claude Code owns the planner
+loop and fresh subject sessions. Python owns deterministic tools, bounded
+processes and saved evidence. Current local candidates qualify mechanically and
+have no scientific status or grade. Preserve that truthful behavior until the
+missing scientific qualification and grade policies are implemented and tested.
 
 The earlier Stage 2/3, chemical verification and same-chat demo code is preserved
 for compatibility. Demo is explicit, not the product default. Existing fixtures

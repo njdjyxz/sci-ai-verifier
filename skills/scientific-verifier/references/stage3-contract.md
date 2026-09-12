@@ -2,7 +2,7 @@
 
 This profile extends the desktop host described in [stage2-contract.md](stage2-contract.md). Its source authorization, immutable storage, token serialization, recovery, failure envelopes, and stated app limitations still apply. New desktop runs use `stage3`; the operator can run `--profile stage2` for the extraction acceptance suite. Existing schema-1 runs written by 0.2.0 keep their profile, instructions, limits, and stopping point. There is no migration or reopening of a completed run.
 
-The public task is **verify this skill**. Extraction, classification, and lookup are internal operations. This release finishes a routing checkpoint, not a scientific verification: `verification_complete` remains false, and it produces no verdict or evidence grade. The repository document `reviews/PROJECT-COMPLETION.md` names the subsequent work.
+The public task is **verify this skill**. Extraction, classification, and lookup are internal operations. This release finishes a routing checkpoint, not a scientific verification: `verification_complete` remains false, and it produces no verdict or evidence grade. The latest entry in the repository's `DEVELOPMENT-PLAN.md` defines the full local completion work.
 
 ## State and tool protocol
 

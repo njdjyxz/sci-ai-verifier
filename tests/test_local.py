@@ -1,11 +1,14 @@
 """Local workflow acceptance: real persistence, synthetic independent observations."""
 
 import json
+import sys
 import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.agent import Runtime
 from sci_ai_verifier.common import Fault, canonical

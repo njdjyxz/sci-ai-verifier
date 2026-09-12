@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from sci_ai_verifier.claude_runner import (ClaudeCode, SUBJECT_SKILL, isolated_environment,
     parse_events, prepare_workspace, run_process, stage_skill)
 from sci_ai_verifier.common import Fault, canonical
