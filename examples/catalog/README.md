@@ -2,7 +2,7 @@
 
 These entries are provisional design material. They are never loaded by the default desktop extension, and building a release from them does not make them reviewed or executable.
 
-See the [chemical mass pilot](../../reviews/CHEMICAL-MASS-PILOT.md) for scope, primary references, examples and the remaining approval/execution requirements. The selected first family is chemical formula and mass calculations. The runtime must keep composition, monoisotopic mass and average mass distinct.
+See the [chemical mass pilot](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/CHEMICAL-MASS-PILOT.md) for scope, primary references, examples and the remaining approval/execution requirements. The selected first family is chemical formula and mass calculations. The runtime must keep composition, monoisotopic mass and average mass distinct.
 
 For a local review package:
 

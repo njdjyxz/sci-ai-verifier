@@ -16,6 +16,12 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# This module imports the package directly; it must not depend on another test
+# module having already put src/ on the path.
+sys.path.insert(0, str(ROOT / "src"))
+# Read the built version instead of pinning it: a stale literal here made these tests
+# pass against an old artifact left in dist/ rather than against the current source.
+VERSION = json.loads((ROOT / "desktop/manifest.json").read_text(encoding="utf-8"))["version"]
 
 
 class DesktopPackageTests(unittest.TestCase):
@@ -42,7 +48,7 @@ class DesktopPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=parent, prefix="desktop-") as temporary:
             base = Path(temporary)
             package = base / "package with spaces"
-            with zipfile.ZipFile(ROOT / "dist/scientific-verifier-0.6.0.mcpb") as archive:
+            with zipfile.ZipFile(ROOT / f"dist/scientific-verifier-{VERSION}.mcpb") as archive:
                 self.assertIsNone(archive.testzip())
                 for name in archive.namelist():
                     self.assertTrue((package / name).resolve().is_relative_to(package.resolve()))
@@ -99,7 +105,7 @@ class DesktopPackageTests(unittest.TestCase):
                     "protocolVersion": "2025-06-18", "capabilities": {},
                     "clientInfo": {"name": "scripted-package-acceptance", "version": "1"},
                 })
-                self.assertEqual(initialized["serverInfo"]["version"], "0.6.0")
+                self.assertEqual(initialized["serverInfo"]["version"], VERSION)
                 request("notifications/initialized", notification=True)
                 listed = request("tools/list")
                 from sci_ai_verifier.tools import DEFINITIONS
@@ -296,7 +302,7 @@ class DesktopPackageTests(unittest.TestCase):
         for record in after:
             path = ROOT / "dist" / record["file"]
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), record["sha256"])
-        with zipfile.ZipFile(ROOT / "dist/scientific-verifier-skill-0.6.0.zip") as archive:
+        with zipfile.ZipFile(ROOT / f"dist/scientific-verifier-skill-{VERSION}.zip") as archive:
             names = archive.namelist()
             self.assertIn("scientific-verifier/SKILL.md", names)
             self.assertTrue(all(n.startswith("scientific-verifier/") for n in names))

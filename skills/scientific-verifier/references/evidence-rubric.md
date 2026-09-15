@@ -1,6 +1,10 @@
 # Evidence Grading Rubric
 
-The evidence grade measures the strength and independence of the scientific verification evidence. It does not indicate whether the claim passed.
+The evidence grade measures the strength and independence of the scientific verification evidence. It does not indicate whether the claim passed, and it is not an endorsement by anyone.
+
+Read the grade as a statement about where the evidence came from. A high grade means the answers the skill was checked against came from a gold-standard source outside the verifier. A low grade means AI judgment supplied more of the test design or the conclusion. The grade therefore also tells the verifier what to go looking for: seek the strongest evidence the claim allows, then report honestly how strong it turned out to be.
+
+No human sign-off assigns a grade. The verifier proposes the grade its design supports, the runner checks that proposal against facts it recorded itself, and an independent critique session can lower it. That settlement is the grade.
 
 Every evaluated claim keeps three questions separate:
 
@@ -19,6 +23,18 @@ Every evaluated claim keeps three questions separate:
 | **U - Unverified** | No acceptable scientific evidence; ungrounded judgment, self-consistency, smoke tests, installation tests, or operational execution only | AI may describe operational behavior but **no scientific verdict is allowed**. | No scientific conclusion is permitted. | "The skill accepts its documented input and produces schema-valid output without failing." |
 
 The examples are common matches rather than automatic assignments. The same claim may receive different grades depending on the available oracle, independence, scientific validity, coverage, uncertainty, and relationship between evidence and the exact claim.
+
+## Negotiating the grade
+
+Grading is a loop, not a label chosen at the end:
+
+1. **Seek strong evidence.** Start from the A-grade question: can the skill's output be compared with an independently obtained expected answer using deterministic code? Find and retrieve the sources that would make that possible before settling for anything weaker.
+2. **Propose the ceiling.** Every proposal must be the strongest grade the runner's own recorded facts support for that design. There is exactly one exception, in step 4. Aiming below the ceiling is refused, because understating the evidence misreports it just as badly as overclaiming; and "no suitable oracle exists for a stronger grade" is not a reason to aim low — it is already what the ceiling computes. Justify the proposal: where the oracle came from and how independent it is, what the cases cover, what the tolerance rests on, what is uncertain, and what would be needed to go higher.
+3. **Critique its suitability.** A fresh session that never saw the planning judges whether that evidence is fit for this exact claim at that grade. It receives the concerns earlier reviewers raised about earlier versions of the design, so it can check whether they are now answered, but never their grades: a reviewer shown a previous verdict has an easy answer available, which is the anchoring the fresh session exists to avoid.
+4. **Revise, or accept.** When the critique supports less, there are two legal moves. Strengthen the evidence — a more authoritative source, cases that cover the stated scope, a tighter comparison — and propose the new ceiling; that earns another round. Or accept the grade this exact design was critiqued at, which settles immediately and spends no further session. Re-proposing a grade on an unchanged design is refused without spending a round, so the loop cannot spin.
+5. **Settle at the highest justified grade.** The settled grade is the weakest of the proposal, the runner's ceiling and the critique's verdict. On the last permitted round the critique's grade is settled rather than offered for revision, and the grade always describes the plan that will actually execute, not a stronger design that was discarded.
+
+Proposing again is the normal path, not a failure. What is not permitted is arguing the critique into agreement, restating a design without changing it, or treating a lowered grade as a reason to abandon the claim. A critique concluding that the design supports no grade is accepted the same way: the plan still executes and produces ungraded comparison evidence, and the claim continues to the documentary path.
 
 ## Gold-standard preference
 
@@ -49,7 +65,7 @@ The aggregation rule is chosen from the claim. A claim that a calculation is cor
 
 ### Audited trial-grade policy
 
-`trial_grade_policy` names an exact policy identity, version, and digest supplied by the approved reviewed harness, plus parameters restricted to that harness's declared bounds. A registered evaluator retains this harness-policy reference. The policy's scientific justification and its applicability to the claim are audited before execution; neither the verifier agent nor execution may invent a policy or tune its parameters after observing results.
+`trial_grade_policy` names an exact policy identity, version, and digest installed in the runner, plus parameters restricted to its declared bounds. A registered evaluator retains this policy reference. The policy's applicability to the claim is settled before execution; neither the verifier agent nor execution may invent a policy or tune its parameters after observing results.
 
 The policy defines total eligibility predicates for A, B, and C. Each predicate combines the applicable rubric requirements with the audited trial-count, agreement, coverage, and invalid-observation requirements. Unsupported grades have an explicitly false predicate. The contract must specify:
 
@@ -82,31 +98,34 @@ The audited plan defines how invalid cases, coverage shortfalls, tolerances, and
 Documentary-only D does not execute the submitted skill, so it does not require an installed subject runner. Its plan and artifacts mark subject runner/model, trial count, aggregation, and trial-grade policy `not_applicable`. An approved documentary harness, bounded evidence packet/rubric, and independent assessment remain required; missing assessor infrastructure is not missing scientific evidence.
 
 - For grades A through C, `execute_evaluation_plan` returns `completed_deterministic_decision` with the authoritative status and `achieved_grade_ceiling` produced by the audited rules, plus `grade_policy_ref` and `grade_limit_reasons`. The verifier agent may explain them but may not select, revise, or override them. `commit_claim_result` copies the exact strongest supported grade and status; caller-supplied values must be omitted or equal those execution values. `lower_grade_required` is a replanning outcome and cannot be committed as an evaluated result.
-- For grade D, `execute_evaluation_plan` obtains a completed assessment through a runner-provisioned independent assessor meeting the audited documentary plan's assessor boundary. The host selects and verifies the assessor; the planner cannot invent its identity. The assessor is an identified human or separate assessor session given only the bounded judgment packet, cited evidence, and audited rubric, not the planning conversation. `documentary_assessment_ready` means that this assessment has completed and its identity, independence, rubric findings, status, and provenance are recorded. The planning session never assesses its own packet, and result commit preserves the recorded assessment rather than accepting a new planning-agent judgment. If no eligible independent assessor is available, or assessment cannot complete within the runner's bounded limits, `assessor_unavailable` records a terminal claim-scoped operational outcome before result commit, with no scientific status. It does not justify either D or U.
+- For grade D, `execute_evaluation_plan` obtains a completed assessment through a runner-provisioned independent assessor meeting the audited documentary plan's assessor boundary. The host selects and verifies the assessor; the planner cannot invent its identity. The assessor is a separate session given only the bounded judgment packet, cited evidence, and audited rubric, not the planning conversation. `documentary_assessment_ready` means that this assessment has completed and its identity, independence, rubric findings, status, and provenance are recorded. A completed assessment against the installed rubric is grade D on its own; no further sign-off is required, and none of it makes the conclusion more than documentary. The planning session never assesses its own packet, and result commit preserves the recorded assessment rather than accepting a new planning-agent judgment. If no eligible independent assessor is available, or assessment cannot complete within the runner's bounded limits, `assessor_unavailable` records a terminal claim-scoped operational outcome before result commit, with no scientific status. It does not justify either D or U.
 - Grade U always has `status: inconclusive`. `pass` or `fail` with grade U is invalid.
 
 Operational completion, schema validity, evaluator crashes, unavailable tools, and exhausted runtime limits never determine a scientific status.
 
 ## Grade selection and downgrade
 
-- Assign the strongest grade actually supported, never the intended or requested grade by default.
+- Assign the strongest grade actually supported: never the intended or requested grade by default, and never a weaker grade than the evidence earns.
 - A registered evaluator's grade is a ceiling, not a guarantee for every plan or dataset.
 - Missing coverage, weak independence, uncertain provenance, leakage, unsupported tolerances, or failure to meet the audited trial-count, agreement, or coverage requirements lower the grade ceiling. Trial-related limits are computed by the fixed `trial_grade_policy`, not inferred by the verifier agent after execution.
 - When target-grade evidence is unavailable, automatically attempt the next supportable grade and record the downgrade reason.
 - When the user explicitly requires a minimum grade, label any lower-grade result as not satisfying that requirement.
 - When no acceptable evidence supports any grade A through D, assign U through the workflow's no-acceptable-evidence path and make no scientific claim. Failure to support A through C does not skip the documentary-evidence attempt; unavailable implementation or an unavailable assessor remains an operational outcome, not U.
 - Before lowering a target plan, reconsider registered evaluators that support the lower grade so an existing capability is not rebuilt unnecessarily.
+- A grade is never conferred by a person approving it and never withheld because nobody has. Absent approval is not an evidence limit; absent evidence is.
 
 ## Result interpretation
 
-This schematic shows the recorded fields, not a numerical threshold policy or an evaluated claim:
+This schematic shows the recorded claim-result fields, not a numerical threshold policy or an evaluated claim. The plan audit separately records `evidence_ceiling`, the strongest grade the runner's own facts support, its limiting reasons, and the independent critique's supported grade, findings and objections:
 
 ```yaml
 status: pass | fail | inconclusive
 evidence_grade: A | B | C
 requested_grade: A | B | C | D | U | not_specified
 achieved_grade_ceiling: <authoritative A, B, or C from execution>
-grade_policy_ref: <reviewed policy identity, version, and digest>
+proposed_grade: <the grade the planner proposed>
+settled_ceiling: <the grade the negotiation settled on, copied from the plan audit>
+grade_policy_ref: <installed policy identity, version, and digest>
 grade_limit_reasons: <recorded reasons, or an empty list>
 coverage:
   tested_cases: <recorded count>

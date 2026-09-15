@@ -34,7 +34,7 @@
       ],
       "input_interface": "chemical-formula-v1",
       "output_interface": "mass-daltons-v1",
-      "configuration_contract": "reviews/CHEMICAL-MASS-PILOT.md#candidate-contract",
+      "configuration_contract": "https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/CHEMICAL-MASS-PILOT.md#candidate-contract",
       "scoring_contract": "plain nonnegative decimal in Da; inclusive absolute error 0.000001",
       "aggregation_contract": "Every trial scored separately; no averaging of subject outputs",
       "trial_grade_policy": "chemical-mass-comparison version 1; C only; scientific approval pending",

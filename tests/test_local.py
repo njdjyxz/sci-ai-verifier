@@ -70,11 +70,15 @@ class LocalTests(unittest.TestCase):
         self.claims = self.data["manifest"]["claims"]
         self.claim_id = self.claims[0]["claim_id"] if self.claims else None
 
-    def candidate(self, **overrides):
-        self.call("list_local_candidates", claim_id=self.claim_id)
-        with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(REFERENCE.encode(), REFERENCE)):
-            self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/reference", version="fixture-v1", license="Unknown; private analysis only")
-        reference_ref = self.data["reference_ref"]
+    def candidate(self, *, lookup=True, **overrides):
+        # Lookup is legal only in local_lookup, so a second qualification skips it and
+        # reuses the reference this claim already retrieved.
+        if lookup:
+            self.call("list_local_candidates", claim_id=self.claim_id)
+            with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(REFERENCE.encode(), REFERENCE)):
+                self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/reference", version="fixture-v1", license="Unknown; private analysis only")
+            self.reference_ref = self.data["reference_ref"]
+        reference_ref = self.reference_ref
         arguments = {"claim_id": self.claim_id, "name": "Fixture table", "scope": "Reference-table queries", "method": "numeric",
                      "limitations": "Fictional reference demonstrates mechanics only.",
                      "cases": [{"case_id": name, "input": name, "expected": str(index)+".0", "reference_ref": reference_ref,
@@ -84,11 +88,22 @@ class LocalTests(unittest.TestCase):
         self.call("qualify_local_candidate", **arguments)
         return self.data["candidate_ref"]
 
-    def ready(self):
+    def select(self, key, target_grade="C", **overrides):
+        arguments = {"claim_id": self.claim_id, "candidate_ref": key, "target_grade": target_grade,
+                     "applicability": "Synthetic fixture scope",
+                     "oracle_independence": "Fictional fixture table retrieved by Python, not written by the planner.",
+                     "coverage": "Three of three documented table rows.",
+                     "tolerance_basis": "Installed numeric tolerance of 1e-6.",
+                     "uncertainty": "Fixture reference carries no stated uncertainty.",
+                     "stronger_grade_considered": "One trial per case is configured, which caps this design at C."}
+        arguments.update(overrides)
+        return self.call("select_local_candidate", **arguments)
+
+    def ready(self, target_grade="C"):
         self.extract()
         key = self.candidate()
         self.assertEqual(self.data["outcome"], "qualified_local")
-        self.call("select_local_candidate", claim_id=self.claim_id, candidate_ref=key, applicability="Synthetic fixture scope")
+        self.select(key, target_grade=target_grade)
         return key
 
     def test_empty_catalog_discovery_complete_report_and_offline_reuse(self):
@@ -117,7 +132,7 @@ class LocalTests(unittest.TestCase):
         with patch("sci_ai_verifier.local_candidates.fetch_public", side_effect=AssertionError("Must reuse offline")):
             self.call("list_local_candidates", claim_id=self.claim_id)
             self.assertEqual(self.data["candidates"][0]["candidate_ref"], key)
-            self.call("select_local_candidate", claim_id=self.claim_id, candidate_ref=key, applicability="Same scope")
+            self.select(key)
             self.call("execute_local_claim", claim_id=self.claim_id)
 
     def test_wrong_answers_fail_without_scientific_grade(self):
@@ -155,10 +170,10 @@ class LocalTests(unittest.TestCase):
     def test_mixed_claims_account_for_unsupported_work(self):
         self.extract(2)
         key = self.candidate()
-        self.call("select_local_candidate", claim_id=self.claim_id, candidate_ref=key, applicability="Fixture scope")
+        self.select(key)
         self.call("execute_local_claim", claim_id=self.claim_id)
         self.assertEqual(self.data["run_state"], "active")
-        self.call("record_local_limitation", claim_id=self.claims[1]["claim_id"], code="unsupported_method", reason="No qualified independent method")
+        self.call("record_local_limitation", claim_id=self.claims[1]["claim_id"], code="no_independent_reference_available", reason="No qualified independent method")
         self.call("write_report_card")
         self.assertEqual(len(self.data["report"]["claims"]), 2)
 
@@ -190,7 +205,7 @@ class LocalTests(unittest.TestCase):
 
     def test_runtime_change_cannot_reuse_existing_plan(self):
         self.ready()
-        with patch("sci_ai_verifier.scientific.implementation_bytes", return_value=b"changed"):
+        with patch("sci_ai_verifier.storage.implementation_bytes", return_value=b"changed"):
             self.call("execute_local_claim", claim_id=self.claim_id)
         self.assertEqual(self.data["outcome"], "method_changed")
         self.assertFalse(self.subject.requests)
@@ -200,7 +215,7 @@ class LocalTests(unittest.TestCase):
         self.call("list_local_candidates", claim_id=self.claim_id)
         secret = "sk-ant-" + "x"*30
         response = self.runtime.call("record_local_limitation", {"run_id": self.data["run_id"], "state_token": self.data["state_token"],
-                          "claim_id": self.claim_id, "code": "unavailable", "reason": secret})
+                          "claim_id": self.claim_id, "code": "reference_retrieval_failed", "reason": secret})
         self.assertEqual(response["status"], "retryable")
         for file in self.runtime.store.root.rglob("*"):
             if file.is_file():

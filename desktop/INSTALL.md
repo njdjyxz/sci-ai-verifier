@@ -21,9 +21,8 @@ The repository is `D:\Su Lab\sci-ai-verifier`. The paths in this guide are for t
 | `src/sci_ai_verifier/` | Python implementation of the local tools | Development only; you do not launch individual files. |
 | `scripts/` | Package builder | Used when rebuilding after code or instruction changes. |
 | `tests/` | Automated developer tests | Already run for the current repair; separate from the Claude app tests below. |
-| `registry/`, `evaluators/` | Reviewed material for later development | Do not put submitted skills here. |
+| `registry/` | Reviewed material for later development | Do not put submitted skills here. |
 | `.verifier/` inside this checkout | Ignored local test data and caches | Keep your real acceptance records in the separate data folder below. |
-| `tmp/legacy_fixed_workflow/` | Preserved previous implementation | Leave it in place; it is not the current application. |
 
 There are two different uses of the word skill: **install the scientific-verifier skill**, then **submit other skills as local input folders**. A submitted skill is read as data. Do not enable the submitted skill as an instruction source in the verifier's test conversation.
 

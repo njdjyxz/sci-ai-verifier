@@ -503,7 +503,7 @@ Claude Code owns the planner loop. This matrix specializes the broader target.
 | source_ready | read_snapshot_file, commit_claim_manifest | source_ready or active (reporting if empty) |
 | active / local_lookup | list_local_candidates, record_local_limitation | local_discovery or terminal_operational |
 | active / local_discovery | fetch_local_reference, load_local_resource, fetch_local_asset, qualify_local_candidate, qualify_local_evaluator, select_local_candidate, assess_local_documentary, record_local_unverified, record_local_limitation | local_discovery, local_ready, terminal_result or terminal_operational |
-| active / local_ready | execute_local_claim, record_local_limitation | local_documentary, terminal_result or terminal_operational |
+| active / local_ready | execute_local_claim | local_documentary, terminal_result or terminal_operational |
 | active / local_documentary | fetch_local_reference, load_local_resource, fetch_local_asset, assess_local_documentary, record_local_unverified, record_local_limitation | local_documentary, terminal_result or terminal_operational |
 | reporting | write_report_card | completed |
 | completed / incomplete | none | terminal |
@@ -511,3 +511,20 @@ Claude Code owns the planner loop. This matrix specializes the broader target.
 Reporting becomes legal only after all accepted claims are terminal. Lookup and
 qualification do not execute the subject; qualification is mechanical, not a
 scientific grade. Recovery and cancellation retain the common host controls.
+
+Three transitions inside `local_discovery` and `local_ready` are deliberately
+narrow, because each one ends a claim and a wide gate would let the planner
+finish without doing the work:
+
+- `select_local_candidate` stays in `local_discovery` and returns
+  `local_grade_revision_required` whenever the independent critique supports a
+  weaker grade than the proposal. Repeating the call with a strengthened design or
+  a lower proposal is the negotiation. After the installed round limit the
+  critique's grade is settled and the claim reaches `local_ready`.
+- `assess_local_documentary` and `record_local_unverified` require the claim's
+  catalog lookup plus at least one reference Python retrieved or one recorded
+  qualification attempt, and are refused while the claim still holds a candidate it
+  qualified for itself and never executed. A free-text account of a search Python
+  never observed does not end a claim.
+- `local_ready` has no limitation tool. Once a plan is settled and executable, the
+  only ways out are executing it or an execution failure Python itself observed.

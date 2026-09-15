@@ -15,7 +15,7 @@ from sci_ai_verifier.ingest import SECRET_BYTES
 
 def main():
     files = {}
-    directories = ("src", "skills", "registry", "catalog", "evaluators", "examples", "scripts", "tests", "desktop", "reviews")
+    directories = ("src", "skills", "registry", "catalog", "examples", "scripts", "tests", "desktop")
     for directory in directories:
         for path in sorted((ROOT / directory).rglob("*")):
             if path.is_file() and path.suffix in {".py", ".md", ".json", ".txt", ".toml"} and "__pycache__" not in path.parts:

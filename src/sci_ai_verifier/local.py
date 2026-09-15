@@ -11,12 +11,25 @@ from . import local_candidates as catalog
 CLAIM_LEGAL = {
     "local_lookup": ["list_local_candidates", "record_local_limitation"],
     "local_discovery": ["fetch_local_reference", "load_local_resource", "fetch_local_asset", "qualify_local_candidate", "qualify_local_evaluator", "select_local_candidate", "assess_local_documentary", "record_local_unverified", "record_local_limitation"],
-    "local_ready": ["execute_local_claim", "record_local_limitation"],
+    # An audited executable plan is not abandoned by assertion. Every real failure
+    # during execution is recorded by Python with the cause it observed.
+    "local_ready": ["execute_local_claim"],
     "local_documentary":["fetch_local_reference","load_local_resource","fetch_local_asset","assess_local_documentary","record_local_unverified","record_local_limitation"],
     "terminal_result": [], "terminal_operational": [],
 }
 OPERATIONS = ("list_local_candidates", "fetch_local_reference", "qualify_local_candidate",
               "select_local_candidate", "execute_local_claim", "record_local_limitation", "load_local_resource", "fetch_local_asset", "qualify_local_evaluator", "assess_local_documentary", "record_local_unverified")
+# The planner may end a claim operationally only for one of these named causes. Codes
+# raised by Python for an observed failure are passed internally and are not in this set,
+# so a report can tell an abandoned claim from an execution that actually broke.
+PLANNER_LIMITATIONS = (
+    "no_independent_reference_available",
+    "reference_retrieval_failed",
+    "claim_not_mechanically_testable",
+    "required_resource_unavailable",
+    "required_environment_unavailable",
+    "scope_outside_local_support",
+)
 
 
 def legal(state):
@@ -27,6 +40,11 @@ def legal(state):
 
 
 def schemas(base, obj, string):
+    from .local_science import PLANNER_JUSTIFICATION
+
+    def choice(values, maximum=100):
+        return {"type": "string", "minLength": 1, "maxLength": maximum, "enum": list(values)}
+
     claim = {**base, "claim_id": string(80)}
     case = obj({"case_id": string(80), "input": string(8000), "expected": string(4000),
                 "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000)})
@@ -42,9 +60,11 @@ def schemas(base, obj, string):
         "record_local_unverified":obj({**claim,"search_account":string(8000),"missing_evidence":string(8000)}),
         "qualify_local_candidate": obj({**claim, "name": string(200), "scope": string(8000), "method": string(20),
             "limitations": string(8000), "cases": {"type": "array", "minItems": 3, "maxItems": 12, "items": case}}),
-        "select_local_candidate": obj({**claim, "candidate_ref": string(64), "applicability": string(8000)}),
+        "select_local_candidate": obj({**claim, "candidate_ref": string(64), "applicability": string(8000),
+            "target_grade": choice(("A", "B", "C"), 1),
+            **{key: string(4000) for key in PLANNER_JUSTIFICATION}}),
         "execute_local_claim": obj(claim),
-        "record_local_limitation": obj({**claim, "code": string(100), "reason": string(8000)}),
+        "record_local_limitation": obj({**claim, "code": choice(PLANNER_LIMITATIONS), "reason": string(8000)}),
     }
 
 
@@ -92,14 +112,15 @@ def pin_candidate(store, state, key):
     return candidate
 
 
-def limitation(store, state, claim_id, code, reason, receipts=None):
+def limitation(store, state, claim_id, code, reason, receipts=None, *, asserted_by="runtime"):
     work = state["local_work"].setdefault(claim_id, {})
     previous=[]
     if work.get("result_ref"):
         work["comparison_ref"]=work.pop("result_ref")
         previous=store.get_json(work["comparison_ref"]).get("receipts",[])
     record = {"kind": "local-limitation", "claim_id": claim_id, "code": code, "reason": reason,
-              "scientific_status": None, "evidence_grade": None, "receipts":list(dict.fromkeys([*previous,*(receipts or [])]))}
+              "asserted_by": asserted_by, "scientific_status": None, "evidence_grade": None,
+              "receipts":list(dict.fromkeys([*previous,*(receipts or [])]))}
     work["outcome_ref"] = keep(store, state, record)
     state["claim_states"][claim_id] = "terminal_operational"
     return {"outcome": code, "limitation": record}
@@ -113,7 +134,7 @@ def operate(store, state, name, args, subject):
         raise Fault("illegal_claim_transition", "This operation is not legal for this local claim.")
     work = state["local_work"].setdefault(claim_id, {"reference_refs": [], "candidate_refs": []})
     if name == "record_local_limitation":
-        return limitation(store, state, claim_id, args["code"], args["reason"])
+        return limitation(store, state, claim_id, args["code"], args["reason"], asserted_by="planner")
     if name in {"assess_local_documentary","record_local_unverified"}:
         return documentary_step(store,state,claim_id,name,args,subject)
     if name == "list_local_candidates":
@@ -129,6 +150,7 @@ def operate(store, state, name, args, subject):
         state["objects"].append(raw_ref)
         reference = {"kind": "local-reference", "url": args["url"], "raw_ref": raw_ref, "text": text,
                      "version": args["version"], "license": args["license"], "retrieved_at": utc_now(),
+                     "origin": "retrieved_public_https",
                      "authority": "not_independently_attested", "redistribution": "not_authorized"}
         key = keep(store, state, reference)
         work["reference_refs"].append(key)
@@ -138,13 +160,17 @@ def operate(store, state, name, args, subject):
         settings=settings_for(store,state)
         if name=="load_local_resource":
             raw,metadata=import_configured(settings,args["resource_name"])
-            metadata={**{key:value for key,value in metadata.items() if key!="path"},"url":"operator-resource:"+args["resource_name"]}
+            # An operator-selected local dataset is pinned but was not retrieved by Python,
+            # so it supports external validation rather than direct validation.
+            metadata={**{key:value for key,value in metadata.items() if key!="path"},
+                      "url":"operator-resource:"+args["resource_name"],"origin":"operator_local_resource"}
         else:
             check_reference_host(settings,args["url"])
             raw,_=catalog.fetch_bytes(args["url"],max_bytes=settings["max_file_bytes"])
             if digest(raw)!=args["sha256"]:
                 raise Fault("resource_changed","Downloaded asset differs from the requested digest.")
-            metadata={key:args[key] for key in ("url","version","license","units")}
+            metadata={**{key:args[key] for key in ("url","version","license","units")},
+                      "origin":"retrieved_public_https"}
         inspection=inspect_resource(raw,args["format"],settings)
         raw_ref=store.put(raw)
         if raw_ref not in state["objects"]:
@@ -175,27 +201,158 @@ def operate(store, state, name, args, subject):
         work["candidate_refs"].append(key)
         return {"outcome": candidate["status"], "candidate_ref": key, "candidate": candidate}
     if name == "select_local_candidate":
-        key = args["candidate_ref"]
-        allowed = {value["candidate_ref"] for value in store.get_json(work["lookup_ref"])["candidates"]}
-        if key not in allowed | set(work["candidate_refs"]):
-            raise Fault("candidate_not_returned", "Select a candidate returned by this claim's lookup or qualification.")
-        candidate = pin_candidate(store, state, key)
-        work["candidate_ref"] = key
-        from .local_science import environment_digest
-        work["selection_ref"] = keep(store, state, {"candidate_ref": key, "applicability": args["applicability"],
-             "snapshot_ref": state["source_ref"], "subject_config": state["subject_config"],
-             "source_digest":store.get_json(state["source_ref"])["digest"],
-             "environment_digest":environment_digest(settings_for(store,state),state["subject_config"]),
-             "method_version": candidate["method_version"], "trials_per_case": settings_for(store,state)["trial_count"], "claim_id": claim_id})
-        from .local_science import audit
-        claim=next(item for item in store.get_json(state["manifest_ref"])["claims"] if item["claim_id"]==claim_id)
-        audit_record=audit(candidate,claim,settings_for(store,state),store.get_json(work["selection_ref"]))
-        work["audit_ref"]=keep(store,state,audit_record)
-        if not audit_record["mechanically_accepted"]:
-            return {"outcome":"local_audit_rejected","audit":audit_record}
-        state["claim_states"][claim_id] = "local_ready"
-        return {"outcome": "local_plan_fixed", "candidate": candidate, "selection_ref": work["selection_ref"],"audit":audit_record}
+        return select(store, state, claim_id, work, args, subject)
     return execute(store, state, claim_id, subject)
+
+
+def claim_record(store, state, claim_id):
+    return next(item for item in store.get_json(state["manifest_ref"])["claims"]
+                if item["claim_id"] == claim_id)
+
+
+def prior_objections(history):
+    """Earlier reviewers' concerns, without their grades, so a revision can be checked.
+
+    Grades are withheld deliberately. A new reviewer told that the last one said C has
+    an easy answer available, which is the anchoring the fresh session exists to avoid.
+    The concerns themselves are what a revision has to answer, so those carry forward.
+    They come from Python's stored audits, so the planner cannot restate them.
+    """
+    found = []
+    for record in history:
+        for objection in (record.get("critique") or {}).get("objections", []):
+            if objection not in found:
+                found.append(objection)
+    return found[:12]
+
+
+def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=()):
+    """The bounded packet a fresh session sees: the design and its facts, no planning."""
+    from .documentary import CRITIQUE_RUBRIC
+    from .local_science import PLANNER_JUSTIFICATION
+
+    def clip(text, size=800):
+        return text if len(text) <= size else text[:size] + " [truncated]"
+
+    sources = {}
+    for item in references.values():
+        sources[item["url"]] = {"url": item["url"], "version": item["version"], "license": item["license"],
+                                "origin": item.get("origin", "unrecorded")}
+    return {"claim": {key: claim[key] for key in ("statement", "scope", "expected_behavior")},
+            "proposed_grade": args["target_grade"], "rubric": CRITIQUE_RUBRIC,
+            "prior_objections": [clip(item, 1000) for item in objections],
+            "evidence": {"method": candidate["method"], "method_version": candidate["method_version"],
+                         "candidate_scope": clip(candidate["scope"]),
+                         "candidate_limitations": clip(candidate["limitations"]),
+                         "case_count": len(candidate["cases"]), "trials_per_case": trials,
+                         "absolute_tolerance": candidate.get("absolute_tolerance"),
+                         "references": [sources[key] for key in sorted(sources)],
+                         "cases_shown": min(len(candidate["cases"]), 6),
+                         "cases": [{"input": clip(case["input"]), "expected": clip(case["expected"]),
+                                    "source_quote": clip(case["source_quote"]),
+                                    "applicability": clip(case["applicability"])}
+                                   for case in candidate["cases"][:6]]},
+            "justification": {key: clip(args[key], 2000) for key in PLANNER_JUSTIFICATION},
+            "python_checked": {"evidence_ceiling": ceiling, "evidence_limits": limits,
+                               "note": "Python already verified that every expected answer is quoted exactly "
+                                       "from the pinned reference bytes. Judge whether that evidence is "
+                                       "fit for this claim at the proposed grade."}}
+
+
+def select(store, state, claim_id, work, args, subject):
+    """Freeze one plan and settle its grade: propose, critique, then fix or ask for a revision."""
+    from .local_science import (MAX_ROUNDS, PLANNER_JUSTIFICATION, audit, environment_digest,
+                                evidence_ceiling, fingerprint, proposal_problem, weaker)
+    key = args["candidate_ref"]
+    allowed = {value["candidate_ref"] for value in store.get_json(work["lookup_ref"])["candidates"]}
+    if key not in allowed | set(work["candidate_refs"]):
+        raise Fault("candidate_not_returned", "Select a candidate returned by this claim's lookup or qualification.")
+    candidate = pin_candidate(store, state, key)
+    settings = settings_for(store, state)
+    references = {case["reference_ref"]: store.get_json(case["reference_ref"]) for case in candidate["cases"]}
+    trials = settings["trial_count"]
+    ceiling, limits = evidence_ceiling(candidate, references, trials)
+    history = [store.get_json(item) for item in work.setdefault("negotiation_refs", [])]
+    identity = fingerprint(candidate)
+    # The last critique of *this exact design* is the only grade below the ceiling the
+    # planner may accept. A critique of a design since revised says nothing about this one.
+    settled = next((record["critique"] for record in reversed(history)
+                    if record["candidate_fingerprint"] == identity and record.get("critique")), None)
+    # Clamped to the ceiling: a critique naming something stronger than the facts support
+    # is still capped, and an uncapped value here would leave the design unselectable.
+    accepted = weaker(ceiling, settled["supported_grade"]) if settled else None
+    problem = proposal_problem(args["target_grade"], ceiling, accepted)
+    if problem:
+        # Refuse before spending a critique session, and leave the claim in discovery so
+        # strengthening the design or proposing the ceiling is the next ordinary step.
+        return {"outcome": "local_grade_proposal_refused", "reason": problem,
+                "evidence_ceiling": ceiling, "evidence_limits": limits, "candidate_ref": key,
+                "acceptable_grades": sorted({item for item in (ceiling, accepted) if item}),
+                "message": "Propose the grade this design supports, " + (ceiling or "which is none")
+                           + (", or accept " + accepted + " as its last critique concluded."
+                              if accepted else ". Strengthen the design to reach a stronger one.")}
+    claim = claim_record(store, state, claim_id)
+    rounds = len(history) + 1
+    critique = None
+    # Accepting this exact design's own critique ends the negotiation, including when it
+    # concluded that the design supports no grade: executing it still produces ungraded
+    # comparison evidence and the documentary path.
+    accepting = bool(settled) and (args["target_grade"] == accepted or accepted is None)
+    if accepting:
+        critique = settled  # Re-running that judgment on the same evidence buys nothing.
+    elif state["subject_config"]["synthetic"]:
+        pass  # Fixture observations are never graded, so no session is spent.
+    elif settled:
+        # Re-proposing a grade this exact design was already critiqued below cannot
+        # loop: no session and no round are spent on an unchanged design.
+        return {"outcome": "local_design_unchanged", "candidate_ref": key,
+                "objections": prior_objections(history),
+                "message": "This design was already critiqued and supported " + accepted
+                           + ". Change the evidence to justify more, or propose " + accepted + "."}
+    elif rounds > MAX_ROUNDS:
+        return {"outcome": "local_grade_rounds_exhausted", "candidate_ref": key,
+                "rounds_used": len(history), "objections": prior_objections(history),
+                "message": "The negotiation budget for this claim is spent. Reselect a design that "
+                           "was already critiqued and accept the grade it supported."}
+    else:
+        packet = critique_packet(claim, candidate, references, args, ceiling, limits, trials,
+                                 prior_objections(history))
+        work["critique_packet_ref"] = keep(store, state, packet)
+        try:
+            from .documentary import critique as run_critique
+            critique = run_critique(subject, packet)
+        except (Fault, OSError, AttributeError) as error:
+            return limitation(store, state, claim_id, getattr(error, "code", "critic_unavailable"),
+                              "The independent grade critique did not complete. This is an operational "
+                              "failure, not an absence of scientific evidence.", asserted_by="runtime")
+        work["critique_ref"] = keep(store, state, critique)
+    work["candidate_ref"] = key
+    selection = {"candidate_ref": key, "applicability": args["applicability"],
+                 "target_grade": args["target_grade"],
+                 **{name: args[name] for name in PLANNER_JUSTIFICATION},
+                 "snapshot_ref": state["source_ref"], "subject_config": state["subject_config"],
+                 "source_digest": store.get_json(state["source_ref"])["digest"],
+                 "environment_digest": environment_digest(settings, state["subject_config"]),
+                 "method_version": candidate["method_version"], "trials_per_case": trials,
+                 "claim_id": claim_id}
+    work["selection_ref"] = keep(store, state, selection)
+    audit_record = audit(candidate, claim, settings, selection, references, critique=critique, rounds=rounds)
+    work["audit_ref"] = keep(store, state, audit_record)
+    work["negotiation_refs"].append(work["audit_ref"])
+    if not audit_record["mechanically_accepted"]:
+        return {"outcome": "local_audit_rejected", "audit": audit_record}
+    if (critique and not accepting and audit_record["settled_ceiling"] != args["target_grade"]
+            and rounds < MAX_ROUNDS):
+        # Strengthen the evidence and propose the new ceiling, or accept this grade.
+        # On the last round the critique's grade is settled instead of offered.
+        return {"outcome": "local_grade_revision_required", "audit": audit_record,
+                "supported_grade": critique["supported_grade"],
+                "objections": critique["objections"],
+                "required_revisions": critique["required_revisions"],
+                "rounds_remaining": MAX_ROUNDS - rounds}
+    state["claim_states"][claim_id] = "local_ready"
+    return {"outcome": "local_plan_fixed", "candidate": candidate,
+            "selection_ref": work["selection_ref"], "audit": audit_record}
 
 
 def settings_for(store,state):
@@ -216,14 +373,38 @@ def compare(candidate,case,text,settings,subject,artifacts=None):
     return score(candidate,case,text,settings,log=getattr(subject,"log",None),artifacts=artifacts)["status"]
 
 
+def stronger_evidence_available(store,state,claim_id,work):
+    """True when this claim qualified a candidate of its own and never ran it.
+
+    Scoped to candidates qualified for this claim. A catalog candidate returned by
+    lookup may belong to another claim's scope, and whether it applies here is a
+    semantic judgment Python cannot make; blocking on it would refuse the
+    documentary path for every claim as soon as any candidate exists.
+    """
+    if work.get("candidate_ref") or state["claim_states"][claim_id]!="local_discovery":
+        return False
+    return any(store.get_json(key).get("status")=="qualified_local"
+               for key in work.get("candidate_refs",[]))
+
+
 def documentary_step(store,state,claim_id,name,args,subject):
     from .documentary import assess,RUBRIC,RUBRIC_REF
-    from .scientific import implementation_bytes
-    if digest(implementation_bytes())!=state["local_method_ref"] or subject.identity!=state["subject_config"]:
-        return limitation(store,state,claim_id,"assessment_identity_changed","Runtime or assessor settings changed after bootstrap.")
+    from .storage import implementation_bytes
     work=state["local_work"][claim_id]
     if not work.get("lookup_ref"):
         raise Fault("catalog_lookup_required","Check available evaluators before concluding this claim.")
+    if not (work.get("reference_refs") or work.get("candidate_refs")):
+        # Neither path may conclude on a free-text account of a search Python never saw.
+        raise Fault("evidence_search_required",
+                    "Retrieve at least one reference, or record a rejected qualification attempt, "
+                    "before concluding that no stronger evidence exists.")
+    if stronger_evidence_available(store,state,claim_id,work):
+        raise Fault("stronger_evidence_available",
+                    "A qualified candidate for this claim has not been executed. Select and run it, "
+                    "or record why it does not apply, before taking a documentary or unverified outcome.")
+    if name=="assess_local_documentary" and (digest(implementation_bytes())!=state["local_method_ref"]
+                                             or subject.identity!=state["subject_config"]):
+        return limitation(store,state,claim_id,"assessment_identity_changed","Runtime or assessor settings changed after bootstrap.")
     previous=store.get_json(work["result_ref"]) if work.get("result_ref") else None
     retained={"claim_id":claim_id,"receipts":previous["receipts"] if previous else [],
               "comparison_ref":work.get("result_ref"),"synthetic":state["subject_config"]["synthetic"]}
@@ -243,7 +424,7 @@ def documentary_step(store,state,claim_id,name,args,subject):
             if item["quote"] not in resource["text"]:
                 raise Fault("documentary_reference_invalid","Every excerpt must be an exact reference quote.")
             evidence.append({**item,"url":resource["url"],"version":resource["version"],"license":resource["license"]})
-        claim=next(item for item in store.get_json(state["manifest_ref"])["claims"] if item["claim_id"]==claim_id)
+        claim=claim_record(store,state,claim_id)
         packet={"claim":{key:claim[key] for key in ("statement","scope","expected_behavior")},"evidence":evidence,"rubric":RUBRIC,"limitations":args["limitations"]}
         packet_ref=keep(store,state,packet)
         work["documentary_packet_ref"]=packet_ref
@@ -257,22 +438,29 @@ def documentary_step(store,state,claim_id,name,args,subject):
             return limitation(store,state,claim_id,getattr(error,"code","assessor_unavailable"),"The independent assessment did not complete; this is not missing scientific evidence.",retained["receipts"])
         assessment_ref=keep(store,state,response)
         work["assessment_ref"]=assessment_ref
-        approved=bool(settings_for(store,state)["documentary_review"]) and not state["subject_config"]["synthetic"]
+        # A completed independent assessment against the installed rubric is grade D.
+        # Synthetic fixture observations never receive a grade.
+        graded=not state["subject_config"]["synthetic"]
         record={**retained,"kind":"local-documentary","assessment_ref":assessment_ref,"packet_ref":packet_ref,
-                "scientific_status":response["assessment"]["status"] if approved else None,"evidence_grade":"D" if approved else None,
+                "rubric_ref":RUBRIC_REF,
+                "scientific_status":response["assessment"]["status"] if graded else None,"evidence_grade":"D" if graded else None,
                 "documentary_status":response["assessment"]["status"],"ai_involvement":{"orchestration":True,"evidence_generation":True,"verdict":True},
                 "limitations":["Documentary consistency only; scientific performance remains unverified.",
-                    response["assessment"]["limitations"],"Independent rubric authorization recorded." if approved else "Independent rubric authorization absent; assessment is ungraded."]}
+                    response["assessment"]["limitations"],
+                    "Assessed by a fresh independent session against the installed rubric; AI judgment is primary and disclosed."
+                    if graded else "Synthetic fixture run; no grade is assigned."]}
     work["result_ref"]=keep(store,state,record)
     state["claim_states"][claim_id]="terminal_result"
     return {"outcome":"local_documentary_complete" if name=="assess_local_documentary" else "local_unverified_recorded","result":record}
 
 
 def execute(store, state, claim_id, subject):
-    from .scientific import implementation_bytes
+    from .storage import implementation_bytes
     if digest(implementation_bytes()) != state["local_method_ref"]:
         return limitation(store, state, claim_id, "method_changed", "Runtime code changed after bootstrap; start a new verification.")
     work = state["local_work"][claim_id]
+    if not work.get("audit_ref"):
+        raise Fault("audit_required", "No settled plan audit exists for this claim.", fatal=True)
     candidate = pin_candidate(store, state, work["candidate_ref"])
     if subject.identity != state["subject_config"]:
         return limitation(store, state, claim_id, "subject_identity_changed", "Restart with the originally pinned subject settings.")
@@ -293,10 +481,9 @@ def execute(store, state, claim_id, subject):
                           "Earlier trial requests are retained. No trial was replayed.", receipts)
     settings=settings_for(store,state)
     trials=store.get_json(work["selection_ref"])["trials_per_case"]
-    if work.get("audit_ref"):
-        audit_record=store.get_json(work["audit_ref"])
-        if audit_record["selection_digest"]!=digest(canonical(store.get_json(work["selection_ref"]))) or not audit_record["mechanically_accepted"]:
-            return limitation(store,state,claim_id,"audit_invalidated","The plan differs from its accepted audit.")
+    audit_record=store.get_json(work["audit_ref"])
+    if audit_record["selection_digest"]!=digest(canonical(store.get_json(work["selection_ref"]))) or not audit_record["mechanically_accepted"]:
+        return limitation(store,state,claim_id,"audit_invalidated","The plan differs from its accepted audit.")
     if state["subject_calls_used"] + len(candidate["cases"])*trials > settings["max_subject_calls"]:
         return limitation(store, state, claim_id, "subject_budget_exhausted", "The configured subject call limit would be exceeded.")
     snapshot = verified_snapshot(store, state)
@@ -363,9 +550,8 @@ def execute(store, state, claim_id, subject):
               else "pass" if all(row["comparison_status"] == "pass" for row in observations) else "fail",
               "scientific_status": None, "evidence_grade": None, "synthetic": subject.identity["synthetic"],
               "limitations": candidate["qualification_limitations"] + [candidate["limitations"]]}
-    if work.get("audit_ref"):
-        from .local_science import decide
-        result.update(decide(store.get_json(work["audit_ref"]),observations,candidate["cases"],trials,synthetic=subject.identity["synthetic"]))
+    from .local_science import decide
+    result.update(decide(audit_record,observations,candidate["cases"],trials,synthetic=subject.identity["synthetic"]))
     work["result_ref"] = keep(store, state, result)
     needs_documentary=not result["evidence_grade"] and settings["documentary_assessment"]
     state["claim_states"][claim_id] = "local_documentary" if needs_documentary else "terminal_result"
@@ -420,12 +606,28 @@ def report(store, state):
             lines.extend(["Required grade: "+required_grade+"; requirement "+("met" if meets_required else "not met"),""])
         lines.extend(["Trials: "+"; ".join(key+" "+str(value) for key,value in execution_counts.items())+".",""])
         if work.get("audit_ref"):
-            review=store.get_json(work["audit_ref"]).get("review")
-            if review:
-                lines.extend(["Reviewed scope: "+cell(review["scope"]),"","Coverage: "+cell(review["coverage"]),"",
-                              "Uncertainty: "+cell(review["uncertainty"]),"","Review provenance: "+cell(review["provenance"]),""])
+            # `.get` throughout: a run saved before the grade negotiation existed must stay
+            # readable, and reporting an old record as "unrecorded" beats refusing to report.
+            settled=store.get_json(work["audit_ref"])
+            justification=settled.get("justification",{})
+            lines.extend(["Proposed grade: "+cell(settled.get("proposed_grade") or "unrecorded")+"; evidence ceiling: "
+                          +cell(settled.get("evidence_ceiling") or "none")+"; settled: "+cell(settled.get("settled_ceiling") or "none")
+                          +" after "+str(settled.get("critique_rounds",0))+" critique round(s).",""])
+            if settled.get("evidence_limits"):
+                lines.extend(["Grade limited by: "+cell(", ".join(settled["evidence_limits"]))+".",""])
+            for label,field in (("Coverage","coverage"),("Uncertainty","uncertainty"),
+                                ("Oracle independence","oracle_independence")):
+                lines.extend([label+": "+cell(justification.get(field,"unrecorded")),""])
+            if settled.get("critique"):
+                lines.extend(["Independent critique supported grade "
+                              +cell(settled["critique"]["supported_grade"] or "none")+":",""])
+                lines.extend("- "+cell(finding) for finding in settled["critique"]["findings"])
+                lines.extend("- Objection: "+cell(item) for item in settled["critique"]["objections"])
+                lines.append("")
             else:
-                lines.extend(["Independent scientific review: absent. Coverage and uncertainty are not scientifically approved.",""])
+                lines.extend(["No independent critique ran for this plan; no grade is assigned.",""])
+        if terminal.get("asserted_by")=="planner":
+            lines.extend(["This claim was ended by the planner, not by an observed execution failure.",""])
         if tests:
             lines.extend(["| Input | Expected | Observed | Comparison | Case | Trial |", "| --- | --- | --- | --- | --- | --- |"])
             for case in tests:

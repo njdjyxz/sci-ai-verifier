@@ -57,7 +57,15 @@ def main():
                 ("One day in seconds", "86400", "One day equals 86400 seconds.")], 1)]
     call("qualify_local_candidate", claim_id=claim_id, name="Synthetic conversion reference", scope="Three named unit conversions",
          method="numeric", limitations="Three illustrative synthetic cases; no live model or scientific qualification.", cases=cases)
-    call("select_local_candidate", claim_id=claim_id, candidate_ref=data["candidate_ref"], applicability="Synthetic fixture matches the named input conversions")
+    # A synthetic subject is never graded, so this selection settles at no grade; the
+    # proposal and justification are still required and are still checked against the facts.
+    call("select_local_candidate", claim_id=claim_id, candidate_ref=data["candidate_ref"],
+         applicability="Synthetic fixture matches the named input conversions", target_grade="C",
+         oracle_independence="Fictional repository fixture, not an external scientific source.",
+         coverage="Three of the three conversions the fixture documents.",
+         tolerance_basis="Installed numeric comparison tolerance.",
+         uncertainty="A synthetic reference states no uncertainty.",
+         stronger_grade_considered="One trial per case is configured, which caps this design at C.")
     call("execute_local_claim", claim_id=claim_id)
     call("write_report_card")
     runtime.store.read(data["run_id"], verify_objects=True)

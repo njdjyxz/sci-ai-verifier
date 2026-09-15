@@ -388,15 +388,20 @@ response receipts are published before advancing to another trial. Reports expos
 synthetic/live provenance, actual observed model/session identities when supplied
 by the CLI, and distinguish local comparison status from scientific grades.
 
-Version 0.7 adds `local_settings_ref`, `local_catalog_ref`, frozen plan audits and review/source/
-environment/model pins. Each trial has request, response and score receipts;
-new or changed files are immutable objects with readable copies in that trial's
-artifact directory. Reports include attempted/obtained/evaluated/invalid/missing
-counts, review eligibility, required-grade satisfaction and independent
-documentary packet/assessment references. A diagnostic workflow-log pointer
+Version 0.7 adds `local_settings_ref`, `local_catalog_ref`, frozen plan audits and
+source/environment/model pins. A plan audit records the proposed grade, the evidence
+ceiling Python computed with its limiting reasons, the independent critique, the
+round number and the settled ceiling; `negotiation_refs` retains every round's audit,
+so the negotiation is readable after the fact. Each trial has request, response and
+score receipts; new or changed files are immutable objects with readable copies in
+that trial's artifact directory. Reports include attempted/obtained/evaluated/
+invalid/missing counts, the settled grade negotiation, required-grade satisfaction
+and independent critique and documentary packet/assessment references. Limitation
+records carry `asserted_by`, distinguishing a planner-ended claim from an observed
+failure. A diagnostic workflow-log pointer
 links to the per-attempt hash-chained timeline. Partial reports after failures
 explicitly keep `verification_complete: false` and do not change journal results.
 Catalog inventory receipts pin exact release bytes, versions and retired IDs to
 the run, including `requalification_refs` for controls rerun by this installation.
 Report `catalog_inventory_ref` identifies this immutable inventory.
-Independent review/promotion records in a release do not confer claim grades.
+Prepared assessment and retirement records in a release do not confer claim grades.

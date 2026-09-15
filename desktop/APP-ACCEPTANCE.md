@@ -1,6 +1,6 @@
 # Claude Desktop acceptance record
 
-Current development build: **0.5.0 general safe-skill demo**, with a [new installation guide](DEMO-INSTALL.md). Its automated package checks are recorded in [demo validation](../reviews/demo-validation-2026-09-11.json). Live app acceptance of 0.5.0 remains pending; the evidence below describes the earlier 0.2.0 installation only.
+Current development build: **0.5.0 general safe-skill demo**, with a [new installation guide](DEMO-INSTALL.md). Its automated package checks are recorded in [demo validation](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/demo-validation-2026-09-11.json). Live app acceptance of 0.5.0 remains pending; the evidence below describes the earlier 0.2.0 installation only.
 
 Status: **The three fixture runs and same-run resume pass the saved-record checks. Full app-behavior sign-off remains conditional.** The user performed the tests on September 10, 2026; Codex inspected the committed records without calling runtime controls or modifying the run data. Cancellation and personal submissions were not tested. One source-grounding observation and one conversation-only check remain below.
 
@@ -18,7 +18,7 @@ Status: **The three fixture runs and same-run resume pass the saved-record check
 | Installed extension | `scientific-verifier` 0.2.0, enabled; installed September 10 at 20:12:06 PDT |
 | Installed extension package SHA-256 | `1fdc67adad4042279c54ec2fbd81d6e518f98b9b014e4cce0adc6deb543130f1`; installer record matches the available archive, and all 21 installed payload files match the archive bytes |
 | Available skill ZIP SHA-256 | `e2b6d541c4a0befd167c33e33ef841019f5f225360b1d873d1cda3da2626cd41`; this identifies the local build, not independent proof of the uploaded skill ZIP's identity or activation |
-| Audit evidence | [Machine-readable artifact audit](../reviews/stage2-acceptance-2026-09-10.json) |
+| Audit evidence | [Machine-readable artifact audit](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/stage2-acceptance-2026-09-10.json) |
 
 The earlier tool-discovery failure was an installed but disabled extension. The setting is now enabled, and subsequent successful requests resolve that observed blocker. No app setting was changed by Codex during this review.
 

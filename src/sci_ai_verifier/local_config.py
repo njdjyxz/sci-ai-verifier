@@ -14,8 +14,8 @@ DEFAULTS = {"schema_version": 1, "sandbox_image": None, "docker_executable": "do
             "max_artifact_bytes": 16*1024*1024, "max_artifacts": 200,
             "trial_count": 3, "max_subject_calls": 128,
             "subject_timeout_seconds": 120, "allowed_reference_hosts": [],
-            "allowed_subject_hosts": [], "external_tools": {}, "resources": {}, "scientific_reviews": [],
-            "documentary_review":None,"documentary_assessment":True,"catalogs":[],"minimum_grade":None}
+            "allowed_subject_hosts": [], "external_tools": {}, "resources": {},
+            "documentary_assessment": True, "catalogs": [], "minimum_grade": None}
 
 
 def load_configuration(path=None):
@@ -27,11 +27,20 @@ def load_configuration(path=None):
                 raise ValueError()
             from .mcp import parse_json
             supplied = parse_json(file.read_bytes())
-            if not isinstance(supplied, dict) or set(supplied)-set(DEFAULTS):
+            if not isinstance(supplied, dict):
                 raise ValueError()
-            settings.update(supplied)
-        except (OSError, ValueError, UnicodeError,RecursionError):
-            raise Fault("configuration_invalid", "Local settings must be a bounded JSON object with supported keys.") from None
+        except (OSError, ValueError, UnicodeError, RecursionError):
+            raise Fault("configuration_invalid", "Local settings must be a bounded JSON object.") from None
+        unknown = sorted(set(supplied) - set(DEFAULTS))
+        if unknown:
+            # Name the keys: a settings file written by an older build carries the two
+            # removed review keys, and a generic rejection gives the operator nothing.
+            retired = sorted({"scientific_reviews", "documentary_review"} & set(unknown))
+            detail = (" " + " and ".join(retired) + " no longer exist: grades are settled by the "
+                      "evidence and an independent critique, so remove those keys." if retired else "")
+            raise Fault("configuration_invalid",
+                        "Unsupported local settings key(s): " + ", ".join(unknown) + "." + detail)
+        settings.update(supplied)
     if settings["schema_version"] != 1:
         raise Fault("configuration_invalid", "Unsupported local configuration version.")
     bounds = {"memory_mib": (128,32768), "cpus": (1,32), "pids_limit": (16,1024),
@@ -73,12 +82,6 @@ def load_configuration(path=None):
                 or any(not isinstance(value,str) or len(value)>4000 for value in resource.values())
                 or not Path(resource["path"]).is_absolute() or not re.fullmatch(r"[0-9a-f]{64}",resource["sha256"])):
             raise Fault("configuration_invalid", "Resources require an absolute path, digest, version, license, units and description.")
-    if not isinstance(settings["scientific_reviews"],list) or len(settings["scientific_reviews"])>100:
-        raise Fault("configuration_invalid", "Scientific reviews must be a bounded operator-controlled list.")
-    from .local_science import validate_reviews
-    validate_reviews(settings["scientific_reviews"])
-    from .documentary import review_valid
-    review_valid(settings["documentary_review"])
     if type(settings["documentary_assessment"]) is not bool:
         raise Fault("configuration_invalid","documentary_assessment must be true or false.")
     if settings["minimum_grade"] is not None and (not isinstance(settings["minimum_grade"],str) or settings["minimum_grade"] not in ("A","B","C","D")):

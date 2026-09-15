@@ -34,6 +34,9 @@ def validate(value, schema, field="arguments"):
     types = {"object": dict, "array": list, "string": str, "integer": int}
     if type(value) is not types[kind]:
         raise Fault("invalid_arguments", f"{field} must be {kind}.", [field])
+    if "enum" in schema and value not in schema["enum"]:
+        raise Fault("invalid_arguments",
+                    f"{field} must be one of: {', '.join(map(str, schema['enum']))}.", [field])
     if kind == "object":
         properties = schema["properties"]
         if set(value) - set(properties) or set(schema["required"]) - set(value):

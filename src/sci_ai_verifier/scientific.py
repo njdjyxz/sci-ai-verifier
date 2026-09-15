@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .common import Fault, canonical, digest
 from .catalog import decode, bounded_read
+from .storage import implementation_bytes
 
 METHOD = "chemical_mass_v1"
 SCOPE = "neutral CHNOPS formulas; H-1 C-12 N-14 O-16 P-31 S-32"
@@ -95,9 +96,3 @@ def resource_requirements(state):
 
 def method_current(state):
     return digest(implementation_bytes()) == state["method_ref"]
-
-
-def implementation_bytes():
-    # A changed host/scorer must not reuse an earlier audit's execution authority.
-    return canonical({path.name: path.read_bytes().replace(b"\r\n", b"\n").decode("utf-8")
-                      for path in sorted(Path(__file__).parent.glob("*.py"))})

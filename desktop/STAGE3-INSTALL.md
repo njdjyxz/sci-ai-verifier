@@ -25,7 +25,7 @@ Use an actual path inside the configured submission directory. Extraction, class
 
 The default reviewed registries are empty. For a nonempty manifest, Claude reads the empty taxonomy, proposes a bounded type, and requests a lookup for each claim. Python records `implementation_required` per claim and stops at `stage3_complete`, with `verification_complete: false`. This does not mean the scientific claim failed. Zero claims close at the same checkpoint without selection calls.
 
-Below `<data directory>/.verifier/runs/<run-id>/`, inspect `source-snapshot.json`, `claim-manifest.json`, `catalog-lock.json`, `routing.json`, and any `operational-outcomes/`. The journal under `events/` owns the committed state. Routing files appear only once routing starts. Candidate scientific entries are deliberately not enabled as approved: see [the chemical mass pilot](../reviews/CHEMICAL-MASS-PILOT.md).
+Below `<data directory>/.verifier/runs/<run-id>/`, inspect `source-snapshot.json`, `claim-manifest.json`, `catalog-lock.json`, `routing.json`, and any `operational-outcomes/`. The journal under `events/` owns the committed state. Routing files appear only once routing starts. Candidate scientific entries are deliberately not enabled as approved: see [the chemical mass pilot](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/CHEMICAL-MASS-PILOT.md).
 
 ## Catalog releases without reinstalling
 

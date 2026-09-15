@@ -208,7 +208,7 @@ class Runtime:
             state.update(demo_plan_ref=None, demo_observation_refs={}, report_ref=None, report_markdown_ref=None,
                          submission_origin=submission_origin or {"kind": "operator_selected_local_path", "path": str(source)})
         if self.profile == "local":
-            from .scientific import implementation_bytes
+            from .storage import implementation_bytes
             method_ref = self.store.put(implementation_bytes())
             state["objects"].append(method_ref)
             state.update(local_work={}, report_ref=None, report_markdown_ref=None,
@@ -227,7 +227,7 @@ class Runtime:
             state["agent"].update(host="claude_code", identity_source="controller_receipt_when_available")
             state["host_limitations"] = ["managed_host_configuration_is_trusted",
                                         "local_container_execution" if settings["sandbox_image"] else "text_session_not_an_os_sandbox",
-                                        "scientific_grades_require_independent_operator_review", "live_cli_acceptance_required",
+                                        "evidence_grade_is_an_evidence_strength_indicator_not_an_endorsement", "live_cli_acceptance_required",
                                         "external_app_adapters_are_operator_trusted"]
         directory = self.store.run_dir(run_id)
         directory.mkdir(parents=True)
@@ -342,7 +342,7 @@ class Runtime:
             data["subject_config"] = state["subject_config"]
             from .local import settings_for
             settings=settings_for(self.store,state)
-            data["local_configuration"]={key:value for key,value in settings.items() if key not in {"resources","external_tools","scientific_reviews","documentary_review","docker_executable","catalogs"}}
+            data["local_configuration"]={key:value for key,value in settings.items() if key not in {"resources","external_tools","docker_executable","catalogs"}}
             data["local_configuration"]["resources"]={name:{key:value for key,value in item.items() if key!="path"} for name,item in settings["resources"].items()}
             data["local_configuration"]["external_tools"]={name:item["description"] for name,item in settings["external_tools"].items()}
             data["local_work"] = state["local_work"]

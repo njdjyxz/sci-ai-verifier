@@ -10,11 +10,16 @@ from .storage import atomic_write,no_links
 from .mcp import parse_json
 
 MAX_BUNDLE=16*1024*1024
+# Version 2 replaced the pre-review human authorization field with the preparer's own
+# recorded redistribution assessment. No version 1 bundle was ever published.
+BUNDLE_SCHEMA=2
 
 
-def export_bundle(store,candidate_refs,*,authorization):
-    if not isinstance(authorization,str) or not 20<=len(authorization)<=4000:
-        raise Fault("publication_authorization_required","Record explicit permission to redistribute these candidates and every included reference.")
+def export_bundle(store,candidate_refs,*,redistribution):
+    """Prepare a shareable bundle. The preparer records its own redistribution assessment;
+    a reviewer judges that assessment on the pull request."""
+    if not isinstance(redistribution,str) or not 20<=len(redistribution)<=4000:
+        raise Fault("redistribution_assessment_required","Record the licence and source of every included reference and whether redistributing it is permitted.")
     if not 1<=len(candidate_refs)<=100 or len(set(candidate_refs))!=len(candidate_refs):
         raise Fault("catalog_invalid","Export 1 to 100 unique candidate references.")
     objects={}
@@ -31,8 +36,9 @@ def export_bundle(store,candidate_refs,*,authorization):
                 raise Fault("publication_private_metadata","Reference metadata has a private path or missing license; prepare a shareable reference first.")
             objects[ref]=base64.b64encode(store.get(ref)).decode()
             objects[resource["raw_ref"]]=base64.b64encode(store.get(resource["raw_ref"])).decode()
-    bundle={"schema_version":1,"kind":"local-candidate-bundle","candidate_refs":candidate_refs,"objects":objects,
-            "authorization":authorization,"scientific_approval":"not_conferred","created_at":utc_now()}
+    bundle={"schema_version":BUNDLE_SCHEMA,"kind":"local-candidate-bundle","candidate_refs":candidate_refs,"objects":objects,
+            "redistribution":redistribution,"prepared_by":"verifier_agent","review_state":"awaiting_pull_request_review",
+            "scientific_approval":"not_conferred","created_at":utc_now()}
     raw=canonical(bundle)
     if len(raw)>MAX_BUNDLE or SECRET_BYTES.search(raw):
         raise Fault("catalog_rejected","Candidate bundle exceeds its limit or contains credential-like material.")
@@ -47,10 +53,12 @@ def import_bundle(store,raw,settings,*,log=None):
         raise Fault("catalog_rejected","Candidate bundle exceeds its byte limit.")
     try:
         bundle=parse_json(raw)
-        if (not isinstance(bundle,dict) or set(bundle)!={"schema_version","kind","candidate_refs","objects","authorization","scientific_approval","created_at"}
-                or bundle["schema_version"]!=1 or bundle["kind"]!="local-candidate-bundle"
+        if (not isinstance(bundle,dict) or set(bundle)!={"schema_version","kind","candidate_refs","objects","redistribution","prepared_by","review_state","scientific_approval","created_at"}
+                or bundle["schema_version"]!=BUNDLE_SCHEMA or bundle["kind"]!="local-candidate-bundle"
                 or bundle["scientific_approval"]!="not_conferred"
-                or not isinstance(bundle["authorization"],str) or not 20<=len(bundle["authorization"])<=4000
+                or bundle["prepared_by"]!="verifier_agent"
+                or bundle["review_state"] not in {"awaiting_pull_request_review","merged"}
+                or not isinstance(bundle["redistribution"],str) or not 20<=len(bundle["redistribution"])<=4000
                 or not isinstance(bundle["candidate_refs"],list) or not 1<=len(bundle["candidate_refs"])<=100
                 or any(not isinstance(key,str) for key in bundle["candidate_refs"])
                 or len(set(bundle["candidate_refs"]))!=len(bundle["candidate_refs"])

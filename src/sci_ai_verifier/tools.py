@@ -153,12 +153,14 @@ DEFINITIONS = [
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}}
     for name, schema in SCHEMAS.items()
 ]
+# Named explicitly: a positional slice of this tuple used to decide dispatch, so
+# inserting a tool in the wrong place silently rerouted it.
+PLAN_TOOLS = ("commit_evaluation_plan", "find_resources", "materialize_resources",
+              "build_evaluation_bundle", "validate_evaluation_bundle", "register_evaluator",
+              "commit_plan_audit", "execute_evaluation_plan", "commit_claim_result", "write_report_card")
 WORKFLOW_TOOLS = ("load_submitted_skill", "read_snapshot_file", "commit_claim_manifest",
                   "list_claim_types", "commit_claim_type_assignments", "find_registered_evaluators",
-                  "commit_evaluation_plan", "find_resources", "materialize_resources", "build_evaluation_bundle",
-                  "validate_evaluation_bundle", "register_evaluator", "commit_plan_audit",
-                  "execute_evaluation_plan", "commit_claim_result", "write_report_card",
-                  "commit_demo_plan", "record_demo_observation", *LOCAL_OPERATIONS)
+                  *PLAN_TOOLS, "commit_demo_plan", "record_demo_observation", *LOCAL_OPERATIONS)
 
 
 def metadata(state):
@@ -259,6 +261,11 @@ class Dispatcher:
                     and arguments["claim_id"] in state["claim_states"]
                     and name not in CLAIM_TOOLS[state["claim_states"][arguments["claim_id"]]]):
                 illegal = True
+            if (state["profile"] == "local" and isinstance(arguments.get("claim_id"), str)
+                    and arguments["claim_id"] in state["claim_states"]):
+                from .local import CLAIM_LEGAL
+                if name not in CLAIM_LEGAL[state["claim_states"][arguments["claim_id"]]]:
+                    illegal = True
             try:
                 for key in state["objects"]:
                     self.store.get(key)
@@ -310,7 +317,7 @@ class Dispatcher:
             from . import demo
             data = {"commit_demo_plan": demo.commit_plan, "record_demo_observation": demo.observe,
                     "write_report_card": demo.write_report}[name](self.store, state, arguments)
-        elif name in WORKFLOW_TOOLS[6:]:
+        elif name in PLAN_TOOLS:
             from . import planning, evaluation, audit, execution, reporting
             operations = {"commit_evaluation_plan": planning.commit_plan, "find_resources": planning.find_resources,
                 "materialize_resources": planning.materialize, "build_evaluation_bundle": evaluation.build,
