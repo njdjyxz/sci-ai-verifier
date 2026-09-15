@@ -24,8 +24,11 @@ REFERENCE = "Independent fixture reference: alpha is 1.0, beta is 2.0, gamma is 
 class Subject:
     identity = {"adapter_id": "local-fixture", "model_id": "synthetic", "synthetic": True}
 
-    def __init__(self, mode="correct"):
-        self.mode, self.requests = mode, []
+    def __init__(self, mode="correct", models=None):
+        # `models` supplies one observed_model_ids list per call, as a real adapter
+        # reports it from the CLI stream. Left None, the key is absent, which is what a
+        # subject that observed no model identity returns.
+        self.mode, self.requests, self.models = mode, [], models
 
     def observe(self, **request):
         self.requests.append(deepcopy(request))
@@ -34,9 +37,12 @@ class Subject:
         if self.mode == "unavailable":
             raise Fault("claude_unavailable", "Unavailable fixture")
         answer = {"alpha": "1.0", "beta": "2.0", "gamma": "3.0"}[request["case_input"]["input"]]
-        return {"text": "999" if self.mode == "wrong" else answer,
-                "response_id": "synthetic-" + str(len(self.requests)), "model_id": "synthetic",
-                "invocation_verified": self.mode != "unverified", "synthetic": True}
+        observation = {"text": "999" if self.mode == "wrong" else answer,
+                       "response_id": "synthetic-" + str(len(self.requests)), "model_id": "synthetic",
+                       "invocation_verified": self.mode != "unverified", "synthetic": True}
+        if self.models is not None:
+            observation["observed_model_ids"] = self.models[min(len(self.requests), len(self.models)) - 1]
+        return observation
 
 
 class LocalTests(unittest.TestCase):
@@ -105,6 +111,33 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(self.data["outcome"], "qualified_local")
         self.select(key, target_grade=target_grade)
         return key
+
+    def test_a_stable_observed_model_identity_is_pinned_across_the_trial_set(self):
+        # local.py pins the first observed identity and compares every later trial to it.
+        # With no adapter reporting one, that guard has nothing to compare and never runs.
+        self.subject.models = [["fixture-model"]] * 3
+        self.ready()
+        self.call("execute_local_claim", claim_id=self.claim_id)
+        self.assertEqual(self.data["result"]["comparison_status"], "pass")
+        work = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})["data"]["local_work"][self.claim_id]
+        self.assertTrue(work["observed_models_ref"])
+
+    def test_a_model_swap_inside_one_trial_set_is_operational_not_a_result(self):
+        """A grade describes one subject. If the identity changes mid-set, there is no result."""
+        self.subject.models = [["fixture-model"], ["swapped-model"], ["fixture-model"]]
+        self.ready()
+        self.call("execute_local_claim", claim_id=self.claim_id)
+        self.assertEqual(self.data["outcome"], "subject_model_changed")
+        limitation = self.data["limitation"]
+        self.assertEqual(limitation["asserted_by"], "runtime")
+        self.assertIsNone(limitation["scientific_status"])
+        self.assertIsNone(limitation["evidence_grade"])
+        # The observations taken before the swap are kept, not discarded.
+        self.assertTrue(limitation["receipts"])
+        self.call("write_report_card")
+        record = self.data["report"]["claims"][0]["record"]
+        self.assertEqual(record["code"], "subject_model_changed")
+        self.assertIsNone(record["evidence_grade"])
 
     def test_empty_catalog_discovery_complete_report_and_offline_reuse(self):
         key = self.ready()

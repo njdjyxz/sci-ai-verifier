@@ -509,7 +509,11 @@ def execute(store, state, claim_id, subject):
                 raise Fault("subject_response_invalid", "Subject response or explicit skill invocation is incomplete.")
         except (Fault, OSError) as error:
             code = error.code if isinstance(error, Fault) else "subject_unavailable"
-            return limitation(store, state, claim_id, code, "Subject execution did not return a complete verified observation. No retry was made.", receipts)
+            # A safety refusal is reported as itself. It says the provider would not answer,
+            # not that the skill was wrong, and it is never retried.
+            reason = (str(error) if code == "subject_refused" else
+                      "Subject execution did not return a complete verified observation. No retry was made.")
+            return limitation(store, state, claim_id, code, reason, receipts)
         artifacts=[]
         for item in response.pop("artifacts",[]):
             from .ingest import valid_relative

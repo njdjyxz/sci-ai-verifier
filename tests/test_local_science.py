@@ -166,12 +166,17 @@ class IndependentSessionTests(unittest.TestCase):
             validate_assessment(response,packet)
 
     def test_critique_must_answer_inside_its_rubric(self):
+        # `required_revisions` is a list beside `objections`, which is what a real session
+        # emits. Recorded replies and the exhaustive refusal cases live in
+        # tests/test_recorded_replies.py; this guards the shape the science path consumes.
         valid={"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
-               "objections":[],"required_revisions":""}
+               "objections":[],"required_revisions":["Add cases covering the rest of the scope."]}
         self.assertEqual(validate_critique(valid)["supported_grade"],"B")
+        self.assertEqual(validate_critique(valid)["required_revisions"],valid["required_revisions"])
         self.assertIsNone(validate_critique({**valid,"supported_grade":"none"})["supported_grade"])
         for broken in ({**valid,"supported_grade":"A+"},{**valid,"findings":["only one"]},
-                       {**valid,"objections":"not a list"},{**valid,"extra":"field"}):
+                       {**valid,"objections":"not a list"},{**valid,"required_revisions":0},
+                       {**valid,"extra":"field"}):
             with self.subTest(broken=sorted(broken)),self.assertRaises(Fault):
                 validate_critique(broken)
 

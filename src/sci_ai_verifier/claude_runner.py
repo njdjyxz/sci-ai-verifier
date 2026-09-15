@@ -41,6 +41,11 @@ def terminate_tree(process):
     process.wait(timeout=10)
 
 
+# Grace for the pipe readers once the child has exited. Nothing is discarded when it
+# expires; it only gives a reader that is still making progress time to finish.
+DRAIN_GRACE_SECONDS = 5
+
+
 def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, observer=None):
     """Bound both output pipes while draining; kill descendants on interruption."""
     from .execution_control import checkpoint
@@ -98,14 +103,23 @@ def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, ob
             if time.monotonic() >= deadline:
                 raise Fault("claude_timeout", "Claude Code exceeded its process deadline.")
             time.sleep(0.02)
+        # The child has exited. Close its stdin first, so a writer still blocked on a prompt
+        # the child never finished reading stops waiting, then let the readers drain.
+        try:
+            process.stdin.close()
+        except (OSError, ValueError):
+            pass
         for thread in threads:
-            thread.join(timeout=2)
+            thread.join(timeout=DRAIN_GRACE_SECONDS)
         if observer_errors:
             raise observer_errors[0]
         if overflow.is_set():
             raise Fault("claude_output_limit", "Claude Code exceeded its output byte limit.")
-        if any(thread.is_alive() for thread in threads):
-            raise Fault("claude_process_incomplete", "Claude Code left an incomplete process stream.")
+        # A thread still parked here says nothing about whether the child finished speaking: a
+        # grandchild that inherited the pipe, such as the subject MCP server outliving Claude
+        # Code, holds it open however complete the output is. Completeness is a property of the
+        # bytes, and parse_events already requires exactly one terminal result event, so hand
+        # back what arrived rather than discarding a finished answer on a cleanup race.
         return process.returncode, bytes(buffers[0]), bytes(buffers[1])
     except BaseException:
         close_job()
@@ -184,6 +198,29 @@ def stage_skill(directory, source, *, computational=False):
         pins.append({"path": relative, "original_sha256": digest(raw), "loaded_sha256": digest(payload)})
     atomic_write(plugin / ".claude-plugin" / "plugin.json", canonical({"name": "verifier-subject", "version": "1.0.0"}))
     return plugin, pins
+
+
+def refusal_category(raw):
+    """The provider's safety category when it refused this request, else None.
+
+    A refusal is not a crash and must never be retried: the same immutable case input
+    refuses again, so a retry spends a subject call to re-learn what is already recorded.
+    It is also not a scientific result about the skill -- nothing was observed -- so it
+    stays an operational limitation with its own name rather than hiding inside a
+    generic incomplete-observation record.
+    """
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = parse_json(line)
+        except (ValueError, UnicodeError, RecursionError):
+            continue
+        if (isinstance(event, dict) and event.get("type") == "system"
+                and str(event.get("subtype", "")).startswith("model_refusal")):
+            category = event.get("api_refusal_category")
+            return category if isinstance(category, str) and category else "unspecified"
+    return None
 
 
 def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
@@ -344,6 +381,10 @@ class ClaudeCode:
                 loaded={pin["path"]:pin["loaded_sha256"] for pin in pins}
                 artifacts=[item for item in artifacts if loaded.get(item["path"])!=item["sha256"]]
             if code:
+                refused = refusal_category(raw)
+                if refused:
+                    raise Fault("subject_refused", "The subject provider refused this case on safety grounds ("
+                                + refused + "). The identical frozen input would refuse again, so it is not retried.")
                 raise Fault("claude_incomplete", "Claude Code exited without a complete observation.")
             extra=["mcp__subject__run_command"]
             if self.settings["allowed_subject_hosts"]:

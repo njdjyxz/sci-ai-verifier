@@ -574,9 +574,31 @@ The Local profile matrix in workflow.md governs their legality.
   `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round the
   critique's grade is settled rather than offered. An unavailable critique is an
   operational limitation, never a grade.
+
+  The critique and documentary assessment are free-form model replies, so Python
+  fixes their wire shape rather than inferring it. A critique returns one JSON object
+  holding `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (one string per
+  rubric criterion, in that order, and at most eight in total), `objections` and
+  `required_revisions` (each a list of at most eight strings, empty when there are
+  none). An assessment returns `status`, `findings`, `citations` and `limitations`,
+  where `limitations` is a single string. Python accepts a Markdown code fence around
+  the whole reply, a lone string in place of a one-item `required_revisions` list, and
+  findings beyond the rubric's criteria, because none of those changes what the session
+  said: the criteria are a floor, so every question is still answered in order and a
+  further observation is kept rather than costing the review. Fewer findings than
+  criteria is refused, and so is anything else. A reply outside that shape is
+  `critic_response_invalid` or `assessor_response_invalid` — an operational failure,
+  never a grade and never a scientific finding.
 - `execute_local_claim`: in local_ready, run every fixed case for its audited trial count in fresh
   answer-blind subject session, save requests before invocation, and score returned
   observations. No uncertain trial retries. Produce a result or operational record.
+  A provider safety refusal is recorded as `subject_refused`, naming the refusal
+  category, and is never retried: the case input is frozen, so the identical request
+  refuses again. A refusal reports that the provider would not answer, never that the
+  claim failed, and the trials it costs stay missing rather than being replaced —
+  substituting fresh cases for refused ones after execution has begun would reshape
+  coverage around whatever the provider happens to allow. Recovering that coverage
+  requires a new plan, proposed and critiqued like any other.
 - `record_local_limitation`: in local_lookup, local_discovery or local_documentary,
   save one of the named planner limitation causes with an explanation and continue
   independent claims. It is illegal in local_ready: a settled executable plan is

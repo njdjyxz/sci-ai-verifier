@@ -3,19 +3,19 @@
 import base64
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
 import test_local as fixture
+from independent_double import INDEPENDENCE,assessor_reply,critic_reply
 from sci_ai_verifier.agent import Runtime
 from sci_ai_verifier.common import Fault,canonical,digest
 from sci_ai_verifier.local_config import load_configuration
 from sci_ai_verifier.local_catalog import export_bundle,import_bundle
 from sci_ai_verifier.catalog_publication import publish,review
-from sci_ai_verifier.documentary import CRITIQUE_REF,CRITIQUE_RUBRIC,RUBRIC_REF
+from sci_ai_verifier.documentary import RUBRIC_REF
 from sci_ai_verifier.storage import Store
 from sci_ai_verifier.subject_server import TextRuntime
 
@@ -50,8 +50,9 @@ class IntegrationTests(unittest.TestCase):
             self.assertNotIn("observations",packet)
             self.assertNotIn("candidate",packet)
             self.assertNotIn("planner_conversation",packet)
-            return {"assessment":{"status":"inconclusive","findings":["Synthetic fixture"]*3,"citations":args["evidence"],"limitations":"Fixture only"},
-                    "session_id":"synthetic-assessor","observed_model_ids":["synthetic"],"rubric_ref":RUBRIC_REF}
+            # Built through validate_assessment against this very packet, so the fixture
+            # citations must really quote the evidence the runtime supplied.
+            return assessor_reply(packet,"inconclusive",args["evidence"])
         with patch("sci_ai_verifier.documentary.assess",side_effect=assess):
             self.h.call("assess_local_documentary",**args)
         self.h.call("write_report_card")
@@ -299,13 +300,10 @@ class GradeNegotiationTests(unittest.TestCase):
     def critic(self,supported):
         def run(adapter,packet):
             self.packets.append(packet)
-            # Mirror the real critique, which maps "none" to None before returning.
-            return {"supported_grade":supported if supported in ("A","B","C","D") else None,
-                    "findings":["fixture finding"]*len(CRITIQUE_RUBRIC["criteria"]),
-                    "objections":["Three rows do not cover the whole stated scope."] if supported!="A" else [],
-                    "required_revisions":"Add cases drawn from the rest of the table." if supported!="A" else "",
-                    "session_id":"fixture-critic","observed_model_ids":["fixture-model"],
-                    "rubric_ref":CRITIQUE_REF,"independence":"fixture","ai_judgment":True}
+            # Built through validate_critique, so this reply is one the runtime would accept.
+            return critic_reply(packet,supported,
+                                objections=[] if supported=="A" else ["Three rows do not cover the whole stated scope."],
+                                required_revisions=[] if supported=="A" else ["Add cases drawn from the rest of the table."])
         return run
 
     def test_overclaimed_grade_is_refused_before_any_critique_runs(self):
@@ -424,9 +422,12 @@ class GradeNegotiationTests(unittest.TestCase):
         # The second reviewer is told what was objected to, and never what grade was given.
         self.assertEqual(self.packets[0]["prior_objections"],[])
         self.assertTrue(self.packets[1]["prior_objections"])
+        # The rubric names every grade, so the packet is bound to contain the letters. What
+        # it must not carry is a field holding the earlier verdict, or anything beyond the
+        # objection text itself.
         self.assertNotIn("supported_grade",canonical(self.packets[1]).decode())
-        for letter in ("\"C\"","\"A\""):
-            self.assertNotIn("supported_grade",letter)
+        self.assertEqual(self.packets[1]["prior_objections"],
+                         ["Three rows do not cover the whole stated scope."])
 
     def test_critique_supporting_no_grade_leaves_the_comparison_ungraded(self):
         h=self.h
@@ -455,8 +456,6 @@ class GradeNegotiationTests(unittest.TestCase):
 
     def test_completed_independent_assessment_is_grade_d_without_any_operator_review(self):
         h=self.h
-        assessment={"status":"pass","findings":["Fixture finding"]*3,
-                    "citations":[{"reference_ref":None,"quote":fixture.REFERENCE}],"limitations":"Fixture only"}
         with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("none")):
             h.select(self.key,target_grade="A")
             h.select(self.key,target_grade="A")
@@ -465,11 +464,9 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertEqual(h.data["outcome"],"local_documentary_required")
         work=h.runtime.call("get_verifier_context",{"run_id":h.data["run_id"]})["data"]["local_work"][h.claim_id]
         reference=work["reference_refs"][0]
-        assessment["citations"][0]["reference_ref"]=reference
 
         def assess(adapter,packet):
-            return {"assessment":assessment,"session_id":"fixture-assessor",
-                    "observed_model_ids":["fixture-model"],"rubric_ref":RUBRIC_REF}
+            return assessor_reply(packet,"pass",[{"reference_ref":reference,"quote":fixture.REFERENCE}])
 
         with patch("sci_ai_verifier.documentary.assess",side_effect=assess):
             h.call("assess_local_documentary",claim_id=h.claim_id,
@@ -477,6 +474,15 @@ class GradeNegotiationTests(unittest.TestCase):
                    limitations="Documentary consistency only.")
         self.assertEqual(h.data["result"]["evidence_grade"],"D")
         self.assertEqual(h.data["result"]["scientific_status"],"pass")
+        # The D rests on an AI judgment in a session that never saw the planning, and the
+        # report must disclose both rather than let the grade imply a human reviewed it.
+        h.call("write_report_card")
+        disclosed=h.data["report"]["claims"][0]["documentary_assessment"]
+        self.assertTrue(disclosed["ai_judgment"])
+        self.assertEqual(disclosed["independence"],INDEPENDENCE)
+        self.assertEqual(disclosed["rubric_ref"],RUBRIC_REF)
+        self.assertEqual(h.data["report"]["claims"][0]["record"]["ai_involvement"],
+                         {"orchestration":True,"evidence_generation":True,"verdict":True})
 
 
 class GateTests(unittest.TestCase):
