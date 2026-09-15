@@ -537,6 +537,10 @@ The verifier agent is never given arbitrary shell execution, arbitrary Python ex
 The same limit applies to the subject side. The agent selects and configures an approved subject runner within its declared bounds; it does not supply a subject-runner implementation, an arbitrary model endpoint, a prompt wrapper of its own, or any instruction that reaches the subject outside the audited configuration. A subject runner that could be steered per case by the agent would let the orchestrator shape the evidence it is about to grade, which is the exact independence the evidence rubric is measuring.
 
 `read_snapshot_file` is not an exception to the filesystem rule. It reads one recorded entry of one committed snapshot by manifest path, and reaches nothing else on disk.
+
+`load_submitted_skill`'s `source_path` confirms the path authorized at bootstrap; it never selects what is read, because the snapshot always uses the pinned path. A mismatch is fatal in the historical Desktop profiles, whose pinned contracts describe it that way. In the local profile it is repairable: the refusal names the correct path in `repair_fields`, the run stays in `created`, and the planner retries with it. Making it fatal there taught the caller the answer at the moment it could no longer use it.
+
+`get_verifier_context` returns a bounded header, never the bulk. The header carries committed state, the current token, `authorized_parameters.source_path`, an `instructions` index of identity/digest/bytes for every pinned document, `fetchable_sections`, and `omitted_sections` for anything that would not fit. Supplying `section` returns one named part -- a pinned instruction document or a committed artifact such as `manifest`, `snapshot`, `report`, `local_work`, `local_artifacts`, `local_configuration` or `operational_outcomes` -- with its `trust_class`, `bytes_total` and a `truncated` flag when it exceeds the run's read limit. An unknown name returns `unknown_context_section` and lists the valid ones. The control neither advances the workflow nor rotates the token.
 ## Local profile tools
 
 All operations below require the current `run_id`, `state_token` and `claim_id`.

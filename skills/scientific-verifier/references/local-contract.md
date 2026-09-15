@@ -166,6 +166,16 @@ lookup before discovering. References and candidates are immutable objects;
 selection pins the exact candidate before any subject observation. A local
 candidate can be reused offline by digest, including its reference evidence.
 
+## Planner context delivery
+
+The pinned contracts reach the planner in its instruction turn, together with the
+authorized source path and the current state token, because a tool reply large enough
+for the host to spill to a file is unreadable to a session that has no file-read tool.
+`get_verifier_context` therefore returns only a bounded header and serves each pinned
+document or committed artifact as a separately requested section. The header is
+checked against an inline budget and the run fails closed if it ever exceeds it,
+rather than emitting a reply the planner might never see.
+
 ## Subject boundary
 
 Each case starts a fresh Claude Code process in a temporary workspace outside the

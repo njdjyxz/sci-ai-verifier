@@ -1141,3 +1141,110 @@ are specific to the claim rather than generic caution, and that no claim carries
 grade while its limiting reasons say the evidence does not support one. It is finished
 when the report shows a settled grade with a recorded critique for every executed
 claim, or an operational limitation naming what failed.
+
+## Claude: 2026-09-16
+
+### Current stage and status
+
+The first live run on the new branch reached real Claude Code and **failed before
+snapshotting the source**. Run `7e74f094-ac19-4f41-999b-4b100e5e0643` closed as
+`incomplete` with `completion_reason: source_not_authorized`: zero claims, zero
+subject calls, no report. Two host-boundary defects caused it. Both are now fixed
+with tests that fail against the old behavior. Live acceptance remains pending and
+the rerun has not happened yet.
+
+### What has been done
+
+**1. An oversized context reply is invisible to the planner.**
+
+`get_verifier_context` returned every pinned contract in one reply. Measured at
+53 KB from the code and reported as 56.3 KB in the run; the CLI wrote it to a file
+and returned a preview:
+
+> Output too large (56.3KB). Full output saved to: ...\sci-verifier-controller-...
+
+The planner session has WebSearch and the internal tools only, with no file-read
+tool by design, so it could not open that file. The two values it cannot work
+without were at the **end** of the reply, after `context_blocks`, because
+`canonical` sorts keys alphabetically. It improvised: sent a deliberately invalid
+state token to make the server echo the real one back, spending 1 of 8 illegal
+transitions, then guessed `source_path: "SKILL.md"`.
+
+- `get_verifier_context` now returns a bounded header for the local profile:
+  committed state, token, `authorized_parameters.source_path`, an `instructions`
+  index of identity/digest/bytes, `fetchable_sections` and `omitted_sections`.
+  Measured **2,235 bytes** against an 8,000-byte budget, versus 53 KB before. The
+  header is checked against the budget and the run fails closed rather than emitting
+  a reply the planner may never see.
+- A new optional `section` argument serves one pinned document or committed artifact
+  at a time, sliced to the run's read limit with `bytes_total` and a `truncated` flag.
+  A closed run answers section requests too, so a committed report stays readable.
+- The launcher now delivers the pinned contracts, the authorized path and the token
+  in the planner's **prompt**, which is not subject to the tool-reply limit. The
+  happy path needs no extra round trips, and the contracts arrive once instead of
+  three times: the failed run called `get_verifier_context` three times and spent
+  $0.22 on text it could not use.
+
+**2. A repairable argument was refused fatally.**
+
+`load_submitted_skill`'s `source_path` only *confirms* the path the operator
+authorized -- `snapshot` reads `state["source_path"]` regardless, so a wrong value
+selects nothing. Yet a mismatch raised `fatal=True`, which terminates the run, and
+`load_submitted_skill` is legal only in `created`. The refusal message contains the
+correct path, so the planner learned the answer at the exact moment it could no
+longer use it.
+
+A mismatch is now repairable **in the local profile only**: the refusal keeps
+`repair_fields: ["source_path"]`, the run stays in `created`, and the existing repair
+budget bounds retries. The historical Desktop profiles keep the fatal behavior their
+pinned contracts describe, and their two Stage 2 tests still assert it unchanged --
+their caller sees the whole reply and has no blind spot. A path outside the authorized
+root stays fatal in every profile.
+
+**3. Verification.**
+
+- Full suite: **215 tests, 213 passed, 2 skipped**. Three new tests: no bootstrap
+  reply exceeds the inline budget and every pinned document is separately fetchable;
+  the prompt carries the authorized path, the token and the contract text; a wrong
+  `source_path` is retryable and the run is still usable with the correct one.
+- Both fixes were reverted temporarily to confirm the new tests fail against the old
+  behavior. They did. A reproducer that does not reproduce is worthless.
+- Contract halves updated together per the project rule: the local matrix and
+  bootstrap prose in `workflow.md`, `load_submitted_skill` and
+  `get_verifier_context` in `tool-contracts.md`, plus the new context-delivery
+  sections in `local-contract.md` and `runtime-contract.md`.
+- **Checked, not assumed:** the spill threshold is not configurable. The installed
+  CLI (v2.1.268) recognizes 105 environment variables; the only output-size ones are
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, `MAX_MCP_OUTPUT_TOKENS` (default 25,000 tokens),
+  `MAX_THINKING_TOKENS` and `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. The message we hit comes
+  from the separate byte-based persist path, whose threshold is read from a
+  server-side feature gate. Raising `MAX_MCP_OUTPUT_TOKENS` would not have helped:
+  56 KB is roughly 14k tokens, already well under its default.
+
+**4. Why fixtures missed this.**
+
+Every test calls the runtime in-process and reads the returned dictionary. Nothing
+crossed the CLI's tool-reply boundary, so no fixture could have caught either defect.
+The manual live acceptance found both on its first real attempt, which is what it is
+for. The new budget assertion closes the gap for the size defect specifically.
+
+### Urgent next steps, if any
+
+Rerun the glycoengineering test. The two defects that stopped the previous attempt are
+fixed, but the run never reached authentication for the nested subject and assessor
+sessions, so the 2026-09-14 credential handoff and the grade critique added on
+2026-09-15 are both still unproven live.
+
+### Suggested next move
+
+Expect the rerun to fail somewhere new; that is progress, not regression. The run now
+gets past bootstrap, so the next boundary is the first real subject trial and then the
+first critique session. Read the plan audit in the report for the proposed grade, the
+evidence ceiling with its limiting reasons and the critique's findings.
+
+### Recommended next action
+
+Restart Claude fully, start a fresh local Code session, and verify the glycoengineering
+folder at `D:\Su Lab\verifier-submissions\examples\glycoengineering`. It is finished
+when the report shows a settled grade with a recorded critique for every executed claim,
+or an operational limitation naming exactly what failed.

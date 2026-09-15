@@ -35,6 +35,10 @@ PINNED_CONTEXT = (
     ("references/resource-policy.md", ("Storage layers",)),
 )
 REQUIRED_INSTRUCTIONS = tuple(relative for relative, _ in PINNED_CONTEXT)
+# A single tool reply must stay well inside any host's inline display limit. A host
+# that spills a larger reply to a file blocks the local planner, whose session has no
+# file-read tool by design. Chosen far below the smallest limit observed in practice.
+INLINE_BUDGET = 8000
 
 
 def stage3_context():
@@ -152,7 +156,7 @@ class Runtime:
                                                       "original_attachment_attested": False})
             if name == "start_verifier_run":
                 return self._start(arguments, call_id)
-            return self._control(name, arguments["run_id"], call_id)
+            return self._control(name, arguments["run_id"], call_id, arguments.get("section"))
         except Fault as error:
             if error.fatal:
                 return persistence_failure(error.code, str(error))
@@ -293,7 +297,62 @@ class Runtime:
         definitions = [item for item in DEFINITIONS if (item["name"] in names if self.profile == "local" else item["name"] not in OPERATIONS)]
         yield "tool-definitions", canonical(definitions).decode("utf-8")
 
-    def _bootstrap(self, state):
+    def _sections(self, state):
+        """Named parts of the context a caller may request one at a time."""
+        parts = {entry["identity"]: ("verifier_instruction", entry["digest"])
+                 for entry in state["context_manifest"]}
+        for name, ref in (("manifest", state["manifest_ref"]), ("report", state.get("report_ref")),
+                          ("snapshot", state["source_ref"])):
+            if ref:
+                parts[name] = ("committed_metadata", ref)
+        if state["operational_refs"]:
+            parts["operational_outcomes"] = ("committed_metadata", None)
+        if state["profile"] == "local" and state["local_work"]:
+            parts["local_artifacts"] = ("committed_metadata", None)
+            parts["local_work"] = ("committed_metadata", None)
+            parts["local_configuration"] = ("committed_metadata", None)
+        return parts
+
+    def _section(self, state, name):
+        """One requested section, sliced to the run's read limit so a reply always fits."""
+        parts = self._sections(state)
+        if name not in parts:
+            raise Fault("unknown_context_section",
+                        "Request one of: " + ", ".join(sorted(parts)) + ".", ["section"])
+        trust, ref = parts[name]
+        if name == "operational_outcomes":
+            content = [self.store.get_json(key) for key in state["operational_refs"]]
+        elif name == "local_work":
+            content = state["local_work"]
+        elif name == "local_configuration":
+            from .local import settings_for
+            settings = settings_for(self.store, state)
+            content = {key: value for key, value in settings.items()
+                       if key not in {"resources", "external_tools", "docker_executable", "catalogs"}}
+            content["resources"] = {name: {key: value for key, value in item.items() if key != "path"}
+                                    for name, item in settings["resources"].items()}
+            content["external_tools"] = {name: item["description"]
+                                         for name, item in settings["external_tools"].items()}
+        elif name == "local_artifacts":
+            content = {claim: {field: self.store.get_json(value) if field.endswith("_ref")
+                               else [self.store.get_json(key) for key in value]
+                               for field, value in work.items()}
+                       for claim, work in state["local_work"].items()}
+        elif name == "snapshot":
+            content = verified_snapshot(self.store, state)
+        elif trust == "verifier_instruction":
+            content = self.store.get(ref).decode("utf-8")
+        else:
+            content = self.store.get_json(ref)
+        raw = content if isinstance(content, str) else canonical(content).decode("utf-8")
+        limit = state["limits"]["max_read_bytes"]
+        return {"identity": name, "trust_class": trust, "bytes_total": len(raw.encode("utf-8")),
+                "truncated": len(raw) > limit, "content": raw[:limit]}
+
+    def _bootstrap(self, state, section=None):
+        if section is not None:
+            return {"status": "ok", "data": {**metadata(state), "outcome": "context_section",
+                                             "section": self._section(state, section)}}
         blocks = [
             {**entry, "content": self.store.get(entry["digest"]).decode("utf-8")}
             for entry in state["context_manifest"]
@@ -353,9 +412,45 @@ class Runtime:
                 data["report"] = self.store.get_json(state["report_ref"])
         if state["operational_refs"]:
             data["operational_outcomes"] = [self.store.get_json(k) for k in state["operational_refs"]]
+        if state["profile"] == "local":
+            data = self._header(state, data)
         return {"status": "ok", "data": data}
 
-    def _control(self, name, run_id, call_id):
+    def _header(self, state, data):
+        """A local-profile reply small enough to always arrive inline.
+
+        A host that spills an oversized tool result to a file blocks this planner
+        completely, because its session has no file-read tool. So the two things it
+        cannot work without -- the state token and the authorized source path -- must
+        never share a reply with the pinned contracts. Bulk sections are fetched one
+        at a time, and anything that would not fit is named in `omitted_sections`
+        rather than dropped silently or allowed to overflow.
+        """
+        bulk = {"context_blocks", "manifest", "local_artifacts", "report", "operational_outcomes",
+                "subject_config", "local_configuration", "local_work"}
+        header = {key: value for key, value in data.items() if key not in bulk}
+        header["authorized_parameters"] = {"source_path": state["source_path"]}
+        header["instructions"] = [{"identity": entry["identity"], "digest": entry["digest"],
+                                   "bytes": len(self.store.get(entry["digest"]))}
+                                  for entry in state["context_manifest"]]
+        header["fetchable_sections"] = sorted(self._sections(state))
+        header["omitted_sections"] = []
+        # Optional context in priority order, each kept only while the reply still fits.
+        for key in ("subject_config", "local_configuration", "local_work"):
+            if key not in data:
+                continue
+            candidate = {**header, key: data[key]}
+            if len(canonical(candidate)) <= INLINE_BUDGET:
+                header = candidate
+            else:
+                header["omitted_sections"].append(key)
+        if len(canonical(header)) > INLINE_BUDGET:
+            raise Fault("context_header_too_large",
+                        "The bootstrap header exceeds the inline reply budget; a host may spill it "
+                        "to a file this planner cannot read.", fatal=True)
+        return header
+
+    def _control(self, name, run_id, call_id, section=None):
         with self.store.lock(run_id):
             state, previous = self.store.read(run_id, verify_objects=False)
             before = deepcopy(metadata(state))
@@ -371,14 +466,16 @@ class Runtime:
                                   {"id": call_id, "tool": name}, result)
                 return result
             if not legal_tools(state):
+                # A closed run still answers a section request: reading the committed
+                # report is exactly what a caller wants once the run has finished.
                 self.store.project(state)
-                return self._bootstrap(state)
+                return self._bootstrap(state, section)
             if expired(state):
                 advance(state)
                 result = terminate(self.store, state, "resumption_expired", "The resumption window expired.")
             elif name == "get_verifier_context":
                 self.store.project(state)
-                return self._bootstrap(state)
+                return self._bootstrap(state, section)
             elif name == "cancel_verifier_run":
                 advance(state)
                 if state["profile"] == "demo" and state["manifest_ref"]:

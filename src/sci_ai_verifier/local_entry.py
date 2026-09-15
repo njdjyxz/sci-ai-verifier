@@ -22,26 +22,54 @@ INTERNAL_NAMES = {"get_verifier_context", "load_submitted_skill", "read_snapshot
 # this is the task, not a second workflow definition.
 PLANNER_PROMPT = """Verify the skill for run {run_id}.
 
-1. Call get_verifier_context and read the pinned local contracts before anything else.
-2. Read every submitted text file, then commit the claim manifest quoting only what you read.
-3. For each claim, look up existing candidates first, then use WebSearch to find independent
+The authorized source path is exactly:
+{source_path}
+Pass that string, unchanged, as `source_path` to load_submitted_skill. Do not shorten it,
+make it relative, or substitute a file name inside it.
+
+Your current state token is {state_token}. Every tool reply returns the next one; always
+use the newest. The pinned contracts that govern this run are appended to this message --
+read them before acting. get_verifier_context returns your current state, token and
+authorized path, and takes an optional `section` to re-read one pinned document or
+committed artifact if you lose this message.
+
+1. Read every submitted text file, then commit the claim manifest quoting only what you read.
+2. For each claim, look up existing candidates first, then use WebSearch to find independent
    primary references and import them with the reference, resource or asset tools. Python
    retrieves the bytes; your own summary of a source is not evidence.
-4. Aim for the strongest evidence the claim allows: expected answers Python retrieved from an
+3. Aim for the strongest evidence the claim allows: expected answers Python retrieved from an
    independent source, scored by an installed comparison method. Qualify a candidate, then call
    select_local_candidate proposing exactly the ceiling Python reports for that design. Aiming
    lower is refused, and so is claiming more. An independent critique session then judges
    whether the evidence really fits the claim.
-5. If it returns local_grade_revision_required, you have two moves: qualify a stronger design
+4. If it returns local_grade_revision_required, you have two moves: qualify a stronger design
    (better source, more cases) and propose its new ceiling, or accept the grade the critique
    supported for this design. Proposing again on the same design is refused and wins nothing.
    Do not argue with the critique and do not aim low to be safe.
-6. Execute the settled plan and follow the state Python returns. An execution that supports
+5. Execute the settled plan and follow the state Python returns. An execution that supports
    no grade moves to local_documentary, where an independent assessor judges cited sources.
-7. record_local_limitation is only for a cause you actually hit, and U is only for a genuine
+6. record_local_limitation is only for a cause you actually hit, and U is only for a genuine
    absence of evidence after a search Python observed. Neither is a way to finish faster.
-8. Never invent an expected answer, an approval or a grade. Finish every independent claim and
+7. Never invent an expected answer, an approval or a grade. Finish every independent claim and
    end with write_report_card."""
+
+
+def planner_prompt(runtime, run_id, created):
+    """Deliver the pinned contracts and the authorized path in the prompt itself.
+
+    A tool reply large enough to be spilled to a file is unreadable to this planner:
+    its session has no file-read tool. The contracts are instructions, so they belong
+    in the instruction turn, and the authorized source path travels with them rather
+    than waiting at the end of a 50 KB reply.
+    """
+    documents = []
+    for entry in created["instructions"]:
+        text = runtime.store.get(entry["digest"]).decode("utf-8")
+        documents.append(f'<pinned-instruction identity="{entry["identity"]}" '
+                         f'digest="{entry["digest"]}">\n{text}\n</pinned-instruction>')
+    task = PLANNER_PROMPT.format(run_id=run_id, state_token=created["state_token"],
+                                 source_path=created["authorized_parameters"]["source_path"])
+    return task + "\n\n" + "\n\n".join(documents)
 
 
 class BoundRuntime:
@@ -132,7 +160,7 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
                 "command": sys.executable, "args": arguments, "env": internal_env}}}))
             code, raw, _ = adapter.run(adapter.command(directory, session, mcp=mcp, controller=True), role="planner",
                 cwd=directory, env=env, timeout=timeout, max_bytes=8*1024*1024,
-                prompt=PLANNER_PROMPT.format(run_id=run_id))
+                prompt=planner_prompt(runtime, run_id, created["data"]))
             if code:
                 raise Fault("planner_incomplete", "The Claude Code planner stopped before successful completion.")
             receipt = parse_events(raw, expected_session=session)
@@ -166,8 +194,10 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
                 return runtime.call(name,{"run_id":run_id})
         recovered = recovery_control("get_verifier_context")
         if recovered["status"] == "ok" and recovered["data"]["verification_complete"]:
+            state, _ = runtime.store.read(run_id)
             return {"status": "ok", "data": {"run_id": run_id, "verification_complete": True,
-                    "report": recovered["data"]["report"], "controller_receipt": "unavailable",
+                    "report": runtime.store.get_json(state["report_ref"]),
+                    "controller_receipt": "unavailable",
                     "report_json_path": str(runtime.store.run_dir(run_id) / "report-card.json"),
                     "report_markdown_path": str(runtime.store.run_dir(run_id) / "report-card.md")}}
         recovery_control("cancel_verifier_run")

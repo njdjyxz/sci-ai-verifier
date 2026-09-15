@@ -119,7 +119,11 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(self.data["report"]["claims"][0]["tests"][0]["observed"], "1.0")
         report_path.unlink()
         resumed = self.runtime.call("resume_verifier_run", {"run_id": self.data["run_id"]})
-        self.assertEqual(resumed["data"]["report"], self.data["report"])
+        self.assertTrue(resumed["data"]["verification_complete"])
+        report = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"],
+                                                            "section": "report"})["data"]["section"]
+        self.assertEqual(report["identity"], "report")
+        self.assertIn("local", report["content"])
         self.assertTrue(report_path.exists())
         for request in self.subject.requests:
             self.assertEqual(set(request["case_input"]), {"input"})
@@ -198,10 +202,20 @@ class LocalTests(unittest.TestCase):
 
     def test_context_recovery_returns_pinned_candidate_content(self):
         candidate_ref = self.ready()
-        response = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})
-        artifacts = response["data"]["local_artifacts"][self.claim_id]
-        self.assertEqual(artifacts["candidate_ref"]["name"], "Fixture table")
-        self.assertEqual(response["data"]["local_work"][self.claim_id]["candidate_ref"], candidate_ref)
+        header = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})["data"]
+        # The header must always fit inline: bulk sections are named, not inlined.
+        self.assertLessEqual(len(canonical(header)), 8000)
+        self.assertEqual(header["authorized_parameters"]["source_path"], str(self.source))
+        self.assertNotIn("local_artifacts", header)
+        self.assertIn("local_artifacts", header["fetchable_sections"])
+        self.assertEqual(header["local_work"][self.claim_id]["candidate_ref"], candidate_ref)
+        section = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"],
+                                                             "section": "local_artifacts"})["data"]["section"]
+        self.assertIn("Fixture table", section["content"])
+        self.assertFalse(section["truncated"])
+        unknown = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"],
+                                                             "section": "nonexistent"})
+        self.assertEqual(unknown["error"]["code"], "unknown_context_section")
 
     def test_runtime_change_cannot_reuse_existing_plan(self):
         self.ready()
@@ -228,6 +242,58 @@ class LocalTests(unittest.TestCase):
         from sci_ai_verifier.local_candidates import candidates
         with self.assertRaises(Fault):
             candidates(self.runtime.store)
+
+    def test_no_bootstrap_reply_is_large_enough_for_a_host_to_spill(self):
+        """The planner session has no file-read tool, so an oversized reply blocks it."""
+        from sci_ai_verifier.agent import INLINE_BUDGET
+        self.ready()
+        for arguments in ({"run_id": self.data["run_id"]},
+                          {"run_id": self.data["run_id"], "section": "local_artifacts"}):
+            with self.subTest(arguments=sorted(arguments)):
+                reply = self.runtime.call("get_verifier_context", arguments)
+                self.assertEqual(reply["status"], "ok", reply)
+                if "section" not in arguments:
+                    self.assertLessEqual(len(canonical(reply)), INLINE_BUDGET)
+        header = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})["data"]
+        # The two things the planner cannot work without travel in the small reply.
+        self.assertEqual(header["authorized_parameters"]["source_path"], str(self.source))
+        self.assertTrue(header["state_token"])
+        # Every pinned document is named with its digest and is separately fetchable.
+        self.assertTrue(header["instructions"])
+        for entry in header["instructions"]:
+            section = self.runtime.call("get_verifier_context", {
+                "run_id": self.data["run_id"], "section": entry["identity"]})["data"]["section"]
+            self.assertEqual(section["trust_class"], "verifier_instruction")
+            self.assertEqual(section["bytes_total"], entry["bytes"])
+
+    def test_pinned_instructions_and_authorized_path_reach_the_planner_prompt(self):
+        from sci_ai_verifier.local_entry import planner_prompt
+        created = self.runtime.call("start_verifier_run", {"source_path": str(self.source)})["data"]
+        prompt = planner_prompt(self.runtime, created["run_id"], created)
+        self.assertIn(str(self.source), prompt)
+        self.assertIn(created["state_token"], prompt)
+        for entry in created["instructions"]:
+            self.assertIn(entry["digest"], prompt)
+        # The contracts themselves arrive, not just their names.
+        self.assertIn("Local profile", prompt)
+        self.assertGreater(len(prompt), 20000)
+
+    def test_wrong_source_path_is_repairable_and_does_not_close_the_run(self):
+        created = self.runtime.call("start_verifier_run", {"source_path": str(self.source)})["data"]
+        refused = self.runtime.call("load_submitted_skill", {
+            "run_id": created["run_id"], "state_token": created["state_token"],
+            "source_path": "SKILL.md"})
+        self.assertEqual(refused["status"], "retryable")
+        self.assertEqual(refused["error"]["code"], "source_not_authorized")
+        self.assertEqual(refused["error"]["repair_fields"], ["source_path"])
+        # The message names the path, and the run is still usable with it.
+        self.assertIn(str(self.source), refused["error"]["message"])
+        self.assertEqual(refused["error"]["run_state"], "created")
+        loaded = self.runtime.call("load_submitted_skill", {
+            "run_id": created["run_id"], "state_token": refused["error"]["state_token"],
+            "source_path": str(self.source)})
+        self.assertEqual(loaded["status"], "ok", loaded)
+        self.assertEqual(loaded["data"]["run_state"], "source_ready")
 
     def test_public_tool_surface_and_internal_run_binding(self):
         public = PublicRuntime(workspace=self.base, instructions=ROOT / "skills/scientific-verifier")

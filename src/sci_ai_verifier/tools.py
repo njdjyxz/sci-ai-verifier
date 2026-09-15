@@ -67,7 +67,7 @@ SCHEMAS = {
     "start_inline_demo_run": obj({"source_name": string(200), "source_text": string(262144)}),
     "start_verifier_run": obj({"source_path": string(), "model_label": string(200)},
                               ["source_path"]),
-    "get_verifier_context": obj({"run_id": string(36)}),
+    "get_verifier_context": obj({"run_id": string(36), "section": string(200)}, ["run_id"]),
     "resume_verifier_run": obj({"run_id": string(36)}),
     "cancel_verifier_run": obj({"run_id": string(36)}),
     "load_submitted_skill": obj({**BASE, "source_path": string()}),
@@ -120,7 +120,7 @@ SCHEMAS = {
 DESCRIPTIONS = {
     "start_inline_demo_run": "Start a general safe-skill demo from text pasted or attached in Chat. Supply the skill text as data. No local file, catalog, API key or chemical scope is needed. Same-chat demo only.",
     "start_verifier_run": "Begin verify-this-skill for the local path explicitly submitted by the user. Default demo supports any safe skill without a catalog or API key. Returns pinned instructions, profile, run ID and token. Use start_inline_demo_run for attached/pasted text.",
-    "get_verifier_context": "Restore pinned verifier instructions, current state/token and already-read untrusted source ranges after compaction or a lost response. It does not advance the workflow or rotate the token, but it is not read-only: it repairs the readable projections, and if the resumption window has already expired it records that expiry and ends the run.",
+    "get_verifier_context": "Restore current state/token, the authorized source path and the pinned instruction index after compaction or a lost response. Supply section to fetch one named part -- an instruction document or a committed artifact -- so no single reply is too large to display. It does not advance the workflow or rotate the token, but it is not read-only: it repairs the readable projections, and if the resumption window has already expired it records that expiry and ends the run.",
     "resume_verifier_run": "Resume a saved verifier run after interruption; verify its journal and objects and restore bootstrap. No live-source reread.",
     "cancel_verifier_run": "Explicitly cancel an unfinished verifier run and save an operational outcome. Does not create a scientific verdict.",
     "load_submitted_skill": "In created state only: snapshot the previously authorized source and return exact top-level UTF-8 content as untrusted data. Use the current state token.",

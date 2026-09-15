@@ -512,6 +512,22 @@ Reporting becomes legal only after all accepted claims are terminal. Lookup and
 qualification do not execute the subject; qualification is mechanical, not a
 scientific grade. Recovery and cancellation retain the common host controls.
 
+`get_verifier_context` returns a header small enough to always arrive inline: the
+committed state, the current token, the authorized source path, the pinned
+instruction index and the names of every fetchable section. It never inlines the
+pinned documents or the committed artifacts. Supplying `section` returns exactly one
+of those, sliced to the run's read limit. A closed run still answers a section
+request, so a committed report remains readable after completion.
+
+This split is a requirement, not an optimization. The planner's session has WebSearch
+and the internal tools only: no file-read tool. A host that spills an oversized tool
+reply to a file therefore hides that reply from the planner completely, and the two
+values it cannot work without -- the token and the authorized path -- must never
+share a reply with tens of kilobytes of contracts. In `created`, a `source_path` that
+does not match the pinned path is repairable in this profile rather than fatal: the
+argument only confirms a path the operator already authorized, the refusal names the
+correct one, and the repair budget bounds the retries.
+
 Three transitions inside `local_discovery` and `local_ready` are deliberately
 narrow, because each one ends a claim and a wide gate would let the planner
 finish without doing the work:
