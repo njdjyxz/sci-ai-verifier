@@ -1085,10 +1085,34 @@ Found by reviewing this session's own diff, and fixed in it:
   refusing a foreign branch, and reading review comments.
 - `python scripts/run_local_fixture.py` completes and its report shows the proposal,
   the ceiling, the limiting reason and no grade for a synthetic subject.
-- 191 local Markdown links across 30 files resolve, including anchors.
+- 196 local Markdown links across 30 files resolve, including anchors.
 - **These are fixture and offline checks. No live Claude Code session, container, app
   adapter or real scientific source was exercised, and no grade produced by this code
   has been observed on a live run.**
+
+**6. Cleared the previous live-test data, at the user's request, for a fresh start.**
+
+Deleted from the ignored `.verifier/` workspace: the attempt logs, run journals and
+reports, subject-run receipts, the content-addressed object store, and all seven
+candidates saved by earlier live runs -- the glycoengineering SNFG, IgG1 Fc Asn297,
+N-glycosylation sequon and afucosylated FcgammaRIIIA candidates, plus the bacterial
+translation-table and Bakta flag ones. Also removed accumulated fixture, package-check
+and scratch output from earlier development sessions.
+
+Two consequences to record. The 2026-09-14 entry above cites attempt
+`4bfdf075-cadc-46ef-b1f9-3df3b4322ae6` and run `6bd0d78d-0b5e-4364-bf93-161c485fd15e`
+as the evidence locating that authentication failure; **those artifacts no longer exist
+and that finding is now unverifiable from this workspace.** The finding itself stands as
+recorded, but it cannot be re-inspected. Second, the grade policy and critique rubric
+digests changed in this session anyway, so no candidate from those runs could have been
+reused under an audit bound to the new policy; clearing them costs nothing that was
+still usable.
+
+Kept deliberately: the five prepared example skill folders under
+`.verifier/example-downloads/prepared/`, which are test inputs rather than output, and
+`.verifier/local-settings.json`, with the two removed review keys dropped from it so it
+loads against the current configuration. Its pinned image ID, Docker path and
+`trial_count: 3` are unchanged, so grades A and B remain reachable on the next run.
 
 ### Urgent next steps, if any
 
