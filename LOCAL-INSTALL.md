@@ -12,8 +12,9 @@ does not set up this version's `verify_skill` action.
 This build adds computational execution, resources, generated evaluators, repeated
 trials, a negotiated evidence grade with an independent critique, independent
 documentary assessment and workflow logs. **Live acceptance is pending your manual tests below.** The
-[development plan](DEVELOPMENT-PLAN.md#codex-2026-09-11-1932-pdt) remains the complete
-project checklist; automated fixtures do not establish scientific acceptance.
+[development plan](DEVELOPMENT-PLAN.md) remains the complete project checklist and its
+latest entry is the current roadmap; automated fixtures do not establish scientific
+acceptance.
 
 The examples use your current folder, `D:\Su Lab\sci-ai-verifier`, and Python at
 `C:\Python314\python.exe`. On another PC, replace those paths with its actual
@@ -22,11 +23,15 @@ locations. Python must be 3.11 or newer; no extra Python packages are needed.
 “Local” means the program and reports live on your PC. Skill text and test inputs
 still go to Claude's hosted models and use your available Claude usage.
 
-**What is verified so far:** automated local checks passed. The first manual run
-authenticated and completed its planner, but the nested subject and assessor
-sessions failed authentication. The internal credential handoff has been corrected
-and passes regression checks; a fresh manual run must confirm live execution.
-Setup checks alone do not establish live acceptance.
+**What is verified so far:** the automated checks pass. Three live runs have been made
+on the author's PC, and the most recent completed end to end: it extracted five claims,
+settled evidence grades through independent critique sessions, obtained 24 subject
+observations in containers and wrote a full report, taking about 50 minutes. One claim
+reached a scientific verdict there (`pass`, evidence grade D); the other four ended as
+operational limitations. Three defects behind those limitations have since been fixed,
+with tests built from the replies the real sessions actually sent, but **no live run has
+exercised those fixes yet**. Setup checks alone do not establish live acceptance, and
+neither does a run that completes.
 
 ## One-time setup
 
@@ -128,13 +133,20 @@ and its settings need changing, remove the old registration using the
 
 ```powershell
 $verifierClaude = (Get-Command claude.exe -ErrorAction Stop).Source
-claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude"
+claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --timeout 5400
 ```
 
 Expect an **Added** message. The first line finds the installed Claude program;
 the second registers a tool connection named `scientific-verifier-local` in your
 personal Claude Code configuration. It is available across projects. The saved
 configuration contains a credential placeholder, not the token itself.
+
+`--timeout 5400` gives each verification 90 minutes. Without it the limit is 30
+minutes, which measurement shows is not enough: a five-claim skill took about 50
+minutes of real work, and an earlier run of the same skill was cut off mid-claim at
+the 30-minute default and produced only a partial report. Accepted values are 1 to
+7200 seconds. The timeout covers the whole attempt including setup, so raise it
+further for larger skills.
 
 “MCP” is the connection that lets Claude call the verifier. This command follows
 Anthropic's [local tool setup](https://code.claude.com/docs/en/mcp#option-3-add-a-local-stdio-server)
@@ -164,8 +176,9 @@ folder, click its address bar, and copy the path. Replace this example path:
 > Use scientific-verifier-local to verify this skill: D:\My Skills\my-skill. Show me the saved report and its limitations.
 
 Approve the verifier tool if Claude asks. Leave the session running; verification
-allows up to 30 minutes by default. You do not need to run extraction, discovery,
-or evaluation separately.
+allows up to the timeout registered in step 5, 90 minutes with the command above and
+30 minutes without it. Expect real work to take tens of minutes for a handful of
+claims. You do not need to run extraction, discovery, or evaluation separately.
 
 The result includes report paths. With the setup above, reports live here:
 
@@ -234,7 +247,7 @@ available. They do not claim verification completed.
 | The verifier tool is missing | Confirm step 5 printed **Added**, start a fresh local Code session, and check whether `scientific-verifier-local` is disabled. |
 | The connection name already exists | To update the earlier setup, run `claude.exe mcp remove --scope user scientific-verifier-local`, then repeat steps 5–6. This removes the connection, not saved reports. |
 | `authentication_required` before the planner starts | Check the exact variable name and token in step 3. Save and start a new session. |
-| Planner runs, but subject or assessor returns `authentication_required` | Update the verifier source to include the internal credential-handoff fix, then fully restart Claude and start a new local Code session. Keep the existing token and connection. The old launcher did not explicitly pass credentials to its internal MCP server. |
+| Planner runs, but subject or assessor returns `authentication_required` | Confirm the connection registers the `CLAUDE_CODE_OAUTH_TOKEN` placeholder from step 5, then fully restart Claude and start a new local Code session. Keep the existing token. An early build did not pass credentials to its internal sessions; if you are on source older than 0.7.0, update it. |
 | Expired-token, sign-in, or usage-limit error | Renew the token through step 3 or wait for eligible usage. The verifier never switches to API billing automatically. |
 | `source_missing` | Supply the full path to an existing skill folder or its `SKILL.md`. |
 | `planner_incomplete` or another incomplete result | Save the run ID and error. The run did not finish; setup checks cannot diagnose every live-model failure. |
@@ -245,7 +258,17 @@ available. They do not claim verification completed.
 | `resource_not_authorized` or `app_not_authorized` | Configure the exact resource host or a reviewed read-only app adapter in LOCAL-CONFIG.md. |
 | `assessor_unavailable` | The independent documentary session did not complete. This is an operational problem, not grade U. |
 | `critic_unavailable` | The independent grade critique session did not complete. The claim is recorded as an operational limitation; it does not become an ungraded pass. |
-| `grade_above_evidence_ceiling` | The planner proposed a grade its evidence cannot support. It should strengthen the design or propose the stated ceiling; no action is needed from you. |
+| `critic_response_invalid` or `assessor_response_invalid` | That session answered outside its fixed rubric, so its reply could not be recorded. Operational, never a grade. Keep the attempt log: the reply is in it, and a reply the verifier should have accepted is a defect worth reporting. |
+| `subject_refused` | Anthropic's safety classifiers declined the test question, naming the category. Nothing was observed, so this reports that the provider would not answer, never that the skill failed. It is not retried, because the frozen case input would refuse again. Its trials stay missing rather than being replaced. |
+| `claude_incomplete` | A test session exited without a complete observation and was not retried. Check the attempt log for that session before assuming the skill is at fault. |
+| `subject_model_changed` | The observed model identity changed partway through one claim's trials. A grade describes one subject, so the claim stops rather than mixing them. |
+| `subject_response_invalid` | A test session returned no usable text, or did not explicitly invoke the pinned skill. |
+| `evaluator_failed` | The scoring program did not print exactly one JSON object with a `status` of pass, fail or invalid. Check the evaluator's own output in the log. |
+| `local_grade_proposal_refused` with `above_evidence_ceiling` | The planner proposed a grade its own recorded facts cannot support. It should strengthen the design or propose the stated ceiling; no action is needed from you, and no critique session is spent. |
+| `local_grade_proposal_refused` with `below_evidence_ceiling` | The planner proposed a weaker grade than its evidence supports. Aiming low is refused for the same reason as overclaiming. |
+| `local_design_unchanged` or `local_grade_rounds_exhausted` | The planner re-proposed a grade on a design already critiqued, or spent its negotiation budget. Neither consumes a session; the claim settles or continues without one. |
+| `source_not_authorized` | The path given to the verifier is not the one you authorized for this run. Supply the exact folder you named when starting. |
+| `verification_timeout` | The attempt hit the registered timeout. Raise `--timeout` in step 5 and re-register, then start a new verification. Saved evidence and a partial report are retained. |
 | `stronger_evidence_available` | The planner tried to conclude documentarily while holding a qualified candidate it had not run. It must run it or explain why it does not apply. |
 | `workflow_log_unavailable` | Check the data folder is writable and disk space is available; keep any existing attempt folder for diagnosis. |
 
@@ -271,15 +294,17 @@ allowance and does **not** validate the token with Claude or execute a live test
 Then, in the same window, replace the example skill path and run:
 
 ```powershell
-& "C:\Python314\python.exe" "D:\Su Lab\sci-ai-verifier\scripts\verify.py" verify "D:\My Skills\my-skill" --workspace "D:\Su Lab\sci-ai-verifier" --config "D:\Su Lab\sci-ai-verifier\.verifier\local-settings.json"
+& "C:\Python314\python.exe" "D:\Su Lab\sci-ai-verifier\scripts\verify.py" verify "D:\My Skills\my-skill" --workspace "D:\Su Lab\sci-ai-verifier" --config "D:\Su Lab\sci-ai-verifier\.verifier\local-settings.json" --timeout 5400
 ```
 
 Press **Ctrl+C** to stop. Close PowerShell when finished; the token set above
 lasts only for that process and its children.
 
-Advanced options: `--model opus`, `--timeout 1800`, and
-`--claude-executable "C:\path\to\claude.exe"`. The default requested model is
-`opus`; receipts also record actual returned model IDs.
+Advanced options: `--model opus`, `--timeout <seconds>` and
+`--claude-executable "C:\path\to\claude.exe"`. The timeout accepts 1 to 7200 seconds
+and defaults to 1800, which is usually too short; `--timeout 5400` matches the
+registered connection above. The default requested model is `opus`; receipts also
+record actual returned model IDs.
 
 API users must supply `ANTHROPIC_API_KEY` instead and add `--auth api` to
 `verify` or `serve-local`. API mode has separate billing. Never place the actual
@@ -304,6 +329,7 @@ using the commands above. Use copies when deliberately introducing errors.
 | Documentary assessment | Check a separate assessor session, exact cited quotes and disclosed AI judgment. No planner conversation or subject answers should be included in its packet. |
 | Cancellation | Interrupt a CLI run with Ctrl+C and a desktop run with Stop. The attempt log and any receipts should remain. No uncertain trial should be replayed automatically. |
 | Reuse | Verify the skill again and confirm lookup reuses a saved candidate where applicable; references are pinned rather than invented again. |
+| Operational versus scientific | Check that every claim without a verdict names *why*: a refused test session, an incomplete one, a session that answered outside its rubric. None of those may appear as a scientific failure, and none may quietly become a grade. Counts of planned, attempted, obtained and missing trials must add up. |
 | Grade negotiation | Read the plan audit in the report. Confirm the proposed grade, the runner's evidence ceiling with its limiting reasons, and the independent critique's findings are all recorded, and that the settled grade is no stronger than any of them. A skill that only ran should not carry an A. |
 | Catalog contribution | If you propose a candidate, confirm the draft PR opens without any prior sign-off, that `review` returns the comments you leave on it, and that republishing a corrected bundle revises the same PR instead of opening a second one. Nothing should merge by itself. See [LOCAL-CONFIG.md](LOCAL-CONFIG.md#propose-a-candidate-for-review). |
 | Catalog updates | If you maintain a shared catalog, use the release steps in [LOCAL-CONFIG.md](LOCAL-CONFIG.md#prepare-and-distribute-a-reviewed-catalog-release). Confirm a retired candidate disappears from a new run and old reports retain their pins. This does not require publishing your personal results. |
@@ -345,6 +371,10 @@ it no longer meets this guide's requirements.
    already has the correct program, configuration and environment-variable
    settings, keep it; no re-registration is needed. See
    [Claude's connection-management documentation](https://code.claude.com/docs/en/mcp#managing-your-servers).
+   A connection registered before this guide added `--timeout` still runs on the
+   30-minute default; remove and re-add it to pick the longer limit up. Registered
+   arguments are read when the connection starts, so restart Claude Desktop after
+   changing them.
 4. If you created `.verifier\local-settings.json` with an earlier build, delete the
    `scientific_reviews` and `documentary_review` lines from it. Those settings were
    removed: an evidence grade is now settled by the evidence and an independent
