@@ -48,35 +48,63 @@ validity. Subject trials are scored individually before all-trials aggregation.
 Operationally missing trials stay operational; invalid scientific observations
 remain in coverage denominators.
 
-## Scientific review, plan audit and deterministic grade policy
+## Negotiated evidence grade, plan audit and deterministic grade policy
 
 Selection freezes source, subject/configuration, candidate, trial count, tolerances
-and the `all-trials-v1` policy and writes a deterministic audit before execution.
-Operator-controlled `scientific_reviews` can authorize grades A/B/C for one exact
-candidate fingerprint, source-content digest, execution-environment digest and
-scope, with an explicit list of accepted observed model IDs. A review must name the independent reviewer,
-date, provenance, scientific basis, coverage, uncertainty, independence and minimum
-trial count. It explicitly lists the supported rubric grades; supporting A does
-not automatically authorize B or C. The planner cannot create or alter reviews.
-This is a personal trust boundary, not a claim that a signature service or the
-software has verified the reviewer's credentials. Default reviews remain empty.
+and the `evidence-strength-v1` policy and writes a deterministic audit before
+execution. The grade is settled during that selection and requires no human review.
 
-The installed policy requires every planned trial and case to be scored. Missing
+The planner proposes `target_grade` A, B or C with an explicit justification.
+Python computes an **evidence ceiling** from facts it recorded itself. Only that
+ceiling, or a grade the last critique of the same design supported, may be proposed;
+both overclaiming and aiming low are refused before any session is spent:
+
+- **A** needs every expected answer quoted token-exactly from reference bytes Python
+  itself retrieved over public HTTPS, scored by an installed comparison method, with
+  at least three distinct cases and at least three trials of this model subject.
+- **B** allows an operator-imported pinned dataset, or a generated Python evaluator
+  whose controls all pass, under the same case and trial minimums. A planner-authored
+  scorer cannot reach A, because direct validation excludes AI judgment in scoring.
+- **C** covers any reproducible comparison meeting the case minimum, including a
+  single trial, a substring rather than token-exact quote, and a candidate reused
+  offline whose reference origin was never recorded.
+- Failed controls or fewer than three cases support no execution grade.
+
+A fresh no-tool session then receives the claim, the evidence design, the reference
+provenance, the justification, Python's ceiling, the concerns earlier reviewers raised
+about earlier versions of this design, and the fixed critique rubric. It never sees the
+planning conversation, any subject answer, or any earlier reviewer's grade: objections
+carry forward so a revision can be checked, grades do not, because a reviewer shown a
+previous verdict would anchor on it. That separation is imperfect and is not claimed to
+be complete: an objection such as "three cases cannot support direct validation" implies
+a grade it does not state. Withholding the letter reduces anchoring; it does not remove
+the signal. It returns the strongest grade the evidence
+actually supports. The settled ceiling is the weakest of the proposal, Python's ceiling
+and that critique.
+
+When the critique supports less, the planner may strengthen the design and propose the
+new ceiling, which earns another round, or accept the grade that design was critiqued
+at, which settles immediately without another session. Repeating a proposal on a design
+already critiqued is refused and consumes neither a session nor a round, so the budget
+of one round per rubric grade bounds real revisions rather than repetition. Accepting a
+critique that supported no grade settles the plan ungraded: it still executes and
+produces comparison evidence, and the claim continues to the documentary path. An
+unavailable critique is an operational limitation.
+
+The installed policy then requires every planned trial and case to be scored. Missing
 observations are operational. Invalid observations remain counted and prevent an
-A/B/C grade. Scored-status agreement must be unanimous within each case for a
-grade; unanimous failure is as eligible as unanimous success. There must be at
-least three distinct cases. A/B require at least three trials of this model-based
-subject. C may use one if independently authorized. The review may require more.
-The verdict is pass only if all scored trials pass, fail if at least one fails
-and none is invalid, and inconclusive if any is invalid. Choose the strongest
-explicitly supported grade meeting every predicate. No eligible branch grants no
-scientific verdict and requests a separate documentary assessment; it never
-silently invents a weaker grade. Synthetic observations never receive a grade.
+A/B/C grade. Scored-status agreement must be unanimous within each case for a grade;
+unanimous failure is as eligible as unanimous success. The achieved grade is the
+settled ceiling, or none when any of those conditions fails. The verdict is pass only
+if all scored trials pass, fail if at least one fails and none is invalid, and
+inconclusive if any is invalid. No eligible grade grants no scientific verdict and
+requests a separate documentary assessment; it never silently invents a weaker grade.
+Synthetic fixture observations never receive a grade.
 
 Observed model identities must remain constant across trials of a claim. Changing
 code, source, image, configuration, plan or candidate invalidates the bound audit.
-Without independent scientific authorization, mechanically qualified evaluations
-remain useful comparison evidence with no scientific status or grade.
+A grade states how strong the evidence is. It is not an endorsement, and neither
+mechanical qualification nor catalog membership adds to it.
 
 ## Independent documentary path
 
@@ -88,12 +116,12 @@ limitations and fixed rubric only. It has no tools or planning history. Its fina
 JSON must contain a status, supported rubric findings and exact citations to the
 pinned packet. Invalid or missing assessments are operational failures.
 
-An operator review bound to the exact installed rubric is needed for grade D.
-Without it, retain the assessment and disclose that scientific authorization is
-absent. Grade D is documentary consistency only; execution accuracy remains
-unverified. U/inconclusive is a separate no-evidence path requiring catalog
-lookup and an explicit search account. Runtime failures never establish U.
-Legacy synthetic adapters retain their comparison-only terminal behavior.
+A completed assessment against the installed rubric is grade D with the assessor's
+status. Grade D is documentary consistency only; execution accuracy remains
+unverified, and AI judgment is primary and disclosed. U/inconclusive is a separate
+no-evidence path. Both require the claim's catalog lookup, evidence Python actually
+retrieved for this claim, and no qualified candidate left unexecuted. Runtime
+failures never establish U. Synthetic fixture runs stay ungraded.
 
 This contract defines version 0.7's implemented local mechanisms and enforceable
 boundaries. The repository's DEVELOPMENT-PLAN.md retains the full project goal
@@ -121,8 +149,9 @@ URLs, versions, license notes and scope limitations are required.
 `qualified_local` establishes reproducible mechanics and quote provenance only.
 It does not establish that a source is scientifically authoritative, that an input
 is semantically matched to its reference, or that coverage is representative.
-Those remain planner assertions unless independently reviewed under the policy
-above. Reports separate comparison outcomes from scientific status and grade.
+Those are what the independent critique judges when the grade is settled; a
+qualified candidate that was never graded carries no scientific status. Reports
+separate comparison outcomes from scientific status and grade.
 No local registration changes the reviewed global registry.
 An empty catalog initiates discovery without a manual seed. Inadequate evidence,
 unavailable execution environments/tools and uncertain scope produce
@@ -136,6 +165,16 @@ existing run ID, state token, step/repair budgets and journal. The planner must
 lookup before discovering. References and candidates are immutable objects;
 selection pins the exact candidate before any subject observation. A local
 candidate can be reused offline by digest, including its reference evidence.
+
+## Planner context delivery
+
+The pinned contracts reach the planner in its instruction turn, together with the
+authorized source path and the current state token, because a tool reply large enough
+for the host to spill to a file is unreadable to a session that has no file-read tool.
+`get_verifier_context` therefore returns only a bounded header and serves each pinned
+document or committed artifact as a separately requested section. The header is
+checked against an inline budget and the run fails closed if it ever exceeds it,
+rather than emitting a reply the planner might never see.
 
 ## Subject boundary
 
@@ -183,19 +222,29 @@ under `.verifier/catalog-cache/` for offline reuse. They contain candidates and
 their referenced objects only. Imported review assertions never confer scientific
 approval. Operator settings pin independently trusted reviews separately.
 
-`scripts/local_catalog.py` lists, exports, imports and explicitly publishes
-candidate proposals. Export requires a written redistribution authorization for
-all selected reference assets. It excludes subject outputs, logs, settings and
-operator scientific approvals. Publish requires the exact reviewed bundle digest,
-explicit repository and `--approve-publication`; it creates a draft GitHub PR,
-never merges, promotes, overwrites an existing branch or reruns subjects. A durable
-publication receipt and remote reconciliation make retries independent of runs.
-Maintainers use `scripts/local_catalog.py release` to prepare a versioned full
-catalog inventory from an exact qualified bundle and independent review records.
-Each candidate has an approved-for-catalog or retired decision, reviewer,
-provenance, scope, coverage, uncertainty and redistribution assessment. The
-operator must explicitly authorize promotion. This gate records actual supplied
-review evidence; it cannot authenticate a reviewer or confer a claim grade.
+`scripts/local_catalog.py` lists, exports, imports, proposes, revises and reads the
+review of candidate bundles. The order is: the agent prepares and checks, the agent
+opens a draft pull request, a person reviews it there, the agent addresses the
+comments, and the person accepts by merging.
+
+Export records the agent's own `redistribution` assessment naming the licence and
+source of every included reference. That is a prepared statement for a reviewer to
+judge, not a sign-off, and no human authorization is required to create a bundle.
+Exports exclude subject outputs, logs and operator settings. `publish` needs the
+exact bundle digest and repository and opens one draft GitHub PR whose branch is
+derived from the proposal identity. Publishing the same unchanged file again pushes
+nothing; publishing a changed file commits a revision onto the same branch and pull
+request. It never merges, never promotes, never overwrites a branch it did not
+create and never reruns subjects. A durable receipt with remote reconciliation makes
+retries independent of runs. `review` reads the pull request state, reviews and
+comments so the agent can address them; it writes nothing.
+
+`release` prepares a versioned catalog inventory from an exact qualified bundle plus
+one prepared assessment per candidate, each carrying a propose-for-catalog or
+propose-retirement proposal, provenance, scope, coverage, uncertainty, redistribution
+assessment and an explicit `scientific_approval: not_conferred`. Every candidate is
+requalified in disposable storage before a release can exist. These records give a
+reviewer something specific to review; they confer no approval and no claim grade.
 Release envelopes pin the embedded bundle, catalog ID/version, runtime version
 range and optional predecessor digest. Updates require increasing versions and
 retain prior candidate IDs, with explicit retirement instead of silent removal.

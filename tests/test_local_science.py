@@ -1,4 +1,4 @@
-"""Independent grade eligibility and assessor boundaries, with no live models."""
+"""Evidence-strength ceilings, the critique boundary and assessor limits; no live models."""
 
 import sys
 import unittest
@@ -6,43 +6,116 @@ from copy import deepcopy
 from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
-from sci_ai_verifier.common import Fault,canonical,digest
-from sci_ai_verifier.local_science import decide,validate_reviews,POLICY_REF
-from sci_ai_verifier.documentary import validate_assessment,RUBRIC,RUBRIC_REF,review_valid
+from sci_ai_verifier.common import Fault
+from sci_ai_verifier.local_science import (GRADES,MAX_ROUNDS,POLICY_REF,audit,decide,evidence_ceiling,
+                                           proposal_problem,weaker)
+from sci_ai_verifier.documentary import CRITIQUE_RUBRIC,RUBRIC,validate_assessment,validate_critique
 from sci_ai_verifier.local_evaluators import qualify,validate_spec
 
+RETRIEVED={"origin":"retrieved_public_https","url":"https://example.org/r","version":"1","license":"unknown"}
 
-class ScienceTests(unittest.TestCase):
+
+class CeilingTests(unittest.TestCase):
     def setUp(self):
-        self.cases=[{"case_id":str(i)} for i in range(3)]
-        self.review={"candidate_fingerprint":"a"*64,"scope":"fixture","reviewer":"independent synthetic fixture",
-            "reviewed_at":"2026-09-11","provenance":"test fixture, not a real approval","grades":["A","B","C"],
-            "independent":True,"scientific_basis":"fixture","coverage":"fixture","uncertainty":"fixture",
-            "independence":"fixture","trial_policy":"all-trials-v1","minimum_trials":1,
-            "source_digest":"b"*64,"environment_digest":"c"*64,"model_ids":["fixture-model"]}
-        self.audit={"review":self.review,"policy_ref":POLICY_REF}
+        self.references={"r"+str(index):dict(RETRIEVED) for index in range(3)}
+        self.candidate={"method":"numeric","method_version":"local-reference-comparison-1","name":"Fixture",
+            "scope":"Fixture scope","limitations":"Fixture","absolute_tolerance":"0.000001",
+            "cases":[{"case_id":str(index),"input":str(index),"expected":str(index)+".0",
+                      "reference_ref":"r"+str(index),"source_quote":"row "+str(index)+" is "+str(index)+".0 exactly",
+                      "applicability":"row"} for index in range(3)]}
 
-    def rows(self,n,status="pass"):
-        return [{"case_id":case["case_id"],"trial":trial,"comparison_status":status,"model_ids":["fixture-model"]} for case in self.cases for trial in range(1,n+1)]
+    def ceiling(self,trials=3,**changes):
+        candidate={**self.candidate,**changes}
+        return evidence_ceiling(candidate,self.references,trials)
 
-    def test_unanimous_failure_and_success_have_equal_grade(self):
+    def test_retrieved_deterministic_three_trials_reaches_a(self):
+        self.assertEqual(self.ceiling(),("A",[]))
+
+    def test_operator_dataset_and_generated_scorer_cap_at_b(self):
+        self.references["r0"]={**RETRIEVED,"origin":"operator_local_resource"}
+        grade,reasons=self.ceiling()
+        self.assertEqual(grade,"B")
+        self.assertIn("expected_answers_not_independently_retrieved",reasons)
+        self.references["r0"]=dict(RETRIEVED)
+        grade,reasons=self.ceiling(method="python",controls_receipts=[{"passed":True}])
+        self.assertEqual(grade,"B")
+        self.assertIn("scoring_code_authored_by_planner",reasons)
+
+    def test_single_trial_substring_and_unknown_origin_cap_at_c(self):
+        self.assertEqual(self.ceiling(trials=1)[0],"C")
+        self.assertIn("model_subject_trial_count_below_three",self.ceiling(trials=1)[1])
+        cases=deepcopy(self.candidate["cases"])
+        # "1.0" inside "21.09" is a substring, not an independent answer for this case.
+        cases[0]["source_quote"]="row 0 is 21.09 total"
+        cases[0]["expected"]="1.0"
+        self.assertEqual(self.ceiling(cases=cases)[0],"C")
+        self.references["r1"]={"url":"cached","version":"1","license":"unknown"}
+        self.assertEqual(self.ceiling()[0],"C")
+
+    def test_failed_controls_support_no_execution_grade(self):
+        grade,reasons=self.ceiling(method="python",controls_receipts=[{"passed":False}])
+        self.assertIsNone(grade)
+        self.assertIn("comparison_not_deterministic",reasons)
+
+    def test_only_the_ceiling_or_an_accepted_critique_grade_may_be_proposed(self):
+        # The ceiling is always proposable; aiming below it is refused just like overclaiming.
+        for grade in ("A","B","C"):
+            self.assertIsNone(proposal_problem(grade,grade))
+        self.assertEqual(proposal_problem("A","C"),"above_evidence_ceiling")
+        self.assertEqual(proposal_problem("C","A"),"below_evidence_ceiling")
+        self.assertEqual(proposal_problem("C",None),"no_supported_execution_grade")
+        # A grade the last critique of this same design supported is the one exception.
+        self.assertIsNone(proposal_problem("C","A",accepted="C"))
+        self.assertEqual(proposal_problem("B","A",accepted="C"),"below_evidence_ceiling")
+        with self.assertRaises(Fault) as caught:
+            proposal_problem("D","A")
+        self.assertEqual(caught.exception.code,"grade_proposal_invalid")
+
+    def test_one_negotiation_round_per_rubric_grade(self):
+        self.assertEqual(MAX_ROUNDS,len(GRADES))
+        self.assertEqual(GRADES,("A","B","C","D","U"))
+
+    def test_weaker_never_raises_a_grade(self):
+        self.assertEqual(weaker("A","C"),"C")
+        self.assertEqual(weaker("C","A"),"C")
+        self.assertIsNone(weaker("A",None))
+
+
+class DecisionTests(unittest.TestCase):
+    def setUp(self):
+        self.cases=[{"case_id":str(index)} for index in range(3)]
+        self.selection={"trials_per_case":3,"target_grade":"A","source_digest":"b"*64,
+                        "environment_digest":"c"*64,"oracle_independence":"retrieved","coverage":"three rows",
+                        "tolerance_basis":"installed","uncertainty":"none stated",
+                        "stronger_grade_considered":"A proposed"}
+        self.audit={"settled_ceiling":"A","proposed_grade":"A","evidence_ceiling":"A",
+                    "evidence_limits":[],"policy_ref":POLICY_REF}
+
+    def rows(self,count,status="pass"):
+        return [{"case_id":case["case_id"],"trial":trial,"comparison_status":status,"model_ids":["fixture-model"]}
+                for case in self.cases for trial in range(1,count+1)]
+
+    def test_unanimous_failure_and_success_receive_the_same_grade(self):
         for status in ("pass","fail"):
             result=decide(self.audit,self.rows(3,status),self.cases,3)
             self.assertEqual(result["evidence_grade"],"A")
             self.assertEqual(result["scientific_status"],status)
+            self.assertEqual(result["observed_model_ids"],["fixture-model"])
 
-    def test_no_self_approval_synthetic_or_unreviewed(self):
-        for audit,synthetic in (({"review":None,"policy_ref":POLICY_REF},False),(self.audit,True)):
-            result=decide(audit,self.rows(3),self.cases,3,synthetic=synthetic)
+    def test_no_settled_ceiling_and_synthetic_runs_stay_ungraded(self):
+        for record,synthetic in (({**self.audit,"settled_ceiling":None,"evidence_ceiling":None},False),
+                                 (self.audit,True)):
+            result=decide(record,self.rows(3),self.cases,3,synthetic=synthetic)
             self.assertIsNone(result["evidence_grade"])
             self.assertIsNone(result["scientific_status"])
+            self.assertEqual(result["next_target_grade"],"D")
 
-    def test_single_trial_caps_c_and_c_requires_separate_authorization(self):
-        self.assertEqual(decide(self.audit,self.rows(1),self.cases,1)["evidence_grade"],"C")
-        self.audit["review"]["grades"]=["A"]
-        self.assertIsNone(decide(self.audit,self.rows(1),self.cases,1)["evidence_grade"])
+    def test_settled_ceiling_is_the_grade_even_when_a_stronger_one_was_proposed(self):
+        result=decide({**self.audit,"settled_ceiling":"C"},self.rows(3),self.cases,3)
+        self.assertEqual(result["evidence_grade"],"C")
+        self.assertEqual(result["proposed_grade"],"A")
 
-    def test_missing_duplicate_invalid_and_disagreement(self):
+    def test_missing_duplicate_invalid_and_disagreeing_trials(self):
         for rows in (self.rows(3)[:-1],self.rows(3)+self.rows(3)[:1]):
             with self.assertRaises(Fault):
                 decide(self.audit,rows,self.cases,3)
@@ -54,32 +127,73 @@ class ScienceTests(unittest.TestCase):
             self.assertEqual(result["trial_counts"]["evaluated"],9)
             self.assertEqual(result["trial_counts"]["invalid"],int(changed=="invalid"))
 
-    def test_review_cannot_have_unbounded_or_duplicate_authority(self):
-        validate_reviews([self.review])
-        for reviews in ([self.review,self.review],[{**self.review,"independent":False}],[{**self.review,"minimum_trials":0}]):
-            with self.assertRaises(Fault):
-                validate_reviews(reviews)
+    def test_changed_observed_model_identity_removes_the_grade(self):
+        rows=self.rows(3)
+        rows[0]["model_ids"]=["another-model"]
+        result=decide(self.audit,rows,self.cases,3)
+        self.assertIsNone(result["evidence_grade"])
+        self.assertIn("observed_model_identity_changed",result["grade_limit_reasons"])
 
+    def test_audit_records_the_critique_that_settled_the_grade(self):
+        candidate={"method":"numeric","method_version":"local-reference-comparison-1","name":"Fixture",
+                   "scope":"s","limitations":"l","absolute_tolerance":"0.000001",
+                   "cases":[{"case_id":str(i),"reference_ref":"r","expected":"1.0","source_quote":"is 1.0 exactly"}
+                            for i in range(3)]}
+        critique={"supported_grade":"C","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
+                  "objections":["Three rows do not cover the stated scope."],"required_revisions":"Add cases."}
+        record=audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,
+                     {"r":dict(RETRIEVED)},critique=critique,rounds=2)
+        self.assertEqual(record["proposed_grade"],"A")
+        self.assertEqual(record["settled_ceiling"],"C")
+        self.assertEqual(record["critique_rounds"],2)
+        self.assertTrue(record["mechanically_accepted"])
+        # A critique naming D is saying this execution plan supports no execution grade.
+        documentary={**critique,"supported_grade":"D"}
+        self.assertIsNone(audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,
+                                {"r":dict(RETRIEVED)},critique=documentary,rounds=1)["settled_ceiling"])
+        self.assertIsNone(audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,
+                                {"r":dict(RETRIEVED)})["settled_ceiling"])
+
+
+class IndependentSessionTests(unittest.TestCase):
     def test_documentary_response_requires_exact_packet_citations(self):
         packet={"evidence":[{"reference_ref":"b"*64,"quote":"Known source text."}]}
-        response={"status":"inconclusive","findings":["Evidence bounded"]*3,
+        response={"status":"inconclusive","findings":["Evidence bounded"]*len(RUBRIC["criteria"]),
                   "citations":[{"reference_ref":"b"*64,"quote":"Known source"}],"limitations":"Documentary only."}
         validate_assessment(response,packet)
         response["citations"][0]["quote"]="Invented source"
         with self.assertRaises(Fault):
             validate_assessment(response,packet)
-        with self.assertRaises(Fault):
-            review_valid({"rubric_ref":"wrong","reviewer":"fixture","reviewed_at":"today","provenance":"fixture","independent":True})
 
+    def test_critique_must_answer_inside_its_rubric(self):
+        # `required_revisions` is a list beside `objections`, which is what a real session
+        # emits. Recorded replies and the exhaustive refusal cases live in
+        # tests/test_recorded_replies.py; this guards the shape the science path consumes.
+        valid={"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
+               "objections":[],"required_revisions":["Add cases covering the rest of the scope."]}
+        self.assertEqual(validate_critique(valid)["supported_grade"],"B")
+        self.assertEqual(validate_critique(valid)["required_revisions"],valid["required_revisions"])
+        self.assertIsNone(validate_critique({**valid,"supported_grade":"none"})["supported_grade"])
+        for broken in ({**valid,"supported_grade":"A+"},{**valid,"findings":["only one"]},
+                       {**valid,"objections":"not a list"},{**valid,"required_revisions":0},
+                       {**valid,"extra":"field"}):
+            with self.subTest(broken=sorted(broken)),self.assertRaises(Fault):
+                validate_critique(broken)
+
+
+class GeneratedEvaluatorTests(unittest.TestCase):
     def test_python_candidate_failing_negative_control_is_rejected(self):
         cases=[{"case_id":str(i),"input":"input "+str(i),"expected":str(i),"reference_ref":"b"*64,
                 "source_quote":"0 1 2","applicability":"fixture"} for i in range(3)]
-        spec={"name":"Fixture","scope":"Fixture","method":"python","code":"print('unused fixture')","limitations":"Synthetic only",
-              "cases":cases,"absolute_tolerance":"0","relative_tolerance":"0",
+        spec={"name":"Fixture","scope":"Fixture","method":"python","code":"print('unused fixture')",
+              "limitations":"Synthetic only","cases":cases,"absolute_tolerance":"0","relative_tolerance":"0",
               "controls":[{"case_id":"0","actual":"0","group":group,"expected_status":status}
-                for group,status in (("positive","pass"),("negative","fail"),("boundary","pass"),("invalid","invalid"),("held_out","pass"))]}
+                for group,status in (("positive","pass"),("negative","fail"),("boundary","pass"),
+                                     ("invalid","invalid"),("held_out","pass"))]}
+
         def always_pass(*args,**kwargs):
             return {"status":"pass","code_sha256":"a"*64,"image_id":"fixture","packet_sha256":"c"*64}
+
         result=qualify(spec,{"b"*64:{"text":"0 1 2"}},{},scorer=always_pass)
         self.assertEqual(result["status"],"rejected")
         for field in ("case_id","expected_status","group"):

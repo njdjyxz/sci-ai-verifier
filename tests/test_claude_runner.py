@@ -12,8 +12,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import (ClaudeCode, SUBJECT_SKILL, isolated_environment,
-    parse_events, prepare_workspace, run_process, stage_skill)
+    parse_events, prepare_workspace, refusal_category, run_process, stage_skill)
 from sci_ai_verifier.common import Fault, canonical
+
+
+NEWLINE = bytes([10])
 
 
 def stream(session, *, skill=SUBJECT_SKILL, failed=False, output="42", tool="Skill"):
@@ -119,6 +122,35 @@ class RunnerTests(unittest.TestCase):
             run_process([sys.executable, "-c", "import sys; sys.stdout.write('x'*100000)"], cwd=temporary,
                         env=dict(os.environ), prompt="", timeout=5, max_bytes=1000)
         self.assertEqual(caught.exception.code, "claude_output_limit")
+
+    def test_output_survives_a_grandchild_holding_the_pipe_open(self):
+        """A complete answer must not be discarded because a reader is still parked.
+
+        Claude Code launches the subject MCP server as its own child, which inherits the
+        stdout handle and can outlive it. The pipe then stays open after Claude Code exits,
+        with the full reply already buffered. Run e035eef6 threw away a correct subject
+        answer exactly this way and lost the twelve trials that were queued behind it.
+        """
+        grandchild = "import time; time.sleep(3)"
+        child = ("import subprocess,sys; sys.stdout.write('COMPLETE-OUTPUT'); sys.stdout.flush(); "
+                 "subprocess.Popen([sys.executable,'-c'," + repr(grandchild) + "])")
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch("sci_ai_verifier.claude_runner.DRAIN_GRACE_SECONDS", 0.3):
+                code, out, _ = run_process([sys.executable, "-c", child], cwd=temporary,
+                                           env=dict(os.environ), prompt="", timeout=10)
+        self.assertEqual(code, 0)
+        self.assertIn(b"COMPLETE-OUTPUT", out)
+
+    def test_a_safety_refusal_is_recognised_and_an_ordinary_stream_is_not(self):
+        refusal = canonical({"type": "system", "subtype": "model_refusal_no_fallback",
+                             "api_refusal_category": "bio"})
+        joined = NEWLINE.join([refusal, stream("session")])
+        self.assertEqual(refusal_category(joined), "bio")
+        # A refusal event without a category is still a refusal, not a crash.
+        bare = canonical({"type": "system", "subtype": "model_refusal_fallback"})
+        self.assertEqual(refusal_category(bare), "unspecified")
+        self.assertIsNone(refusal_category(stream("session")))
+        self.assertIsNone(refusal_category(b"not json at all"))
 
     def test_real_process_receives_stdin_without_shell(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -537,6 +537,10 @@ The verifier agent is never given arbitrary shell execution, arbitrary Python ex
 The same limit applies to the subject side. The agent selects and configures an approved subject runner within its declared bounds; it does not supply a subject-runner implementation, an arbitrary model endpoint, a prompt wrapper of its own, or any instruction that reaches the subject outside the audited configuration. A subject runner that could be steered per case by the agent would let the orchestrator shape the evidence it is about to grade, which is the exact independence the evidence rubric is measuring.
 
 `read_snapshot_file` is not an exception to the filesystem rule. It reads one recorded entry of one committed snapshot by manifest path, and reaches nothing else on disk.
+
+`load_submitted_skill`'s `source_path` confirms the path authorized at bootstrap; it never selects what is read, because the snapshot always uses the pinned path. A mismatch is fatal in the historical Desktop profiles, whose pinned contracts describe it that way. In the local profile it is repairable: the refusal names the correct path in `repair_fields`, the run stays in `created`, and the planner retries with it. Making it fatal there taught the caller the answer at the moment it could no longer use it.
+
+`get_verifier_context` returns a bounded header, never the bulk. The header carries committed state, the current token, `authorized_parameters.source_path`, an `instructions` index of identity/digest/bytes for every pinned document, `fetchable_sections`, and `omitted_sections` for anything that would not fit. Supplying `section` returns one named part -- a pinned instruction document or a committed artifact such as `manifest`, `snapshot`, `report`, `local_work`, `local_artifacts`, `local_configuration` or `operational_outcomes` -- with its `trust_class`, `bytes_total` and a `truncated` flag when it exceeds the run's read limit. An unknown name returns `unknown_context_section` and lists the valid ones. The control neither advances the workflow nor rotates the token.
 ## Local profile tools
 
 All operations below require the current `run_id`, `state_token` and `claim_id`.
@@ -551,16 +555,59 @@ The Local profile matrix in workflow.md governs their legality.
   limitations and at least three source-backed cases. Python checks provenance,
   controls and fixed comparison rules. Save qualified_local or rejected evidence.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
-  and its resources to this claim with a semantic applicability explanation.
-  Never imply reviewed scientific approval. Enter local_ready.
+  and its resources to this claim, propose `target_grade` A, B or C, and justify it
+  with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
+  `stronger_grade_considered`. Python computes the strongest grade its own recorded
+  facts support for that design. Exactly two proposals are legal: that ceiling, or
+  the grade the last critique of that same design supported. `local_grade_proposal_refused`
+  names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling` or
+  `no_supported_execution_grade` — and spends no session. A permitted proposal starts a
+  fresh independent critique session, which receives earlier reviewers' objections but
+  never their grades, and may only lower the grade.
+  `local_plan_fixed` freezes the plan, its settled ceiling and that critique, and
+  enters local_ready; accepting the grade an unchanged design was already critiqued at
+  settles there directly without a new session, including when that critique supported
+  no grade. `local_grade_revision_required` keeps the claim in local_discovery with the
+  critique's supported grade, objections, required revisions and remaining rounds.
+  `local_design_unchanged` refuses a repeated proposal on a design already critiqued,
+  spending neither a session nor a round, so only real revisions consume the budget.
+  `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round the
+  critique's grade is settled rather than offered. An unavailable critique is an
+  operational limitation, never a grade.
+
+  The critique and documentary assessment are free-form model replies, so Python
+  fixes their wire shape rather than inferring it. A critique returns one JSON object
+  holding `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (one string per
+  rubric criterion, in that order, and at most eight in total), `objections` and
+  `required_revisions` (each a list of at most eight strings, empty when there are
+  none). An assessment returns `status`, `findings`, `citations` and `limitations`,
+  where `limitations` is a single string. Python accepts a Markdown code fence around
+  the whole reply, a lone string in place of a one-item `required_revisions` list, and
+  findings beyond the rubric's criteria, because none of those changes what the session
+  said: the criteria are a floor, so every question is still answered in order and a
+  further observation is kept rather than costing the review. Fewer findings than
+  criteria is refused, and so is anything else. A reply outside that shape is
+  `critic_response_invalid` or `assessor_response_invalid` — an operational failure,
+  never a grade and never a scientific finding.
 - `execute_local_claim`: in local_ready, run every fixed case for its audited trial count in fresh
   answer-blind subject session, save requests before invocation, and score returned
   observations. No uncertain trial retries. Produce a result or operational record.
-- `record_local_limitation`: in a nonterminal local claim, save a bounded code and
-  explanation and continue independent claims.
+  A provider safety refusal is recorded as `subject_refused`, naming the refusal
+  category, and is never retried: the case input is frozen, so the identical request
+  refuses again. A refusal reports that the provider would not answer, never that the
+  claim failed, and the trials it costs stay missing rather than being replaced —
+  substituting fresh cases for refused ones after execution has begun would reshape
+  coverage around whatever the provider happens to allow. Recovering that coverage
+  requires a new plan, proposed and critiqued like any other.
+- `record_local_limitation`: in local_lookup, local_discovery or local_documentary,
+  save one of the named planner limitation causes with an explanation and continue
+  independent claims. It is illegal in local_ready: a settled executable plan is
+  ended by executing it, not by assertion. Records carry `asserted_by` so a report
+  distinguishes a planner-ended claim from a failure Python observed.
 - `write_report_card`: in reporting, derive JSON and Markdown from all terminal
   claims. Comparison status is separate from scientific verdict and grade under
-  the independently authorized policy. Pin qualification, scope and limitations.
+  the installed policy. Pin qualification, scope, the settled grade negotiation and
+  limitations.
 ## Additional local resource and evaluator tools
 
 Resource tools are legal in local_discovery/local_documentary; evaluator
@@ -584,12 +631,20 @@ token and claim binding. The workflow matrix is authoritative.
 accepts bounded quote/reference pairs and limitations, pins a packet containing
 the exact claim and installed rubric, and starts a fresh host-selected assessor
 session. It excludes the planning conversation, proposed verdict and subject
-answers. Python validates the JSON assessment and exact citations. A reviewed
-operator authorization of the rubric is required for D; absent authorization is
-reported as an ungraded documentary assessment. Assessor unavailability is an
+answers. Python validates the JSON assessment and exact citations. A completed
+assessment against the installed rubric is grade D with the assessor's status; no
+operator authorization is required and none would make the conclusion more than
+documentary. Synthetic fixture runs stay ungraded. Assessor unavailability is an
 operational outcome. The planner cannot replace the assessor's verdict.
 
-`record_local_unverified` is legal in those same states only after catalog lookup
-and an explicit evidence-search account. It means no acceptable A-through-D
-evidence was found, not that an operation failed. It preserves any comparison
-evidence and records U/inconclusive; failures must use record_local_limitation.
+`record_local_unverified` is legal in those same states. It means no acceptable
+A-through-D evidence was found, not that an operation failed. It preserves any
+comparison evidence and records U/inconclusive; failures must use
+record_local_limitation.
+
+Both require the claim's catalog lookup, at least one reference Python retrieved
+or one recorded qualification attempt for this claim, and no candidate qualified
+*for this claim* left unexecuted. A catalog candidate from lookup may belong to
+another scope, so whether it applies here stays a planner judgment. The search
+account is the planner's explanation of evidence Python saw it gather, not a
+substitute for gathering it.

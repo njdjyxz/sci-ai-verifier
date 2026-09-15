@@ -30,10 +30,14 @@ Version 0.7.0 implements the local workflow and awaits manual live acceptance. I
 documented in `skills/scientific-verifier/references/local-contract.md`.
 `verify` and `serve-local` provide one public action; Claude Code owns the planner
 loop and fresh subject sessions. Python owns deterministic tools, bounded
-processes and saved evidence. Local candidates qualify mechanically; scientific
-status and grade require the exact independently authorized review and policy.
-Never fabricate a review, infer scientific acceptance from fixtures, or silently
-expand configured resource/app permissions.
+processes and saved evidence. Local candidates qualify mechanically.
+
+The evidence grade is an indicator of evidence strength, not an approval, and no
+human sign-off assigns one. The planner proposes the grade its design supports,
+Python refuses any proposal its own recorded facts cannot carry, and a fresh
+critique session that never saw the planning may only lower it. Seek the strongest
+justified grade; aiming low is as wrong as overclaiming. Never infer scientific
+acceptance from fixtures or silently expand configured resource/app permissions.
 
 The earlier Stage 2/3, chemical verification and same-chat demo code is preserved
 for compatibility. Demo is explicit, not the product default. Existing fixtures
@@ -52,7 +56,8 @@ If a change touches tool legality, edit the matrix in `workflow.md` and the tool
 
 ## Rules specific to this project
 
-- `tmp/legacy_fixed_workflow/` is a preserved Python-controlled implementation kept for reference only. Do not restore it, import from it, or let it become a competing workflow controller. Migrating a single deterministic behavior out of it is fine once the new contract covers that behavior.
-- Registries under `registry/` hold **reviewed** entries only. Local runs autonomously write mechanically qualified candidates to `.verifier/candidates/` and historical provisional records to `.verifier/registry/`. No local tool writes to `registry/`. Future authorized contribution automation may propose reviewed changes through the qualification/release policy; agent authorship alone grants no scientific approval.
+- The old Python-controlled implementation under `tmp/legacy_fixed_workflow/`, the `reviews/` records and the superseded `evaluators/chemical_mass/` helper were deleted on 2026-09-15 and live only in Git history. Do not restore them or let an old design become a competing workflow controller.
+- Registries under `registry/` hold **reviewed** entries only. Local runs autonomously write mechanically qualified candidates to `.verifier/candidates/` and historical provisional records to `.verifier/registry/`. No local tool writes to `registry/`.
+- Catalog contribution runs in this order: the agent prepares and checks, the agent opens a draft PR, a person reviews it there, the agent addresses the comments, and the person accepts by merging. Do not reintroduce a human sign-off gate before the PR. Nothing the agent prepares confers scientific approval, and no command merges.
 - Everything is content-addressed. `.gitattributes` pins LF endings; do not add a file or tool that reintroduces platform-dependent bytes.
 - Grade and status are independent axes. A change that lets operational success produce a scientific `pass`, or that lets an evidence grade imply a verdict, is a bug regardless of how the tests read.

@@ -42,7 +42,7 @@ Prior work summarized for this first entry:
 - Preserved the previous implementation under `tmp/legacy_fixed_workflow/` and kept the active project focused on the new specification.
 - Completed multiple review rounds and addressed nine workflow problems in commit `59a0b62`, including claim-local fallback, resource repair and lock ownership, trial grading, independent documentary assessment, and untrusted source handling.
 - Recorded the user's decisions to use audited claim-specific trial thresholds and to allow documentary-only D without a subject runner, while still requiring an approved documentary capability and an independent assessor.
-- Added the [review guide](reviews/REVIEW-GUIDE.md), covering document purposes, loading stages, review order, and scenarios to check.
+- Added the [review guide](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/REVIEW-GUIDE.md), covering document purposes, loading stages, review order, and scenarios to check.
 - Consolidated the branch histories into `main` and pushed the specification and review guide to GitHub through commit `5b9d66b`.
 - Earlier validation covered document links, tool/transition consistency, JSON examples and registries, formatting, and scenario walkthroughs. The official skill validator could not run because PyYAML was unavailable; equivalent structural checks were used. These checks do not establish that the future runtime works.
 
@@ -253,16 +253,16 @@ Stage 2 retains its recorded app evidence and unresolved conversation-only follo
 - At the user's request, expanded [the installation and testing guide](desktop/INSTALL.md) with a folder map, separate input/result folders, copyable fixture and resume/cancel prompts, expected artifacts, personal-submission instructions, limits, troubleshooting, and update behavior. Checked Anthropic's current installation and skill-upload documentation. The guide now recommends copying fixtures into `D:\Su Lab\verifier-submissions`, so personal skills can be added beside them without reinstalling. This replaces the earlier first-test setting pointing directly into repository examples. Documented the required path edits if using the older generated manual-config example. Rebuilt packages to include the guide; no folders were created outside the repository and no app setup was performed.
 - Investigated the user's first app attempt after Claude reported no verifier tools. Read-only inspection found the installed scientific-verifier extension in Claude's Windows Store app data with `isEnabled: false`. Its three configured paths are correct and present; the installed `agent.py`, `mcp.py`, and `storage.py` match the repaired checkout. Updated [the acceptance record](desktop/APP-ACCEPTANCE.md) with the observed discovery failure. The next step is enabling the extension in Claude and retrying a fresh Chat. The app's separate Add folder permission is not required by this runtime, which reads through its configured submission root. No app settings were edited, no process was restarted, and no substitute verification record was created.
 - Later today, verified the user's completed tests and replaced the earlier discovery-blocked status with actual results in [APP-ACCEPTANCE.md](desktop/APP-ACCEPTANCE.md). The extension is now enabled. Its installer hash matches the package used (`1fdc67adad4042279c54ec2fbd81d6e518f98b9b014e4cce0adc6deb543130f1`), and all 21 installed payload files match that archive. The user confirms the visible model label **Opus 5** and that resume occurred in a new Chat; exact model identity remains unavailable.
-- Independently checked **four runs, 15 events, and 21 distinct committed objects**: event linkage/digests, token/state/budget consistency, immutable source bytes, prior delivery of exact quotes, claim/manifest identities, projections, finalization, and resume context. All mechanical checks pass, with claim counts 1/0/1/1 for reference/no-claims/conflict/resume. All runs stop at `stage2_complete` with `verification_complete: false`. The audit preserved all 52 managed-data files byte-for-byte and called no runtime controls. See [the machine-readable audit](reviews/stage2-acceptance-2026-09-10.json) for run IDs, paths, event digests, and precise scope. No developer suite rerun or substitute model run was needed for this inspection.
+- Independently checked **four runs, 15 events, and 21 distinct committed objects**: event linkage/digests, token/state/budget consistency, immutable source bytes, prior delivery of exact quotes, claim/manifest identities, projections, finalization, and resume context. All mechanical checks pass, with claim counts 1/0/1/1 for reference/no-claims/conflict/resume. All runs stop at `stage2_complete` with `verification_complete: false`. The audit preserved all 52 managed-data files byte-for-byte and called no runtime controls. See [the machine-readable audit](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/stage2-acceptance-2026-09-10.json) for run IDs, paths, event digests, and precise scope. No developer suite rerun or substitute model run was needed for this inspection.
 - Recorded one extraction-fidelity follow-up: resumed run `125ceb03-30a0-446a-841c-84138ed0718b` adds an isotope-selection definition to `expected_behavior` that the fixture does not provide. The primary claim and quotation remain correct; this is a source-grounding observation, not a judgment of the definition's scientific truth or a resume/storage failure. Preserve the original manifest and tighten guidance before treating that extra definition as a submitted requirement. The conflict manifest's self-report that no outside tools were used is not independent evidence; the user is unsure how to identify such calls, and no matching local transcript was available. That one app-behavior check remains pending.
 - Product direction clarified in the intervening discussion: the user wants one public **verify this skill** action, with claim extraction and other stages kept internal rather than offered as standalone features. The long prompts are development acceptance instructions. Restart-first recovery was discussed as a simplification; no resume/cancel function was removed and no public-interface redesign was implemented. The existing Stage 3 scope covers routing and catalog lookup only; evaluation planning/execution, assessment, and reporting require additional implementation phases before full verification is available.
 
 - Implemented the dedicated [Stage 3 contract](skills/scientific-verifier/references/stage3-contract.md) with matching state/tool and artifact updates. New desktop runs use Stage 3; Stage 2 remains an explicit operator profile and older completed runs are never reopened. Tightened extraction guidance so absent behavior/scope stays `Not specified`, including isotope conventions; preserved all original app manifests.
 - Added [catalog verification](src/sci_ai_verifier/catalog.py), [routing](src/sci_ai_verifier/routing.py) and the [release utility](scripts/catalog_release.py). Downloads use this project's fixed GitHub repository, exact commit and independently supplied manifest digest; assets/interfaces are verified before activation, offline caches require exact receipts, and active runs use immutable objects. No model-triggered downloads or runtime writes to reviewed registries exist. Initial `catalog/` mirrors the empty reviewed registries; it is local and unpublished.
 - Added three routing tools, atomic complete-manifest assignment, run-local provisional types, strongest-grade lookup, registered preference, A-C interface pairing and D fallback without a runner. Missing implementations/runners produce distinct claim-local operational artifacts while other claims continue. Lookup results are bounded, carry exact version/resource pins and never produce a scientific verdict.
-- Prepared [the chemical mass pilot](reviews/CHEMICAL-MASS-PILOT.md), three provisional type definitions, two provisional capability descriptions, NIST isotope reference values, a narrow candidate formula parser and per-trial numeric scorer. Boundary, known-answer and deliberately wrong-observation tests pass. These helpers are not installed, approved or connected to a subject runner; no submitted skill has been evaluated by them.
+- Prepared [the chemical mass pilot](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/CHEMICAL-MASS-PILOT.md), three provisional type definitions, two provisional capability descriptions, NIST isotope reference values, a narrow candidate formula parser and per-trial numeric scorer. Boundary, known-answer and deliberately wrong-observation tests pass. These helpers are not installed, approved or connected to a subject runner; no submitted skill has been evaluated by them.
 - Added [the full-project completion checklist](https://github.com/njdjyxz/sci-ai-verifier/blob/a8d6045657c5a2a10fdfb4f9ec139f60b73e31f2/reviews/PROJECT-COMPLETION.md) and [0.3.0 installation guide](desktop/STAGE3-INSTALL.md), refreshed README and built the MCPB/skill ZIP. The single public action remains **verify this skill**; extraction and routing are internal steps. No installed app settings, original app data or legacy files were changed.
-- Validation: the expanded suite contains **77 tests; 75 passed and two skipped** on Python 3.14 and bundled Python 3.12. The skips remain actual Python 3.11 availability and privileged symlink creation. Both extracted-package profiles and archive reproducibility pass. The new reader's compatibility validator also accepts the four original 0.2.0 app journal states through a read-only inspection; this is not a new live resume test. See [Stage 3 validation](reviews/stage3-validation-2026-09-10.json) for precise evidence and limits.
+- Validation: the expanded suite contains **77 tests; 75 passed and two skipped** on Python 3.14 and bundled Python 3.12. The skips remain actual Python 3.11 availability and privileged symlink creation. Both extracted-package profiles and archive reproducibility pass. The new reader's compatibility validator also accepts the four original 0.2.0 app journal states through a read-only inspection; this is not a new live resume test. See [Stage 3 validation](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/stage3-validation-2026-09-10.json) for precise evidence and limits.
 - All Stage 3 source and documentation changes remain local, uncommitted and unpushed. Remote transport success is fixture-tested; no newly published GitHub catalog or live 0.3.0 app test is claimed. Maintainer/scientific review of the seed collection remains required before promotion.
 
 ### Contract organization and lifecycle
@@ -279,7 +279,7 @@ Preserve the earlier limitations: instruction-conflict Chat tool activity remain
 
 ### Suggested next move
 
-Review the [chemical mass pilot](reviews/CHEMICAL-MASS-PILOT.md) and [completion checklist](https://github.com/njdjyxz/sci-ai-verifier/blob/a8d6045657c5a2a10fdfb4f9ec139f60b73e31f2/reviews/PROJECT-COMPLETION.md), then connect the first scientifically reviewed evaluator to a controlled subject runner through the existing plan/audit contracts. Keep Stage 3 acceptance separate from scientific performance. The earlier suggestion to rerun Stage 2 fixtures remains superseded by their recorded evidence.
+Review the [chemical mass pilot](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/CHEMICAL-MASS-PILOT.md) and [completion checklist](https://github.com/njdjyxz/sci-ai-verifier/blob/a8d6045657c5a2a10fdfb4f9ec139f60b73e31f2/reviews/PROJECT-COMPLETION.md), then connect the first scientifically reviewed evaluator to a controlled subject runner through the existing plan/audit contracts. Keep Stage 3 acceptance separate from scientific performance. The earlier suggestion to rerun Stage 2 fixtures remains superseded by their recorded evidence.
 
 ### Recommended next action
 
@@ -342,7 +342,7 @@ The final saved fixture has 9 journal events, 24 verified objects and 3 passing
 reference comparisons, with null scientific grade. Reports now show fixed inputs,
 expected values, actual outputs, references and outcomes directly. Syntax,
 active-document links and formatting checks pass. Exact evidence is in
-[local validation](reviews/local-validation-2026-09-11.json).
+[local validation](https://github.com/njdjyxz/sci-ai-verifier/blob/f7293ecec224176688ea90058b068fc01eb8bacc/reviews/local-validation-2026-09-11.json).
 
 Committed the validated integration on main as `a8d6045`, with both prior main
 `72abc24` and demo `d4f2119` as merge parents. Removed the local demo branch after
@@ -765,3 +765,486 @@ and supplies observed failures or report/log paths for inspection. Actual app
 adapters, installed scientific dependencies and independent reviews must match
 the user's real workload. Acceptance remains pending until those results are
 inspected; no universal domain coverage or real scientific approval is claimed.
+
+## Codex: 2026-09-14
+
+### Current stage and status
+
+Version 0.7.0 remains at manual acceptance. The user requested clearer upgrade
+instructions. An explanatory question about text-only operation was mistakenly
+expanded into alternative installation instructions. Following the user's
+correction, the guide retains one Docker setup path and the requested upgrade
+instructions.
+
+The first user-run glycoengineering acceptance attempt completed its planner but
+obtained zero subject observations because the internal tool server lacked model
+credentials. A local credential-handoff correction is implemented; the user's
+fresh desktop rerun is still needed to establish live subject/assessor execution.
+
+### What has been done
+
+- Expanded [upgrade instructions](LOCAL-INSTALL.md#updating-or-removing-the-connection):
+  keep dependencies, project/settings and reports; disable obsolete verifier
+  components; replace the connection only when its configuration changes; restart
+  into a fresh local Code session.
+- Removed the optional Docker discussion and alternative connection, doctor and
+  verification commands. The guide consistently prepares Docker and passes its
+  settings file. Retained the reminder that the configuration helper does not
+  overwrite existing settings.
+- Validation passed after the correction: 226 local links across 32 Markdown
+  files, syntax parsing of all 10 PowerShell command blocks, whitespace checks,
+  and CRC/source-byte checks for the rebuilt 120-entry local package. Live
+  acceptance remains the user's tests.
+- Inspected attempt `4bfdf075-cadc-46ef-b1f9-3df3b4322ae6`, run
+  `6bd0d78d-0b5e-4364-bf93-161c485fd15e`: the credential-presence preflight passed
+  and the planner completed a real 768.7-second session, but the subject and
+  documentary assessor reported `authentication_required`. The original report
+  and logs remain intact. This locates the failure after planner authentication;
+  it does not establish that the user's subscription token was absent globally.
+- Fixed the private MCP configuration to explicitly forward the selected model
+  credential and configured app credentials through environment-variable
+  references. On-disk configuration contains no credential values. Restricted
+  execution and the subject's tool and environment restrictions remain enabled.
+- Corrected the launcher regression test, which previously gave the private
+  server the entire planner environment. It now models a safe baseline plus
+  configured MCP environment expansion and probes a real child process. It
+  reproduced the missing-credential failure before the fix and passes afterward
+  for subscription/API modes, configured app credentials, unrelated-credential
+  exclusion, secret-free artifacts and recovery without replay.
+- Added separate troubleshooting guidance for missing credentials before the
+  planner starts versus missing credentials in nested subject/assessor sessions.
+  Unassigned scientific grades still require actual independent review. The two
+  reported source-scope/citation gaps remain findings to assess on a live rerun;
+  no submitted skill or scientific approval was changed to force acceptance.
+- Full regression suite after the handoff fix: **189 tests, 187 passed and 2
+  skipped**, in 67.228 seconds. The skips still require Python 3.11 and physical
+  symlink privilege. The focused regression demonstrated the failure before the
+  fix; these checks do not use live model credentials or establish live acceptance.
+
+### Urgent next steps, if any
+
+Restart Claude fully and repeat the user's glycoengineering test from the skill
+directory with the corrected local source. Retain the existing connection,
+token, Docker settings and failed report. Live nested-session authentication is
+not proven by the offline regression check.
+
+### Suggested next move
+
+Confirm that the new run obtains real subject observations and completes the
+independent documentary assessments. Address any remaining resource or execution
+failure from its actual error before proceeding to the other four example skills.
+
+### Recommended next action
+
+Use the existing `verify_skill` connection in a fresh local Code session, submit
+the complete glycoengineering folder, and inspect the new report/log paths.
+Scientific grade authorization and source corrections are separate from repairing
+the authentication handoff; neither should be invented during troubleshooting.
+
+## Claude: 2026-09-15
+
+### Current stage and status
+
+Version 0.7.0 still awaits manual live acceptance. This session was a requested
+repair and full code review of the working tree. Three design defects were fixed,
+dead files were removed, and the review findings below are recorded with what was
+changed for each. Nothing here establishes live or scientific acceptance.
+
+The largest correction is conceptual. Grade assignment previously required an
+operator to enter a human review record, so with the shipped empty defaults **every**
+local run produced `evidence_grade: null`: the product could not deliver its own
+output. The grade is now what the user designed it to be, an indicator of how
+gold-standard the evidence is, settled by the runner's own recorded facts and an
+independent critique. No human sign-off assigns a grade anywhere.
+
+### What has been done
+
+**1. The grade is negotiated, not authorized.**
+
+- Rewrote [local_science.py](src/sci_ai_verifier/local_science.py) around
+  `evidence_ceiling`, which derives the strongest supportable grade from facts Python
+  recorded itself: whether each expected answer came from reference bytes Python
+  retrieved over public HTTPS (`origin`, now stored on every reference record) or
+  from an operator-pinned dataset, whether the scorer is an installed comparison
+  method or planner-authored code, whether the expected value is a complete token of
+  its quote rather than a substring, the distinct case count, and the trial count.
+  Previously A, B and C were indistinguishable in code: `decide` simply picked the
+  strongest letter a human review had listed, so the rubric's actual distinctions
+  were documented and unenforced.
+- `select_local_candidate` now takes `target_grade` and five justification fields and
+  runs the loop the user specified: propose, critique, revise, settle.
+  `documentary.critique` runs a fresh no-tool session that never saw the planning and
+  may only lower the grade. Disagreement returns `local_grade_revision_required` with
+  the objections and required revisions. Every round's audit is kept in
+  `negotiation_refs`.
+- Following the user's review of that first design, the negotiation was tightened in
+  this same session. The user identified that a fresh critique sees nothing from
+  earlier rounds, so the loop terminated on a counter without converging on anything:
+  each round's reviewer could object on new grounds, and the final grade was whatever
+  the last one happened to say.
+  - **One proposal is legal per design.** `proposal_problem` requires the proposal to
+    be the evidence ceiling, with one exception in the next point. Aiming below the
+    ceiling is refused (`below_evidence_ceiling`) just like overclaiming, because
+    understating the evidence misreports it equally. The user's stated reasons for
+    proposing lower — no suitable evaluator for a stronger grade — are already what the
+    ceiling computes, so nothing legitimate is lost. "The test bundle was too harsh" was
+    deliberately **not** accepted as a reason: difficulty is not evidence strength, and
+    discounting the grade because the skill failed a fair test would be fitting the
+    grade to the answer. An A-grade failure is the strongest output this tool produces.
+  - **Accepting settles immediately.** Proposing the grade this exact design was already
+    critiqued at ends the negotiation with no second session, since re-running the same
+    judgment on the same evidence buys nothing. The accepted value is clamped to the
+    ceiling. A critique that supported no grade is accepted the same way: the plan still
+    executes, produces ungraded comparison evidence, and continues to the documentary
+    path.
+  - **A round costs a real revision.** Re-proposing on a design already critiqued
+    returns `local_design_unchanged` and spends neither a session nor a round. Only a
+    changed candidate earns a new round, which is what makes a larger budget safe.
+  - **Objections carry forward, grades do not.** Each new critique receives the concerns
+    earlier reviewers raised about earlier versions of the design and a rubric criterion
+    requiring it to say, for each, whether this version answers it. No earlier grade is
+    supplied: a reviewer shown "the last one said C" has an easy answer available, which
+    is the anchoring the fresh session exists to avoid. The objections come from Python's
+    stored audits, so the planner cannot restate them. The separation is imperfect and
+    the contract says so — an objection can imply a grade it does not name.
+  - **One round per rubric grade.** `MAX_ROUNDS = len(GRADES)` is 5, per the user's
+    instruction. The count is a policy choice bounded by session cost, not a derivation;
+    what makes it safe is that rounds are spent only on real revisions. The installed
+    policy is now `evidence-strength-v2` and the critique rubric
+    `local-evidence-critique-v2`, both with new digests recorded in every audit.
+  - On the last permitted round the critique's grade is settled rather than offered, and
+    the settled grade always describes the plan that will execute, never a stronger
+    design that was discarded.
+- A planner-authored Python evaluator is capped at B, because the rubric's A row
+  excludes AI judgment from scoring. This was not enforced before.
+- Grade D no longer needs `documentary_review`: a completed independent assessment
+  against the installed rubric **is** grade D with the assessor's status.
+- Deleted the `scientific_reviews` and `documentary_review` settings, their
+  validators and their fixtures. Synthetic fixture runs still receive no grade, and
+  the verdict rules are unchanged, including unanimous failure being as eligible as
+  unanimous success.
+
+**2. Catalog contribution reviews after the pull request, not before it.**
+
+The old order put the human first: export required a written redistribution
+authorization, `publish` required `--approve-publication`, and a release could not
+even be built without one `independent: true` human review record per candidate.
+The PR was the *result* of review. There was also no way to address review comments:
+`publish` returned early once a PR existed, and the branch name was derived from the
+bundle digest, so a corrected bundle opened a *second* PR.
+
+- Rewrote [catalog_publication.py](src/sci_ai_verifier/catalog_publication.py): the
+  branch is derived from the proposal identity, republishing an unchanged file pushes
+  nothing, and a changed file commits a revision onto the same branch and pull
+  request. A branch the receipt did not create is still never overwritten, nothing
+  merges, and the lost-reply reconciliation is retained.
+- Added a read-only `review` command that returns the pull request state, reviews and
+  inline comments so the agent can act on them.
+- [catalog_release.py](src/sci_ai_verifier/catalog_release.py) now takes one prepared
+  assessment per candidate carrying `propose_for_catalog` or `propose_retirement` and
+  an explicit `scientific_approval: not_conferred`. Requalification still runs before
+  a release can exist. Bundle and release schemas were bumped to 2, since their field
+  sets changed; no version 1 bundle or release was ever published.
+
+**3. Removed files that were outdated and unused.**
+
+`tmp/legacy_fixed_workflow/` (15 files), `reviews/` (6 files), the superseded
+`evaluators/chemical_mass/` helper and its test — that test only covered the dead
+helper; [test_verification.py](tests/test_verification.py) already tests the same
+expected values against the installed method. Untracked `dist/` build output was
+cleared. Links into the removed paths became commit-pinned permalinks at `f7293ec`,
+matching the precedent set on 2026-09-11. The Desktop install guides were kept: the
+historical profiles still work and those are human guidance. Nothing else was
+removed; the stage2/stage3/verification/demo profiles remain functional, as the user
+chose.
+
+**4. Code review findings.**
+
+Misleading steps:
+
+- SKILL.md announced "Version 0.6.0" while the runtime is 0.7.0 — corrected.
+- `tests/test_desktop_package.py` hardcoded `0.6.0` in the artifact filename and in
+  its `serverInfo` assertion, while the builder names files from the manifest version.
+  **These five tests were passing against a stale 0.6.0 package left in the ignored
+  `dist/` directory, not against current source.** They now read the built version,
+  and the module puts `src` on its own path instead of depending on another test
+  module having done it.
+- `local_candidates.fetch_bytes` sent `User-Agent: scientific-verifier-local/0.6` —
+  now derived from `__version__`.
+- The planner prompt was one 700-character run-on sentence that was the only
+  statement of step order and never mentioned seeking the strongest grade. It is now
+  a numbered `PLANNER_PROMPT` constant.
+- README pointed at the 2026-09-12 entry as "the current log".
+
+Gates that were too wide:
+
+- `record_local_limitation` accepted any planner-invented `code` string in any
+  nonterminal state, so a planner could abandon every claim with one call each and
+  still reach `write_report_card`. The code is now an enumerated set of planner
+  causes, the record carries `asserted_by` so the report distinguishes an abandoned
+  claim from an observed failure, and the tool is no longer legal in `local_ready`:
+  a settled executable plan is ended by executing it.
+- `record_local_unverified` (grade U) and `assess_local_documentary` (grade D) were
+  reachable from `local_discovery` behind a single `list_local_candidates` call, so a
+  planner could publish a U verdict or a documentary conclusion without retrieving
+  one reference. Both now require evidence Python actually observed — a retrieved
+  reference or a recorded qualification attempt — and both are refused while the
+  claim still holds a qualified candidate it never executed
+  (`stronger_evidence_available`).
+- `execute` treated its plan audit as optional (`if work.get("audit_ref")` twice). If
+  an audit were ever absent the trials ran and grading was skipped silently. It now
+  fails closed.
+- `documentary_step` applied its runtime/assessor-identity check to
+  `record_local_unverified`, which does not use an assessor, while the evidence gate
+  it actually needed was missing. The check now applies only to the assessment path.
+- An illegal local claim transition was raised inside `local.operate` as a retryable
+  fault, so it decremented `retries_remaining` instead of
+  `illegal_transitions_remaining`. The check is now in the dispatcher next to the
+  equivalent verification-profile check.
+- The `exact` comparison method's only negative control was the expected value with a
+  suffix appended, which tests that `==` works and nothing else. It now also probes a
+  prefix and a truncation.
+
+Claude-standards problems in the Codex-authored code:
+
+- `tools.py` decided dispatch with `name in WORKFLOW_TOOLS[6:]`, a positional slice of
+  a tuple. Inserting a tool in the wrong position would have silently rerouted it.
+  Replaced with a named `PLAN_TOOLS`.
+- `scientific.implementation_bytes` — a generic runtime-integrity primitive — lived in
+  the chemical-pilot module and was imported from there by the local profile. Moved to
+  [storage.py](src/sci_ai_verifier/storage.py).
+- The two independent-session paths duplicated their process plumbing; factored into
+  `documentary.isolated_answer`.
+- `common.validate` had no `enum` support, so an enumerated argument could only be
+  checked by hand inside each operation. Added, and the published tool schemas now
+  carry the enumerations the planner must satisfy.
+- Not fixed, and recorded here deliberately: six modules
+  (`local_science`, `local_evaluators`, `local_resources`, `documentary`,
+  `local_catalog`, `catalog_publication`) are written without spaces after commas
+  while `common`, `agent`, `tools`, `claims` follow PEP 8, and several files mix both
+  styles line by line. Validators are single `if` statements with up to twenty `or`
+  clauses reporting one generic message for twenty distinct causes, so an operator
+  cannot tell which field was wrong. Function-local imports are used as the default
+  style rather than to break real cycles. Blanket
+  `except (KeyError, TypeError, ValueError, ...)` blocks turn our own programming
+  errors into user-facing "invalid input" faults. Files touched this session were
+  normalized; a repository-wide reformat is a separate change and would bury this
+  diff.
+
+Found by reviewing this session's own diff, and fixed in it:
+
+- The documentary gate first consulted the whole local catalog, so one claim's
+  qualified candidate would have blocked the documentary path for every unrelated
+  claim, including claims that can never be executed. Scoped to candidates qualified
+  for that claim; whether a catalog candidate from another scope applies stays a
+  planner judgment.
+- The critique rubric permits `D`, and `weaker("A", "D")` returns `D`, so a critique
+  answering D would have stamped a documentary grade onto a comparison record
+  produced by actually executing the subject. A critique naming D or none now settles
+  at no execution grade, which routes the claim to the documentary path where D is
+  established.
+- An over-proposal was raised as a retryable fault, which spends the run's shared
+  eight-retry repair budget. Over-proposing is expected during negotiation, so it is
+  now the ordinary outcome `local_grade_above_evidence_ceiling`, which reports the
+  ceiling and its limiting reasons and leaves the claim in discovery.
+- Deleting the two settings keys broke every settings file already written by
+  `configure_local.py`, with a message that named nothing. The fault now names the
+  unsupported keys and says those two were removed, and the upgrade guide documents
+  the one-line edit.
+- A revision pushed after a reviewer's merge deleted the head branch patched a ref
+  that no longer existed and failed identically on every retry. An absent ref that
+  this receipt created is now recreated.
+- `decide()` returned `evidence_ceiling` holding the *settled* grade while the plan
+  audit's field of the same name holds the *mechanical* ceiling. Renamed to
+  `settled_ceiling` so one field name does not carry two meanings across records.
+- Found while reviewing the tightened negotiation: accepting a critique that supported
+  no grade was blocked by the final-round guard, leaving the claim stuck in discovery
+  with no legal move at all. A critique naming a grade *stronger* than the ceiling made
+  the design permanently unselectable, because the only acceptable proposal was one the
+  ceiling then refused. Both fixed and covered by tests.
+- `scripts/local_catalog.py` caught only `Fault`, `OSError` and `ValueError`, so an
+  unexpected GitHub response shape printed a traceback instead of an unavailable
+  status.
+
+**5. Validation.**
+
+- Full suite: **212 tests, 210 passed, 2 skipped**, in 83 seconds. The skips still
+  require Python 3.11 and physical symlink privilege. New coverage: evidence ceilings
+  per rubric row, a proposal above the ceiling refused before a critique runs, the
+  critique lowering a grade and the planner settling at what it supports, round
+  exhaustion, a critique supporting no grade, an unavailable critique as an
+  operational limitation, grade D with no operator review, and each narrowed gate.
+  A retrieved oracle with an agreeing critique reaches grade A with no human step,
+  and a deliberately wrong skill earns the same grade with a failing verdict. The
+  tightened negotiation adds: a below-ceiling proposal refused, accepting a critique
+  with no second session, arguing on an unchanged design spending neither session nor
+  round, a changed design earning a round whose packet carries the prior objections and
+  no prior grade, a critique above the ceiling still capped, and one round per grade.
+  Publication coverage now includes opening without a sign-off, lost-reply
+  reconciliation, revising the same PR, recreating a branch the reviewer deleted,
+  refusing a foreign branch, and reading review comments.
+- `python scripts/run_local_fixture.py` completes and its report shows the proposal,
+  the ceiling, the limiting reason and no grade for a synthetic subject.
+- 196 local Markdown links across 30 files resolve, including anchors.
+- **These are fixture and offline checks. No live Claude Code session, container, app
+  adapter or real scientific source was exercised, and no grade produced by this code
+  has been observed on a live run.**
+
+**6. Cleared the previous live-test data, at the user's request, for a fresh start.**
+
+Deleted from the ignored `.verifier/` workspace: the attempt logs, run journals and
+reports, subject-run receipts, the content-addressed object store, and all seven
+candidates saved by earlier live runs -- the glycoengineering SNFG, IgG1 Fc Asn297,
+N-glycosylation sequon and afucosylated FcgammaRIIIA candidates, plus the bacterial
+translation-table and Bakta flag ones. Also removed accumulated fixture, package-check
+and scratch output from earlier development sessions.
+
+Two consequences to record. The 2026-09-14 entry above cites attempt
+`4bfdf075-cadc-46ef-b1f9-3df3b4322ae6` and run `6bd0d78d-0b5e-4364-bf93-161c485fd15e`
+as the evidence locating that authentication failure; **those artifacts no longer exist
+and that finding is now unverifiable from this workspace.** The finding itself stands as
+recorded, but it cannot be re-inspected. Second, the grade policy and critique rubric
+digests changed in this session anyway, so no candidate from those runs could have been
+reused under an audit bound to the new policy; clearing them costs nothing that was
+still usable.
+
+Kept deliberately: the five prepared example skill folders under
+`.verifier/example-downloads/prepared/`, which are test inputs rather than output, and
+`.verifier/local-settings.json`, with the two removed review keys dropped from it so it
+loads against the current configuration. Its pinned image ID, Docker path and
+`trial_count: 3` are unchanged, so grades A and B remain reachable on the next run.
+
+### Urgent next steps, if any
+
+The credential-handoff fix from 2026-09-14 is still unverified live, and the grade
+negotiation adds one more live dependency: the critique session. A verification now
+starts a fresh session per selection round, so a repeat of the glycoengineering test
+exercises planner, critic, subject and assessor authentication together. If the
+critique cannot authenticate, claims will terminate with `critic_unavailable` rather
+than silently going ungraded.
+
+### Suggested next move
+
+Rerun the user's glycoengineering test from a fresh local Code session and read the
+plan audit in the report: the proposed grade, the evidence ceiling with its limiting
+reasons, the critique's findings and objections, and the settled grade. That is the
+first real evidence about whether the negotiation produces honest grades rather than
+either overclaiming or defaulting to C. Set `trial_count` to at least 3 for A or B to
+be reachable at all.
+
+### Recommended next action
+
+Verify one skill whose claims have a genuine public numeric reference, and check three
+things in the report: that a claim whose answers were retrieved by Python and scored
+by the installed numeric method can actually reach A, that the critique's objections
+are specific to the claim rather than generic caution, and that no claim carries a
+grade while its limiting reasons say the evidence does not support one. It is finished
+when the report shows a settled grade with a recorded critique for every executed
+claim, or an operational limitation naming what failed.
+
+## Claude: 2026-09-16
+
+### Current stage and status
+
+The first live run on the new branch reached real Claude Code and **failed before
+snapshotting the source**. Run `7e74f094-ac19-4f41-999b-4b100e5e0643` closed as
+`incomplete` with `completion_reason: source_not_authorized`: zero claims, zero
+subject calls, no report. Two host-boundary defects caused it. Both are now fixed
+with tests that fail against the old behavior. Live acceptance remains pending and
+the rerun has not happened yet.
+
+### What has been done
+
+**1. An oversized context reply is invisible to the planner.**
+
+`get_verifier_context` returned every pinned contract in one reply. Measured at
+53 KB from the code and reported as 56.3 KB in the run; the CLI wrote it to a file
+and returned a preview:
+
+> Output too large (56.3KB). Full output saved to: ...\sci-verifier-controller-...
+
+The planner session has WebSearch and the internal tools only, with no file-read
+tool by design, so it could not open that file. The two values it cannot work
+without were at the **end** of the reply, after `context_blocks`, because
+`canonical` sorts keys alphabetically. It improvised: sent a deliberately invalid
+state token to make the server echo the real one back, spending 1 of 8 illegal
+transitions, then guessed `source_path: "SKILL.md"`.
+
+- `get_verifier_context` now returns a bounded header for the local profile:
+  committed state, token, `authorized_parameters.source_path`, an `instructions`
+  index of identity/digest/bytes, `fetchable_sections` and `omitted_sections`.
+  Measured **2,235 bytes** against an 8,000-byte budget, versus 53 KB before. The
+  header is checked against the budget and the run fails closed rather than emitting
+  a reply the planner may never see.
+- A new optional `section` argument serves one pinned document or committed artifact
+  at a time, sliced to the run's read limit with `bytes_total` and a `truncated` flag.
+  A closed run answers section requests too, so a committed report stays readable.
+- The launcher now delivers the pinned contracts, the authorized path and the token
+  in the planner's **prompt**, which is not subject to the tool-reply limit. The
+  happy path needs no extra round trips, and the contracts arrive once instead of
+  three times: the failed run called `get_verifier_context` three times and spent
+  $0.22 on text it could not use.
+
+**2. A repairable argument was refused fatally.**
+
+`load_submitted_skill`'s `source_path` only *confirms* the path the operator
+authorized -- `snapshot` reads `state["source_path"]` regardless, so a wrong value
+selects nothing. Yet a mismatch raised `fatal=True`, which terminates the run, and
+`load_submitted_skill` is legal only in `created`. The refusal message contains the
+correct path, so the planner learned the answer at the exact moment it could no
+longer use it.
+
+A mismatch is now repairable **in the local profile only**: the refusal keeps
+`repair_fields: ["source_path"]`, the run stays in `created`, and the existing repair
+budget bounds retries. The historical Desktop profiles keep the fatal behavior their
+pinned contracts describe, and their two Stage 2 tests still assert it unchanged --
+their caller sees the whole reply and has no blind spot. A path outside the authorized
+root stays fatal in every profile.
+
+**3. Verification.**
+
+- Full suite: **215 tests, 213 passed, 2 skipped**. Three new tests: no bootstrap
+  reply exceeds the inline budget and every pinned document is separately fetchable;
+  the prompt carries the authorized path, the token and the contract text; a wrong
+  `source_path` is retryable and the run is still usable with the correct one.
+- Both fixes were reverted temporarily to confirm the new tests fail against the old
+  behavior. They did. A reproducer that does not reproduce is worthless.
+- Contract halves updated together per the project rule: the local matrix and
+  bootstrap prose in `workflow.md`, `load_submitted_skill` and
+  `get_verifier_context` in `tool-contracts.md`, plus the new context-delivery
+  sections in `local-contract.md` and `runtime-contract.md`.
+- **Checked, not assumed:** the spill threshold is not configurable. The installed
+  CLI (v2.1.268) recognizes 105 environment variables; the only output-size ones are
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, `MAX_MCP_OUTPUT_TOKENS` (default 25,000 tokens),
+  `MAX_THINKING_TOKENS` and `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. The message we hit comes
+  from the separate byte-based persist path, whose threshold is read from a
+  server-side feature gate. Raising `MAX_MCP_OUTPUT_TOKENS` would not have helped:
+  56 KB is roughly 14k tokens, already well under its default.
+
+**4. Why fixtures missed this.**
+
+Every test calls the runtime in-process and reads the returned dictionary. Nothing
+crossed the CLI's tool-reply boundary, so no fixture could have caught either defect.
+The manual live acceptance found both on its first real attempt, which is what it is
+for. The new budget assertion closes the gap for the size defect specifically.
+
+### Urgent next steps, if any
+
+Rerun the glycoengineering test. The two defects that stopped the previous attempt are
+fixed, but the run never reached authentication for the nested subject and assessor
+sessions, so the 2026-09-14 credential handoff and the grade critique added on
+2026-09-15 are both still unproven live.
+
+### Suggested next move
+
+Expect the rerun to fail somewhere new; that is progress, not regression. The run now
+gets past bootstrap, so the next boundary is the first real subject trial and then the
+first critique session. Read the plan audit in the report for the proposed grade, the
+evidence ceiling with its limiting reasons and the critique's findings.
+
+### Recommended next action
+
+Restart Claude fully, start a fresh local Code session, and verify the glycoengineering
+folder at `D:\Su Lab\verifier-submissions\examples\glycoengineering`. It is finished
+when the report shows a settled grade with a recorded critique for every executed claim,
+or an operational limitation naming exactly what failed.

@@ -67,7 +67,7 @@ SCHEMAS = {
     "start_inline_demo_run": obj({"source_name": string(200), "source_text": string(262144)}),
     "start_verifier_run": obj({"source_path": string(), "model_label": string(200)},
                               ["source_path"]),
-    "get_verifier_context": obj({"run_id": string(36)}),
+    "get_verifier_context": obj({"run_id": string(36), "section": string(200)}, ["run_id"]),
     "resume_verifier_run": obj({"run_id": string(36)}),
     "cancel_verifier_run": obj({"run_id": string(36)}),
     "load_submitted_skill": obj({**BASE, "source_path": string()}),
@@ -120,7 +120,7 @@ SCHEMAS = {
 DESCRIPTIONS = {
     "start_inline_demo_run": "Start a general safe-skill demo from text pasted or attached in Chat. Supply the skill text as data. No local file, catalog, API key or chemical scope is needed. Same-chat demo only.",
     "start_verifier_run": "Begin verify-this-skill for the local path explicitly submitted by the user. Default demo supports any safe skill without a catalog or API key. Returns pinned instructions, profile, run ID and token. Use start_inline_demo_run for attached/pasted text.",
-    "get_verifier_context": "Restore pinned verifier instructions, current state/token and already-read untrusted source ranges after compaction or a lost response. It does not advance the workflow or rotate the token, but it is not read-only: it repairs the readable projections, and if the resumption window has already expired it records that expiry and ends the run.",
+    "get_verifier_context": "Restore current state/token, the authorized source path and the pinned instruction index after compaction or a lost response. Supply section to fetch one named part -- an instruction document or a committed artifact -- so no single reply is too large to display. It does not advance the workflow or rotate the token, but it is not read-only: it repairs the readable projections, and if the resumption window has already expired it records that expiry and ends the run.",
     "resume_verifier_run": "Resume a saved verifier run after interruption; verify its journal and objects and restore bootstrap. No live-source reread.",
     "cancel_verifier_run": "Explicitly cancel an unfinished verifier run and save an operational outcome. Does not create a scientific verdict.",
     "load_submitted_skill": "In created state only: snapshot the previously authorized source and return exact top-level UTF-8 content as untrusted data. Use the current state token.",
@@ -153,12 +153,14 @@ DEFINITIONS = [
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}}
     for name, schema in SCHEMAS.items()
 ]
+# Named explicitly: a positional slice of this tuple used to decide dispatch, so
+# inserting a tool in the wrong place silently rerouted it.
+PLAN_TOOLS = ("commit_evaluation_plan", "find_resources", "materialize_resources",
+              "build_evaluation_bundle", "validate_evaluation_bundle", "register_evaluator",
+              "commit_plan_audit", "execute_evaluation_plan", "commit_claim_result", "write_report_card")
 WORKFLOW_TOOLS = ("load_submitted_skill", "read_snapshot_file", "commit_claim_manifest",
                   "list_claim_types", "commit_claim_type_assignments", "find_registered_evaluators",
-                  "commit_evaluation_plan", "find_resources", "materialize_resources", "build_evaluation_bundle",
-                  "validate_evaluation_bundle", "register_evaluator", "commit_plan_audit",
-                  "execute_evaluation_plan", "commit_claim_result", "write_report_card",
-                  "commit_demo_plan", "record_demo_observation", *LOCAL_OPERATIONS)
+                  *PLAN_TOOLS, "commit_demo_plan", "record_demo_observation", *LOCAL_OPERATIONS)
 
 
 def metadata(state):
@@ -259,6 +261,11 @@ class Dispatcher:
                     and arguments["claim_id"] in state["claim_states"]
                     and name not in CLAIM_TOOLS[state["claim_states"][arguments["claim_id"]]]):
                 illegal = True
+            if (state["profile"] == "local" and isinstance(arguments.get("claim_id"), str)
+                    and arguments["claim_id"] in state["claim_states"]):
+                from .local import CLAIM_LEGAL
+                if name not in CLAIM_LEGAL[state["claim_states"][arguments["claim_id"]]]:
+                    illegal = True
             try:
                 for key in state["objects"]:
                     self.store.get(key)
@@ -310,7 +317,7 @@ class Dispatcher:
             from . import demo
             data = {"commit_demo_plan": demo.commit_plan, "record_demo_observation": demo.observe,
                     "write_report_card": demo.write_report}[name](self.store, state, arguments)
-        elif name in WORKFLOW_TOOLS[6:]:
+        elif name in PLAN_TOOLS:
             from . import planning, evaluation, audit, execution, reporting
             operations = {"commit_evaluation_plan": planning.commit_plan, "find_resources": planning.find_resources,
                 "materialize_resources": planning.materialize, "build_evaluation_bundle": evaluation.build,

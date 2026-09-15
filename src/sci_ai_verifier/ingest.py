@@ -52,15 +52,27 @@ def authorize(source_path, source_root):
 
 
 def authorized_source(supplied, state):
-    """Accept any spelling of the pinned path. Only a different location is unauthorized."""
+    """Accept any spelling of the pinned path. Only a different location is unauthorized.
+
+    This argument only confirms the path the operator already authorized: `snapshot`
+    reads `state["source_path"]` regardless, so a wrong value selects nothing and
+    reveals nothing the returned message does not already name.
+
+    In the local profile a mismatch is therefore repairable. Its planner cannot read a
+    context reply the host spilled to a file, so failing fatally taught it the correct
+    path at the exact moment it could no longer use it. The historical profiles keep
+    the fatal behavior their pinned contracts describe; their caller sees the whole
+    reply and has no such blind spot.
+    """
     try:
         path = no_links(supplied)
     except Fault as error:
         raise Fault(error.code, str(error), ["source_path"], fatal=error.fatal) from None
     if path != Path(state["source_path"]):
         raise Fault("source_not_authorized",
-                    "This is not the source authorized at bootstrap. Use the path returned in "
-                    f"authorized-parameters: {state['source_path']}", ["source_path"], fatal=True)
+                    "This is not the source authorized at bootstrap. Use the exact path from "
+                    f"authorized_parameters.source_path: {state['source_path']}",
+                    ["source_path"], fatal=state["profile"] != "local")
     return path
 
 

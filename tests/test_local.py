@@ -24,8 +24,11 @@ REFERENCE = "Independent fixture reference: alpha is 1.0, beta is 2.0, gamma is 
 class Subject:
     identity = {"adapter_id": "local-fixture", "model_id": "synthetic", "synthetic": True}
 
-    def __init__(self, mode="correct"):
-        self.mode, self.requests = mode, []
+    def __init__(self, mode="correct", models=None):
+        # `models` supplies one observed_model_ids list per call, as a real adapter
+        # reports it from the CLI stream. Left None, the key is absent, which is what a
+        # subject that observed no model identity returns.
+        self.mode, self.requests, self.models = mode, [], models
 
     def observe(self, **request):
         self.requests.append(deepcopy(request))
@@ -34,9 +37,12 @@ class Subject:
         if self.mode == "unavailable":
             raise Fault("claude_unavailable", "Unavailable fixture")
         answer = {"alpha": "1.0", "beta": "2.0", "gamma": "3.0"}[request["case_input"]["input"]]
-        return {"text": "999" if self.mode == "wrong" else answer,
-                "response_id": "synthetic-" + str(len(self.requests)), "model_id": "synthetic",
-                "invocation_verified": self.mode != "unverified", "synthetic": True}
+        observation = {"text": "999" if self.mode == "wrong" else answer,
+                       "response_id": "synthetic-" + str(len(self.requests)), "model_id": "synthetic",
+                       "invocation_verified": self.mode != "unverified", "synthetic": True}
+        if self.models is not None:
+            observation["observed_model_ids"] = self.models[min(len(self.requests), len(self.models)) - 1]
+        return observation
 
 
 class LocalTests(unittest.TestCase):
@@ -70,11 +76,15 @@ class LocalTests(unittest.TestCase):
         self.claims = self.data["manifest"]["claims"]
         self.claim_id = self.claims[0]["claim_id"] if self.claims else None
 
-    def candidate(self, **overrides):
-        self.call("list_local_candidates", claim_id=self.claim_id)
-        with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(REFERENCE.encode(), REFERENCE)):
-            self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/reference", version="fixture-v1", license="Unknown; private analysis only")
-        reference_ref = self.data["reference_ref"]
+    def candidate(self, *, lookup=True, **overrides):
+        # Lookup is legal only in local_lookup, so a second qualification skips it and
+        # reuses the reference this claim already retrieved.
+        if lookup:
+            self.call("list_local_candidates", claim_id=self.claim_id)
+            with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(REFERENCE.encode(), REFERENCE)):
+                self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/reference", version="fixture-v1", license="Unknown; private analysis only")
+            self.reference_ref = self.data["reference_ref"]
+        reference_ref = self.reference_ref
         arguments = {"claim_id": self.claim_id, "name": "Fixture table", "scope": "Reference-table queries", "method": "numeric",
                      "limitations": "Fictional reference demonstrates mechanics only.",
                      "cases": [{"case_id": name, "input": name, "expected": str(index)+".0", "reference_ref": reference_ref,
@@ -84,12 +94,50 @@ class LocalTests(unittest.TestCase):
         self.call("qualify_local_candidate", **arguments)
         return self.data["candidate_ref"]
 
-    def ready(self):
+    def select(self, key, target_grade="C", **overrides):
+        arguments = {"claim_id": self.claim_id, "candidate_ref": key, "target_grade": target_grade,
+                     "applicability": "Synthetic fixture scope",
+                     "oracle_independence": "Fictional fixture table retrieved by Python, not written by the planner.",
+                     "coverage": "Three of three documented table rows.",
+                     "tolerance_basis": "Installed numeric tolerance of 1e-6.",
+                     "uncertainty": "Fixture reference carries no stated uncertainty.",
+                     "stronger_grade_considered": "One trial per case is configured, which caps this design at C."}
+        arguments.update(overrides)
+        return self.call("select_local_candidate", **arguments)
+
+    def ready(self, target_grade="C"):
         self.extract()
         key = self.candidate()
         self.assertEqual(self.data["outcome"], "qualified_local")
-        self.call("select_local_candidate", claim_id=self.claim_id, candidate_ref=key, applicability="Synthetic fixture scope")
+        self.select(key, target_grade=target_grade)
         return key
+
+    def test_a_stable_observed_model_identity_is_pinned_across_the_trial_set(self):
+        # local.py pins the first observed identity and compares every later trial to it.
+        # With no adapter reporting one, that guard has nothing to compare and never runs.
+        self.subject.models = [["fixture-model"]] * 3
+        self.ready()
+        self.call("execute_local_claim", claim_id=self.claim_id)
+        self.assertEqual(self.data["result"]["comparison_status"], "pass")
+        work = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})["data"]["local_work"][self.claim_id]
+        self.assertTrue(work["observed_models_ref"])
+
+    def test_a_model_swap_inside_one_trial_set_is_operational_not_a_result(self):
+        """A grade describes one subject. If the identity changes mid-set, there is no result."""
+        self.subject.models = [["fixture-model"], ["swapped-model"], ["fixture-model"]]
+        self.ready()
+        self.call("execute_local_claim", claim_id=self.claim_id)
+        self.assertEqual(self.data["outcome"], "subject_model_changed")
+        limitation = self.data["limitation"]
+        self.assertEqual(limitation["asserted_by"], "runtime")
+        self.assertIsNone(limitation["scientific_status"])
+        self.assertIsNone(limitation["evidence_grade"])
+        # The observations taken before the swap are kept, not discarded.
+        self.assertTrue(limitation["receipts"])
+        self.call("write_report_card")
+        record = self.data["report"]["claims"][0]["record"]
+        self.assertEqual(record["code"], "subject_model_changed")
+        self.assertIsNone(record["evidence_grade"])
 
     def test_empty_catalog_discovery_complete_report_and_offline_reuse(self):
         key = self.ready()
@@ -104,7 +152,11 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(self.data["report"]["claims"][0]["tests"][0]["observed"], "1.0")
         report_path.unlink()
         resumed = self.runtime.call("resume_verifier_run", {"run_id": self.data["run_id"]})
-        self.assertEqual(resumed["data"]["report"], self.data["report"])
+        self.assertTrue(resumed["data"]["verification_complete"])
+        report = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"],
+                                                            "section": "report"})["data"]["section"]
+        self.assertEqual(report["identity"], "report")
+        self.assertIn("local", report["content"])
         self.assertTrue(report_path.exists())
         for request in self.subject.requests:
             self.assertEqual(set(request["case_input"]), {"input"})
@@ -117,7 +169,7 @@ class LocalTests(unittest.TestCase):
         with patch("sci_ai_verifier.local_candidates.fetch_public", side_effect=AssertionError("Must reuse offline")):
             self.call("list_local_candidates", claim_id=self.claim_id)
             self.assertEqual(self.data["candidates"][0]["candidate_ref"], key)
-            self.call("select_local_candidate", claim_id=self.claim_id, candidate_ref=key, applicability="Same scope")
+            self.select(key)
             self.call("execute_local_claim", claim_id=self.claim_id)
 
     def test_wrong_answers_fail_without_scientific_grade(self):
@@ -155,10 +207,10 @@ class LocalTests(unittest.TestCase):
     def test_mixed_claims_account_for_unsupported_work(self):
         self.extract(2)
         key = self.candidate()
-        self.call("select_local_candidate", claim_id=self.claim_id, candidate_ref=key, applicability="Fixture scope")
+        self.select(key)
         self.call("execute_local_claim", claim_id=self.claim_id)
         self.assertEqual(self.data["run_state"], "active")
-        self.call("record_local_limitation", claim_id=self.claims[1]["claim_id"], code="unsupported_method", reason="No qualified independent method")
+        self.call("record_local_limitation", claim_id=self.claims[1]["claim_id"], code="no_independent_reference_available", reason="No qualified independent method")
         self.call("write_report_card")
         self.assertEqual(len(self.data["report"]["claims"]), 2)
 
@@ -183,14 +235,24 @@ class LocalTests(unittest.TestCase):
 
     def test_context_recovery_returns_pinned_candidate_content(self):
         candidate_ref = self.ready()
-        response = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})
-        artifacts = response["data"]["local_artifacts"][self.claim_id]
-        self.assertEqual(artifacts["candidate_ref"]["name"], "Fixture table")
-        self.assertEqual(response["data"]["local_work"][self.claim_id]["candidate_ref"], candidate_ref)
+        header = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})["data"]
+        # The header must always fit inline: bulk sections are named, not inlined.
+        self.assertLessEqual(len(canonical(header)), 8000)
+        self.assertEqual(header["authorized_parameters"]["source_path"], str(self.source))
+        self.assertNotIn("local_artifacts", header)
+        self.assertIn("local_artifacts", header["fetchable_sections"])
+        self.assertEqual(header["local_work"][self.claim_id]["candidate_ref"], candidate_ref)
+        section = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"],
+                                                             "section": "local_artifacts"})["data"]["section"]
+        self.assertIn("Fixture table", section["content"])
+        self.assertFalse(section["truncated"])
+        unknown = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"],
+                                                             "section": "nonexistent"})
+        self.assertEqual(unknown["error"]["code"], "unknown_context_section")
 
     def test_runtime_change_cannot_reuse_existing_plan(self):
         self.ready()
-        with patch("sci_ai_verifier.scientific.implementation_bytes", return_value=b"changed"):
+        with patch("sci_ai_verifier.storage.implementation_bytes", return_value=b"changed"):
             self.call("execute_local_claim", claim_id=self.claim_id)
         self.assertEqual(self.data["outcome"], "method_changed")
         self.assertFalse(self.subject.requests)
@@ -200,7 +262,7 @@ class LocalTests(unittest.TestCase):
         self.call("list_local_candidates", claim_id=self.claim_id)
         secret = "sk-ant-" + "x"*30
         response = self.runtime.call("record_local_limitation", {"run_id": self.data["run_id"], "state_token": self.data["state_token"],
-                          "claim_id": self.claim_id, "code": "unavailable", "reason": secret})
+                          "claim_id": self.claim_id, "code": "reference_retrieval_failed", "reason": secret})
         self.assertEqual(response["status"], "retryable")
         for file in self.runtime.store.root.rglob("*"):
             if file.is_file():
@@ -213,6 +275,58 @@ class LocalTests(unittest.TestCase):
         from sci_ai_verifier.local_candidates import candidates
         with self.assertRaises(Fault):
             candidates(self.runtime.store)
+
+    def test_no_bootstrap_reply_is_large_enough_for_a_host_to_spill(self):
+        """The planner session has no file-read tool, so an oversized reply blocks it."""
+        from sci_ai_verifier.agent import INLINE_BUDGET
+        self.ready()
+        for arguments in ({"run_id": self.data["run_id"]},
+                          {"run_id": self.data["run_id"], "section": "local_artifacts"}):
+            with self.subTest(arguments=sorted(arguments)):
+                reply = self.runtime.call("get_verifier_context", arguments)
+                self.assertEqual(reply["status"], "ok", reply)
+                if "section" not in arguments:
+                    self.assertLessEqual(len(canonical(reply)), INLINE_BUDGET)
+        header = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"]})["data"]
+        # The two things the planner cannot work without travel in the small reply.
+        self.assertEqual(header["authorized_parameters"]["source_path"], str(self.source))
+        self.assertTrue(header["state_token"])
+        # Every pinned document is named with its digest and is separately fetchable.
+        self.assertTrue(header["instructions"])
+        for entry in header["instructions"]:
+            section = self.runtime.call("get_verifier_context", {
+                "run_id": self.data["run_id"], "section": entry["identity"]})["data"]["section"]
+            self.assertEqual(section["trust_class"], "verifier_instruction")
+            self.assertEqual(section["bytes_total"], entry["bytes"])
+
+    def test_pinned_instructions_and_authorized_path_reach_the_planner_prompt(self):
+        from sci_ai_verifier.local_entry import planner_prompt
+        created = self.runtime.call("start_verifier_run", {"source_path": str(self.source)})["data"]
+        prompt = planner_prompt(self.runtime, created["run_id"], created)
+        self.assertIn(str(self.source), prompt)
+        self.assertIn(created["state_token"], prompt)
+        for entry in created["instructions"]:
+            self.assertIn(entry["digest"], prompt)
+        # The contracts themselves arrive, not just their names.
+        self.assertIn("Local profile", prompt)
+        self.assertGreater(len(prompt), 20000)
+
+    def test_wrong_source_path_is_repairable_and_does_not_close_the_run(self):
+        created = self.runtime.call("start_verifier_run", {"source_path": str(self.source)})["data"]
+        refused = self.runtime.call("load_submitted_skill", {
+            "run_id": created["run_id"], "state_token": created["state_token"],
+            "source_path": "SKILL.md"})
+        self.assertEqual(refused["status"], "retryable")
+        self.assertEqual(refused["error"]["code"], "source_not_authorized")
+        self.assertEqual(refused["error"]["repair_fields"], ["source_path"])
+        # The message names the path, and the run is still usable with it.
+        self.assertIn(str(self.source), refused["error"]["message"])
+        self.assertEqual(refused["error"]["run_state"], "created")
+        loaded = self.runtime.call("load_submitted_skill", {
+            "run_id": created["run_id"], "state_token": refused["error"]["state_token"],
+            "source_path": str(self.source)})
+        self.assertEqual(loaded["status"], "ok", loaded)
+        self.assertEqual(loaded["data"]["run_state"], "source_ready")
 
     def test_public_tool_surface_and_internal_run_binding(self):
         public = PublicRuntime(workspace=self.base, instructions=ROOT / "skills/scientific-verifier")

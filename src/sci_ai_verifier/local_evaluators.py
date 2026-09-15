@@ -102,7 +102,7 @@ def qualify(spec,references,settings,*,log=None,scorer=None):
             "scientific_approval":"provisional","qualification_limitations":[
                 "Generated scoring code passed specified mechanical controls only." if qualified else "Generated scoring code failed a specified control.",
                 "The planner selected cases and controls; held-out labels alone do not prove scientific independence.",
-                "Scientific grading requires an independent operator-supplied review bound to this exact specification and scope."]}
+                "A planner-authored scorer cannot reach grade A, because direct validation excludes AI judgment in scoring."]}
 
 
 def specification(candidate):

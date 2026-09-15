@@ -10,8 +10,8 @@ The older verifier desktop extensions are compatibility packages; installing one
 does not set up this version's `verify_skill` action.
 
 This build adds computational execution, resources, generated evaluators, repeated
-trials, scientific review gates, independent documentary assessment and workflow
-logs. **Live acceptance is pending your manual tests below.** The
+trials, a negotiated evidence grade with an independent critique, independent
+documentary assessment and workflow logs. **Live acceptance is pending your manual tests below.** The
 [development plan](DEVELOPMENT-PLAN.md#codex-2026-09-11-1932-pdt) remains the complete
 project checklist; automated fixtures do not establish scientific acceptance.
 
@@ -22,11 +22,16 @@ locations. Python must be 3.11 or newer; no extra Python packages are needed.
 “Local” means the program and reports live on your PC. Skill text and test inputs
 still go to Claude's hosted models and use your available Claude usage.
 
-**What is verified so far:** automated local checks passed. The desktop connection
-below follows Anthropic's documentation, but a real desktop-to-verifier run on
-this PC is still untested. Setup checks alone do not establish live acceptance.
+**What is verified so far:** automated local checks passed. The first manual run
+authenticated and completed its planner, but the nested subject and assessor
+sessions failed authentication. The internal credential handoff has been corrected
+and passes regression checks; a fresh manual run must confirm live execution.
+Setup checks alone do not establish live acceptance.
 
 ## One-time setup
+
+**Upgrading an older verifier?** Read [Updating or removing the connection](#updating-or-removing-the-connection)
+first. A full uninstall is unnecessary; keep your project, settings and reports.
 
 ### 1. Open PowerShell and check Python
 
@@ -110,12 +115,16 @@ packages. Keep Docker Desktop running while testing computational skills.
 This initial image provides Python's standard library. If a skill needs NumPy,
 R, a chemistry toolkit or another package, prepare an image containing those
 dependencies first; see [dependencies and configuration](LOCAL-CONFIG.md).
-Missing packages produce a limitation, not an invented result. Text-only use
-can skip this step, but then omit `--config` and its path from the next command.
+Missing packages produce a limitation, not an invented result. If
+`.verifier\local-settings.json` already exists from your previous setup, keep it
+and check its image/settings before reusing it. The helper deliberately does not
+overwrite an existing configuration.
 
 ### 5. Connect the verifier to Claude Code
 
-Back in **PowerShell**, paste the entire box:
+Back in **PowerShell**, paste the entire box. If the connection already exists
+and its settings need changing, remove the old registration using the
+[upgrade instructions](#updating-or-removing-the-connection) first:
 
 ```powershell
 $verifierClaude = (Get-Command claude.exe -ErrorAction Stop).Source
@@ -171,15 +180,23 @@ and actual answers, references, outcomes, and limitations.
 Completion is not automatically a scientific pass. Scripts, binary inputs and
 generated files use the configured container; exact/numeric and generated Python
 evaluators compare the observations. The default is three trials per case.
-Generated files have saved paths in the JSON report. Scientific A/B/C grades need
-an independent review of the exact method and scope. D uses a fresh documentary
-assessor and separately reviewed rubric; it does not prove execution accuracy.
-Without those reviews, comparison/assessment evidence remains ungraded. No review
-or scientific grade is fabricated during setup.
+Generated files have saved paths in the JSON report.
+
+The evidence grade in the report says how strong the evidence was, not whether
+anyone endorses the skill, and you never enter or approve one. A means the answers
+came from a source the verifier itself retrieved and were scored by installed code;
+B means a dataset you pinned or a generated evaluator did the scoring; C means the
+comparison is reproducible but the traceability, independence or trial count is
+weaker; D means a fresh assessor judged cited sources and execution accuracy stays
+unverified; U means no acceptable evidence was found. The verifier proposes a grade
+and a separate session that never saw the planning critiques it and can only lower
+it, so the report shows the proposal, the runner's ceiling and that critique. No
+grade is fabricated during setup.
 
 Network downloads and external apps need explicit settings. Installed apps are
-not automatically connected. See [app adapters and scientific reviews](LOCAL-CONFIG.md)
-when you are ready to configure them.
+not automatically connected. See
+[app adapters and grading](LOCAL-CONFIG.md#how-the-evidence-grade-is-decided) when
+you are ready to configure them.
 
 Every attempt also returns **log paths**, even if setup fails before a run exists:
 
@@ -216,7 +233,8 @@ available. They do not claim verification completed.
 | “Git is required” in Code | Install [Git for Windows](https://git-scm.com/downloads/win) and restart the app. |
 | The verifier tool is missing | Confirm step 5 printed **Added**, start a fresh local Code session, and check whether `scientific-verifier-local` is disabled. |
 | The connection name already exists | To update the earlier setup, run `claude.exe mcp remove --scope user scientific-verifier-local`, then repeat steps 5–6. This removes the connection, not saved reports. |
-| `authentication_required` | Check the exact variable name and token in step 3. Save and start a new session. |
+| `authentication_required` before the planner starts | Check the exact variable name and token in step 3. Save and start a new session. |
+| Planner runs, but subject or assessor returns `authentication_required` | Update the verifier source to include the internal credential-handoff fix, then fully restart Claude and start a new local Code session. Keep the existing token and connection. The old launcher did not explicitly pass credentials to its internal MCP server. |
 | Expired-token, sign-in, or usage-limit error | Renew the token through step 3 or wait for eligible usage. The verifier never switches to API billing automatically. |
 | `source_missing` | Supply the full path to an existing skill folder or its `SKILL.md`. |
 | `planner_incomplete` or another incomplete result | Save the run ID and error. The run did not finish; setup checks cannot diagnose every live-model failure. |
@@ -226,6 +244,9 @@ available. They do not claim verification completed.
 | A Python import/package error | Prepare a new image with that dependency, pin it to a new settings file, then start a new verification. |
 | `resource_not_authorized` or `app_not_authorized` | Configure the exact resource host or a reviewed read-only app adapter in LOCAL-CONFIG.md. |
 | `assessor_unavailable` | The independent documentary session did not complete. This is an operational problem, not grade U. |
+| `critic_unavailable` | The independent grade critique session did not complete. The claim is recorded as an operational limitation; it does not become an ungraded pass. |
+| `grade_above_evidence_ceiling` | The planner proposed a grade its evidence cannot support. It should strengthen the design or propose the stated ceiling; no action is needed from you. |
+| `stronger_evidence_available` | The planner tried to conclude documentarily while holding a qualified candidate it had not run. It must run it or explain why it does not apply. |
 | `workflow_log_unavailable` | Check the data folder is writable and disk space is available; keep any existing attempt folder for diagnosis. |
 
 Share the error code and run ID when asking for help, without credentials.
@@ -283,7 +304,8 @@ using the commands above. Use copies when deliberately introducing errors.
 | Documentary assessment | Check a separate assessor session, exact cited quotes and disclosed AI judgment. No planner conversation or subject answers should be included in its packet. |
 | Cancellation | Interrupt a CLI run with Ctrl+C and a desktop run with Stop. The attempt log and any receipts should remain. No uncertain trial should be replayed automatically. |
 | Reuse | Verify the skill again and confirm lookup reuses a saved candidate where applicable; references are pinned rather than invented again. |
-| Scientific review | Only after a real independent review, configure its exact fingerprint/scope. Check that grades follow that review and the fixed trial policy. Leave this pending if no review exists. |
+| Grade negotiation | Read the plan audit in the report. Confirm the proposed grade, the runner's evidence ceiling with its limiting reasons, and the independent critique's findings are all recorded, and that the settled grade is no stronger than any of them. A skill that only ran should not carry an A. |
+| Catalog contribution | If you propose a candidate, confirm the draft PR opens without any prior sign-off, that `review` returns the comments you leave on it, and that republishing a corrected bundle revises the same PR instead of opening a second one. Nothing should merge by itself. See [LOCAL-CONFIG.md](LOCAL-CONFIG.md#propose-a-candidate-for-review). |
 | Catalog updates | If you maintain a shared catalog, use the release steps in [LOCAL-CONFIG.md](LOCAL-CONFIG.md#prepare-and-distribute-a-reviewed-catalog-release). Confirm a retired candidate disappears from a new run and old reports retain their pins. This does not require publishing your personal results. |
 
 During a computational trial, Docker Desktop should show a temporary container
@@ -300,12 +322,40 @@ acceptance still depends on the actual reviewed evidence.
 
 ## Updating or removing the connection
 
-Stop active verification sessions before replacing this checkout. Preserve
-`.verifier` to retain reports. Old completed runs remain readable; changed runtime
-code cannot resume an earlier scientific execution with its old audit.
-Re-register the connection if the code or settings paths move. To stop using the
-tool, remove `scientific-verifier-local` using the troubleshooting command; your
-saved data remains until you deliberately delete it yourself.
+**You do not need a full uninstall before upgrading.** Keep Claude Desktop,
+Claude Code CLI, Python and Docker if installed. Update a dependency only when
+it no longer meets this guide's requirements.
+
+1. Stop active verification sessions before updating the project's source files.
+   Keep the project folder and every `.verifier` data folder, including any older
+   report folder outside this checkout. They contain settings, reports and logs.
+2. If you installed the old Stage 2/3 or demo verifier extension and uploaded
+   verifier skill, disable those old verifier components to avoid choosing their
+   obsolete workflow. Uninstalling them is optional. Keep the separate skill
+   folders you want to submit for testing.
+3. If `scientific-verifier-local` already exists and you are changing its program
+   path or configuration path, remove that connection registration:
+
+   ```powershell
+   claude.exe mcp remove --scope user scientific-verifier-local
+   ```
+
+   This removes the user-scoped connection entry, not the project, settings or
+   reports. Then repeat step 5. If the connection
+   already has the correct program, configuration and environment-variable
+   settings, keep it; no re-registration is needed. See
+   [Claude's connection-management documentation](https://code.claude.com/docs/en/mcp#managing-your-servers).
+4. If you created `.verifier\local-settings.json` with an earlier build, delete the
+   `scientific_reviews` and `documentary_review` lines from it. Those settings were
+   removed: an evidence grade is now settled by the evidence and an independent
+   critique, not by a review you enter. Preflight names any leftover key. The rest of
+   the file is unchanged, and you do not need to regenerate it.
+5. Restart Claude Desktop and start a fresh **Code → Local** session as in step 6.
+
+Old completed runs remain readable. Changed runtime code cannot continue an
+earlier scientific execution using its old audit; start a new verification.
+To stop using the tool entirely, remove its connection with the command above
+and keep your saved data for as long as you need it.
 
 ## For development only
 

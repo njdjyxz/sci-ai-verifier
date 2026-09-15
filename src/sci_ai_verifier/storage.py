@@ -15,6 +15,17 @@ from uuid import UUID
 from . import __version__
 from .common import Fault, canonical, digest, utc_now
 
+
+def implementation_bytes():
+    """Exact bytes of every runtime module, so a changed host cannot reuse an audit.
+
+    Line endings are normalized because one checkout is used on Windows and POSIX
+    and a platform-dependent digest would invalidate a run for no reason.
+    """
+    return canonical({path.name: path.read_bytes().replace(b"\r\n", b"\n").decode("utf-8")
+                      for path in sorted(Path(__file__).parent.glob("*.py"))})
+
+
 # A saved run is only read by an implementation that understands its record shape.
 # There is no automatic migration: an unsupported record is rejected, never rewritten.
 SCHEMA_VERSION = 1

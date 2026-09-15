@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
+from . import __version__
 from .common import Fault, canonical, digest, utc_now
 from .ingest import SECRET_BYTES
 from .storage import atomic_write, no_links
@@ -20,7 +21,7 @@ TOLERANCE = Decimal("0.000001")
 QUALIFICATION_LIMITS = [
     "Mechanical qualification only; source authority and input/reference applicability are planner assertions.",
     "Cases are illustrative, not a representative scientific benchmark.",
-    "No scientific verdict or evidence grade is authorized by this local method.",
+    "Qualification alone carries no scientific verdict or evidence grade; the grade is settled separately.",
 ]
 
 
@@ -70,7 +71,7 @@ def fetch_bytes(url, *, max_bytes=MAX_REFERENCE, text_only=False):
             target = parts.path or "/"
             if parts.query:
                 target += "?" + parts.query
-            connection.request("GET", target, headers={"User-Agent": "scientific-verifier-local/0.6",
+            connection.request("GET", target, headers={"User-Agent": "scientific-verifier-local/" + __version__,
                                                         "Accept-Encoding": "identity"})
             response = connection.getresponse()
             if response.status != 200:
@@ -175,7 +176,12 @@ def qualify(proposal, references):
                       (str(center - TOLERANCE), "pass"), (str(center + 2*TOLERANCE), "fail"),
                       (str(center - 2*TOLERANCE), "fail"), ("not-a-number", "invalid")]
         else:
-            probes = [(expected, "pass"), (expected + " __incorrect_control__", "fail")]
+            # A single appended-suffix probe only tests that `==` works. Probe a
+            # prefix, a suffix and a truncation so a near miss has to be rejected.
+            trimmed = expected.strip()
+            probes = [(expected, "pass"), (expected + " __incorrect_control__", "fail"),
+                      ("__incorrect_control__ " + expected, "fail"),
+                      (trimmed[:-1] or "__empty_control__", "fail")]
         passed = all(compare(method, actual, expected) == wanted for actual, wanted in probes)
         controls.append({"case_id": case["case_id"], "passed": passed,
                          "positive_negative_boundary_checks": len(probes)})

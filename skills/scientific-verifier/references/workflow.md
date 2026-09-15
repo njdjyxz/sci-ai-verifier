@@ -503,7 +503,7 @@ Claude Code owns the planner loop. This matrix specializes the broader target.
 | source_ready | read_snapshot_file, commit_claim_manifest | source_ready or active (reporting if empty) |
 | active / local_lookup | list_local_candidates, record_local_limitation | local_discovery or terminal_operational |
 | active / local_discovery | fetch_local_reference, load_local_resource, fetch_local_asset, qualify_local_candidate, qualify_local_evaluator, select_local_candidate, assess_local_documentary, record_local_unverified, record_local_limitation | local_discovery, local_ready, terminal_result or terminal_operational |
-| active / local_ready | execute_local_claim, record_local_limitation | local_documentary, terminal_result or terminal_operational |
+| active / local_ready | execute_local_claim | local_documentary, terminal_result or terminal_operational |
 | active / local_documentary | fetch_local_reference, load_local_resource, fetch_local_asset, assess_local_documentary, record_local_unverified, record_local_limitation | local_documentary, terminal_result or terminal_operational |
 | reporting | write_report_card | completed |
 | completed / incomplete | none | terminal |
@@ -511,3 +511,36 @@ Claude Code owns the planner loop. This matrix specializes the broader target.
 Reporting becomes legal only after all accepted claims are terminal. Lookup and
 qualification do not execute the subject; qualification is mechanical, not a
 scientific grade. Recovery and cancellation retain the common host controls.
+
+`get_verifier_context` returns a header small enough to always arrive inline: the
+committed state, the current token, the authorized source path, the pinned
+instruction index and the names of every fetchable section. It never inlines the
+pinned documents or the committed artifacts. Supplying `section` returns exactly one
+of those, sliced to the run's read limit. A closed run still answers a section
+request, so a committed report remains readable after completion.
+
+This split is a requirement, not an optimization. The planner's session has WebSearch
+and the internal tools only: no file-read tool. A host that spills an oversized tool
+reply to a file therefore hides that reply from the planner completely, and the two
+values it cannot work without -- the token and the authorized path -- must never
+share a reply with tens of kilobytes of contracts. In `created`, a `source_path` that
+does not match the pinned path is repairable in this profile rather than fatal: the
+argument only confirms a path the operator already authorized, the refusal names the
+correct one, and the repair budget bounds the retries.
+
+Three transitions inside `local_discovery` and `local_ready` are deliberately
+narrow, because each one ends a claim and a wide gate would let the planner
+finish without doing the work:
+
+- `select_local_candidate` stays in `local_discovery` and returns
+  `local_grade_revision_required` whenever the independent critique supports a
+  weaker grade than the proposal. Repeating the call with a strengthened design or
+  a lower proposal is the negotiation. After the installed round limit the
+  critique's grade is settled and the claim reaches `local_ready`.
+- `assess_local_documentary` and `record_local_unverified` require the claim's
+  catalog lookup plus at least one reference Python retrieved or one recorded
+  qualification attempt, and are refused while the claim still holds a candidate it
+  qualified for itself and never executed. A free-text account of a search Python
+  never observed does not end a claim.
+- `local_ready` has no limitation tool. Once a plan is settled and executable, the
+  only ways out are executing it or an execution failure Python itself observed.
