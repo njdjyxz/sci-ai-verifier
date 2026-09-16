@@ -60,10 +60,15 @@ describes what the currently shipped code can enforce; it is not the completion 
 
 ### Next implementation stage
 
-Run the manual acceptance procedure in [LOCAL-INSTALL.md](LOCAL-INSTALL.md#your-manual-acceptance-tests)
-using the actual CLI, desktop, container and personal skills. Record the observed
-results before declaring live acceptance or scientific validity. The earlier
-Stage 2/3 checkpoints are historical and are not the current completion boundary.
+One live run has completed the whole local path (glycoengineering, 2026-09-16: five
+claims, four settled at evidence grade A, 66 of 66 trials scored, one operational
+limitation). It exercised the A-grade branch only.
+
+Continue the manual acceptance procedure in [LOCAL-INSTALL.md](LOCAL-INSTALL.md#your-manual-acceptance-tests)
+using the actual CLI, desktop, container and personal skills, with more skills chosen to
+force the B, C and documentary paths. Record the observed results before declaring live
+acceptance or scientific validity. The earlier Stage 2/3 checkpoints are historical and
+are not the current completion boundary.
 
 ## Profiles and compatibility
 

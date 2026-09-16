@@ -23,15 +23,18 @@ locations. Python must be 3.11 or newer; no extra Python packages are needed.
 “Local” means the program and reports live on your PC. Skill text and test inputs
 still go to Claude's hosted models and use your available Claude usage.
 
-**What is verified so far:** the automated checks pass. Three live runs have been made
-on the author's PC, and the most recent completed end to end: it extracted five claims,
-settled evidence grades through independent critique sessions, obtained 24 subject
-observations in containers and wrote a full report, taking about 50 minutes. One claim
-reached a scientific verdict there (`pass`, evidence grade D); the other four ended as
-operational limitations. Three defects behind those limitations have since been fixed,
-with tests built from the replies the real sessions actually sent, but **no live run has
-exercised those fixes yet**. Setup checks alone do not establish live acceptance, and
-neither does a run that completes.
+**What is verified so far:** the automated checks pass, and one live run has completed
+the whole local path. On 2026-09-16, run `76ce4af1` extracted five claims from a
+glycoengineering skill, retrieved its own reference sources, built 22 test cases,
+settled four evidence grades at A through independent critique sessions, obtained 66
+subject observations in containers and wrote a full report, in about 48 minutes. The
+fifth claim ended as an operational limitation with no grade, because no readable
+source could be obtained.
+
+That run exercised the A-grade path only. Grades B, C, D and U, generated evaluators,
+the documentary assessor and the revise-after-critique loop have **still never run
+live**. One skill is not acceptance. Setup checks alone do not establish live
+acceptance, and neither does a single run that completes.
 
 ## One-time setup
 

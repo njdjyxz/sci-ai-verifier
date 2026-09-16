@@ -1248,3 +1248,140 @@ Restart Claude fully, start a fresh local Code session, and verify the glycoengi
 folder at `D:\Su Lab\verifier-submissions\examples\glycoengineering`. It is finished
 when the report shows a settled grade with a recorded critique for every executed claim,
 or an operational limitation naming exactly what failed.
+## Claude: 2026-09-16 (live acceptance rerun)
+
+### Current stage and status
+
+The rerun happened and **completed end to end**. Run
+`76ce4af1-17f7-4d96-bfb0-22726d94c96b` closed as `completed` with
+`completion_reason: local_report_complete`: five claims extracted, four settled at
+evidence grade **A** with `scientific_status: pass`, one closed as an operational
+limitation with no grade, 66 of 66 scored trials passed, and a full report written.
+It ran against `main` at `316deec`, started 2026-09-15T23:40:54Z, finished
+2026-09-16T00:29:14Z, about 48 minutes, recorded cost $10.40, observed subject model
+`claude-opus-5`.
+
+This is the first live run that carried a claim the whole way from snapshot to
+settled grade to executed trials to report. It does not establish that the verifier
+works. It establishes that it worked once, on one skill, in one domain, against one
+subject model, and only along the A-grade branch. **Live acceptance is now partial,
+not complete.** The section on what this run did not exercise is the part that
+matters for the next session.
+
+### What has been done
+
+**1. The run completed and the numbers reconcile.**
+
+Subject: the glycoengineering skill at `D:\Su Lab\verifier-submissions\examples\glycoengineering`,
+two files, 19,568 bytes, snapshot `0020ed03…`, integrity verified, both files read in full.
+
+| Claim | Oracle | Cases | Trials | Passed | Grade |
+| --- | --- | --- | --- | --- | --- |
+| Sequon rule N-X-[S/T] | UniProtKB CARBOHYD annotations | 8 | 24 | 24 | A |
+| SNFG symbol assignments | NCBI SNFG Table 1 | 6 | 18 | 18 | A |
+| Oxford notation codes | none obtainable | — | — | — | none |
+| Afucosylation and FcgammaRIIIA | Shields 2002 via Europe PMC | 4 | 12 | 12 | A |
+| EPO N-glycosylation sites | Europe PMC glycoproteomics abstracts | 4 | 12 | 12 | A |
+
+22 distinct cases, 66 planned trials, 66 attempted, 66 evaluated, 0 invalid, 0 missing,
+`agreement: 1.0` on every case. `overall_scientific_grade` is `null`, as it must be.
+41 hash-chained events, `illegal_transitions_remaining: 7` of 8, finalization complete.
+66 of 128 permitted subject calls and 40 workflow steps used.
+
+**2. Both defects from the previous entry are fixed live.**
+
+The bounded `get_verifier_context` header and the repairable `source_path` were the
+two host-boundary defects that closed run `7e74f094` as `source_not_authorized`. This
+run got past bootstrap without incident, committed a five-claim manifest, and never
+spent an illegal transition on context recovery. Both fixes are confirmed across the
+CLI tool-reply boundary, which no fixture can reach.
+
+**3. The nested sessions authenticated and ran.**
+
+The 2026-09-14 credential handoff and the 2026-09-15 grade critique were both listed
+as unproven live. Both are now proven. 66 subject sessions ran in containers, each a
+fresh session with a fresh workspace, and four critique sessions ran with their tool
+lists emptied, at roughly $0.27 each. No boundary violation was raised.
+
+**4. The grade ceiling refused a design, and the planner rebuilt rather than settled.**
+
+The first SNFG candidate qualified mechanically with `qualification_problems: []`. Its
+expected value `Fuc` occurs in the quoted source only inside `Fuc4NAc`, so
+`token_exact` failed and `evidence_ceiling` returned C with
+`expected_value_not_token_exact_in_source`. The proposal of A was refused as
+`above_evidence_ceiling`, which spends no critique round, and the planner rebuilt the
+bundle from standalone Table 1 cells and reached A. Its own words in the audit:
+"A is the ceiling this revised design can reach … not settling for the C the previous
+version was capped at." Both candidates are retained. This is the two-layer check
+working as designed: qualification accepts a substring, the ceiling requires a whole
+token, and the stricter one caught what the first let through.
+
+**5. The independent critique produced findings the mechanical checks cannot.**
+
+All four critiques supported the proposed grade and none lowered one. All four
+nevertheless filed objections, ten in total, which are recorded against the results
+rather than resolved away. The most valuable was on the afucosylation bundle:
+
+> "Case 3 leaks its own answer: the prompt identifies C1q by definition, so it can be
+> answered correctly with no knowledge of the paper's negative result. It therefore does
+> not function as the stated negative-discrimination case."
+
+That case had passed every control probe. No mechanical check available to this profile
+could have found it. The sequon critique separately re-indexed all six shown protein
+sequences residue by residue and confirmed every expected value before endorsing the
+grade.
+
+**6. The refusal path worked.**
+
+The Oxford-notation claim recorded `required_resource_unavailable` after four failed
+retrievals, with `evidence_grade: null` and `scientific_status: null`. It also recorded
+an unresolved scientific question it explicitly declined to score, about whether the
+codes the skill labels "Oxford Notation" are actually the IgG glycan short code. A
+fifth grade was available to invent and was not invented.
+
+### What this run did not exercise
+
+This is the honest boundary. The following are still **unproven live**:
+
+- **Grades B, C, D and U.** Every graded claim in this run settled at A. The B path
+  (pinned dataset, or a control-tested generated evaluator), the C path and the
+  documentary D path have never executed live.
+- **`qualify_local_evaluator`.** No generated Python evaluator was built or
+  control-tested in a container. All four bundles used installed comparisons.
+- **`assess_local_documentary`.** `documentary_assessment` is `null` on all five
+  claims. The independent assessor session has never started live, so its boundary and
+  its citation validation remain fixture-only.
+- **`load_local_resource`, `fetch_local_asset`, `record_local_unverified`.** Never
+  called in this run.
+- **The revise-after-critique loop.** Every audit shows `critique_rounds: 1` with the
+  critique supporting the proposal. A critique that lowers a grade, and the revision
+  round that follows it, have never run live. Only the mechanical ceiling refusal was
+  exercised, and that spends no round.
+- **More than one subject model, domain and skill.** One skill of two files, one
+  domain, `claude-opus-5` only. A grade earned against one model is evidence about
+  that model.
+
+### Urgent next steps, if any
+
+**Test more skills before claiming this works.** One completed run on one skill is a
+demonstration that the path is traversable, not evidence that the design is sound. The
+next runs should be chosen to force the branches above rather than to repeat the A
+path: a skill whose claims have no token-exact oracle, so the design settles at C; a
+skill that needs a generated evaluator, so `qualify_local_evaluator` runs; and a claim
+with no executable oracle at all, so the documentary assessor starts for the first
+time.
+
+### Suggested next move
+
+Expect the first B, C or D run to fail somewhere new, the same way the first A run did.
+The assessor path is the largest untested surface: it has a container boundary, a
+packet size cap and machine-checked citations, none of which has met a live session.
+Read the plan audit and the claim result the same way as before, and treat a critique
+that lowers a grade as the success condition for that run rather than a setback.
+
+### Recommended next action
+
+Pick a second skill from the sci-ai-enabler catalog whose claims are not answerable
+from a token-exact database row, and run it. It is finished when the report shows either
+a settled grade below A with a recorded critique, or a documentary assessment, or an
+operational limitation naming exactly what failed.

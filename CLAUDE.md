@@ -26,7 +26,10 @@ log distinguishes implemented behavior from pending live and scientific acceptan
 Do not redefine completion as a text-only, chemical-only or demonstration release.
 A hosted multiuser/API product is a separate future deployment project.
 
-Version 0.7.0 implements the local workflow and awaits manual live acceptance. Its enforceable behavior is
+Version 0.7.0 implements the local workflow. One live run has completed it end to end
+(glycoengineering, 2026-09-16, four claims at evidence grade A). That is partial acceptance
+on the A-grade branch only; more skills must run before the design is treated as working.
+Its enforceable behavior is
 documented in `skills/scientific-verifier/references/local-contract.md`.
 `verify` and `serve-local` provide one public action; Claude Code owns the planner
 loop and fresh subject sessions. Python owns deterministic tools, bounded
