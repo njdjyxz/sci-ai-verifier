@@ -1668,6 +1668,99 @@ inside the grade. Once the grade is purely about the reference, that rule has no
 there. The likely answer is that accuracy and consistency are never reported as bare
 ratios and `completeness` carries the denominator, but this needs writing down.
 
+### Second design proposal: automatic dependency resolution
+
+> **NOT APPROVED FOR IMPLEMENTATION. Do not build any part of this, and do not
+> alter the sandbox network posture, until the operator explicitly asks for it by
+> name.** It is recorded here as a design decision with its trust boundary and
+> residual risk stated, so that the reasoning is not lost and so that nobody
+> implements a weaker version of it by accident. It is strictly larger than every
+> other item in this entry combined.
+
+**The problem is scale, not this run.** The finding above -- that no RDKit in the
+sandbox forces documentation-recall tests -- has an obvious fix at the scale of one
+operator's desk: build an image with RDKit pre-installed and pin its digest, exactly as
+`sandbox_image` is pinned today. That answer does not survive contact with the actual
+goal. At a hundred skills a day nobody hand-curates a hundred environments, and a
+published tool cannot ask its users to build images before verifying anything. Manual
+curation is therefore rejected as the long-term answer while remaining the correct
+short-term one.
+
+**The reframe.** The agent does not need to make a *trust* decision in order to make a
+*dependency* decision. Those two were conflated in the first pass at this question. If
+the safety properties are structural and mechanically checkable, dependency selection can
+be automated without any party -- human or model -- judging what is safe to install.
+
+**Separate resolution from execution.** Two phases:
+
+1. **Resolve.** Networked. Runs before any reference search, before any skill code
+   executes, while no evidence exists. Deterministic Python -- not the model -- turns a
+   dependency request into a fully hash-pinned lockfile and materializes a
+   content-addressed layer.
+2. **Execute.** `--network none`, unchanged from today (`sandbox.py:131`). The container
+   receives the pre-materialized layer and reaches nothing. Reruns are byte-identical
+   because the lockfile pins hashes.
+
+Reproducibility survives because the lockfile digest folds into `environment_digest`,
+which already hashes the whole of `settings` (`local_science.py:70`). The operator's
+proposed gate -- that the dependency decision be made before looking for references -- is
+satisfied structurally by this ordering rather than by a rule anyone has to enforce.
+
+**Four mechanical gates replace the human reviewer.** None requires judgment:
+
+1. **Wheels only** (`--only-binary :all:`). Most install-time supply-chain execution
+   lives in `setup.py`; wheels run no install-time code.
+2. **Hash-pinned** (`--require-hashes` against the generated lockfile). Anything that
+   cannot be pinned fails closed.
+3. **Index pinned** to PyPI or a configured mirror. No arbitrary URLs, no VCS
+   references, no `--find-links` to unlisted hosts.
+4. **Size and count caps,** the same shape as the existing `max_artifact_bytes` and
+   `max_artifacts`.
+
+**The gate that removes the typosquat risk: the model never names a package.** A
+dependency resolves only if its name is *attested in the submitted skill's own snapshot
+bytes*. `rdkit` is resolvable for the sar-analysis skill because `SKILL.md` -- authored
+by the skill author, snapshotted and digested before anything ran -- contains
+`rdkit.Chem.rdFMCS`. `rdkit-nightly` is not, because that string appears nowhere in the
+submission. The failure mode worth fearing is a model confidently selecting a
+plausible-looking wrong distribution name; under attestation the model is not the source
+of the name at all, the submission is, and "does this string occur in the pinned
+snapshot" is mechanically checkable. Paired with an import-name to PyPI-project mapping
+table, the model's role on the trust-sensitive step drops to zero.
+
+**Caching is what makes a hundred skills a day tractable.** Layers are cached by
+lockfile digest. A hundred scientific skills do not need a hundred environments; they
+need `rdkit`, `numpy`, `scipy`, `biopython` and `pandas` in a handful of combinations.
+The first submission needing a stack resolves it and the rest hit the cache, so
+resolution cost amortizes across a long run instead of being paid per skill.
+
+**Shape for a published tool.** Two tiers, with the user configuring nothing: prebuilt
+digest-pinned domain stacks (cheminformatics, bioinformatics, numerics) as the fast path
+that most submissions hit, and the resolver as the fallback for the long tail.
+
+**What it costs and what it gives up.** This is a resolver, a lockfile format, a layer
+cache, an import-to-distribution mapping table and contract edits -- larger than
+everything else in this entry put together. It also genuinely moves the trust boundary,
+from "a human vetted each package" to "PyPI plus wheels-only plus hash-pinning is
+trusted." That posture is defensible and is roughly what ordinary CI runs on, but it is
+a real expansion of `resource-policy.md` and must be written there as an explicit
+decision with its residual risk named, never introduced as an implementation detail.
+
+The residual risk after all five gates is a compromised or malicious *popular* package.
+Wheels-only removes install-time execution, but the dependency's code still runs during
+trials. What contains that is the execution sandbox itself -- `--network none`, resource
+caps, ephemeral container -- and none of it may be traded away to make dependency
+resolution more convenient. That is the whole reason resolution and execution must be
+separate phases rather than one networked container.
+
+**Why this is worth doing eventually.** Independence is required from *the skill*, not
+from the tool the skill describes. For a claim such as "`threshold=0.8` means 80% of
+molecules," real RDKit behavior is a legitimate independent oracle: it is ground truth
+for RDKit's own API and entirely independent of the `SKILL.md` text under test. The three
+claims in this run that topped out at ceiling B on documentation could plausibly reach A
+with an executable oracle. That is the difference between grading documentation recall
+and grading behavior, across every computational skill this project will ever see.
+
 ### Urgent next steps, if any
 
 Nothing is urgent, because nothing is implemented and the operator has deferred the fix.
@@ -1677,6 +1770,11 @@ fields, `local-contract.md:117` changes before any assessor retry exists, and on
 does `local_science.py` change. A change that lets operational success produce a
 scientific `pass`, or an evidence grade imply a verdict, remains a bug however the tests
 read.
+
+The dependency proposal above is **not** part of that sequence and is not scheduled. The
+short-term answer for any skill needing a computational tool remains an operator-built,
+digest-pinned image. Nothing in the dependency section is a licence to open the container
+network.
 
 ### Suggested next move
 
