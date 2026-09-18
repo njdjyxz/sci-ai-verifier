@@ -1385,3 +1385,316 @@ Pick a second skill from the sci-ai-enabler catalog whose claims are not answera
 from a token-exact database row, and run it. It is finished when the report shows either
 a settled grade below A with a recorded critique, or a documentary assessment, or an
 operational limitation naming exactly what failed.
+
+## Claude: 2026-09-18 (report card redesign: six independent axes)
+
+### Current stage and status
+
+Two live runs of `D:\Su Lab\verifier-submissions\examples\sar-analysis` happened on
+2026-09-17/18. The second one **completed with a real graded result**, and in doing so
+it exercised exactly the branches the 2026-09-16 entry asked for: a claim that settled
+below A, a documentary assessment, and two operational limitations naming what failed.
+That entry predicted "the assessor path is the largest untested surface" and that the
+first non-A run would "fail somewhere new." Both happened.
+
+Live acceptance is still **partial**. The A-grade branch now has two skills behind it
+(glycoengineering, sar-analysis). The B branch has never produced a settled grade, the
+C branch and `qualify_local_evaluator` remain untouched, and the documentary assessor
+has now run twice live: once to completion, once rejected.
+
+The substance of this entry is not the runs. It is a **proposed redesign of the report
+card** into six independent axes, arrived at by reading what the second run actually
+produced and finding that it discards its most useful finding. Nothing here is
+implemented. The operator will request the fix separately.
+
+### What has been done
+
+**1. Run one was blocked by a stopped Docker daemon and its artifacts were removed.**
+
+Run `769b0722-4aa3-4ff5-af7f-255cc057c2c5` extracted five claims and negotiated one to
+a settled ceiling of A that the independent critique upheld, then failed every subject
+observation with `sandbox_image_unavailable`: 18 planned, 1 attempted, **0 obtained**.
+The four remaining claims routed to the documentary path and all returned grade D
+`inconclusive`. Cost $6.05 over about 16 minutes for zero execution evidence.
+
+Cause: Docker Desktop was not running. `docker info` failed with
+`npipe:////./pipe/dockerDesktopLinuxEngine`. The pinned image was present and intact;
+only the daemon was down. Preflight records `live_execution_tested: false` and **does
+not probe Docker**, so the fault surfaced about 13 minutes in at the first subject call
+rather than at startup.
+
+All artifacts of this run were deleted at operator request before the rerun, together
+with 45 store blobs, 2 candidate records and its subject-run directory. Counts were
+verified back to the pre-run baseline (runs 49, attempts 2431, store 299, candidates 5,
+subject-runs 231). The run therefore exists only in this entry.
+
+**2. Run two completed end to end with the sandbox available.**
+
+Run `1bb3f07a-7903-4e6c-8bcb-1f8eab23ffc0`, attempt
+`b51e3ef7-aca3-42a4-9150-4aafa59dd75d`. Finished 2026-09-18T05:56:52Z, 2,372 seconds
+(about 40 minutes), recorded cost $10.21, 1,876 hash-chained events, 50 planner turns,
+`SKILL.md` 23,276 bytes at snapshot `92be1811`.
+
+| Claim | Oracle | Ceiling | Cases | Obt/Plan | Grade | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| pIC50 = -log10(IC50 in M) | Europe PMC primary abstracts | A | 4 | 12/12 | **A** | pass |
+| rdFMCS `threshold` semantics | RDKit official rdFMCS docs | B | 4 | 5/12 | none | none |
+| `DrawMoleculeACS1996` | RDKit rdMolDraw2D docs | B | 4 | 12/12 | D | inconclusive |
+| `makeDummiesQueries` | RDKit AdjustQueryParameters Doxygen | B | 5 | 15/15 | none | none |
+
+Totals: 51 planned, 44 attempted, 44 obtained, 43 evaluated, 0 invalid, 7 missing.
+`overall_scientific_grade` is `null`, as it always is in the local profile
+(`local.py:663` and `reporting.py:58` both hardcode it).
+
+The pIC50 claim is the strongest result the local profile has produced: the oracle is
+the authors' own published pIC50 values from three independent primary papers
+(Hall 2007, Sharif 1996, Seabrook 1994), agreement 1.0 on all four cases, and
+`ai_involvement.verdict: false` -- the verdict was mechanical, not judged.
+
+**3. Both lost claims were on track for real grades.**
+
+Both `rdFMCS threshold` and `makeDummiesQueries` settled at ceiling **B** with the
+independent critique supporting B. Neither failed scientifically. They were lost to two
+unrelated operational faults:
+
+- **`subject_model_changed`** -- trial 5 of 12 returned
+  `observed_model_ids: ['claude-opus-4-8', 'claude-opus-5']`. The configured model is
+  the alias `"opus"`, which the CLI is free to resolve to a different version mid-run.
+  `local.py:540` correctly refuses a mixed trial set rather than pooling across models.
+- **`assessor_response_invalid`** -- the documentary assessor returned a reply that
+  failed `validate_assessment` (`documentary.py:65`). The identical step succeeded nine
+  minutes earlier for the ACS1996 claim (`assessor-2.json` at 05:47 ok,
+  `assessor-1.json` at 05:56 rejected after 35s). There is no retry, so one malformed
+  reply ends a claim permanently. The raw reply is not persisted, so the specific rule
+  it broke is unknown.
+
+**4. The test cases the planner could build are weak, and the cause is the sandbox.**
+
+Three of four claims are assertions about RDKit runtime behavior, but the trial
+container is bare `python:3.12-slim` with `allowed_subject_hosts: []`. RDKit can never
+be installed or reached, so the only available oracle is documentation and the only
+constructible test is verbatim recall. The two non-unanimous cases on
+`makeDummiesQueries` are both of this kind:
+
+```
+dummy-c2  "Reproduce that description verbatim"
+          trial 1  convert dummy atoms without isotope labels to any-atom queries   pass
+          trial 2  convert dummies in the input structure into query atoms          fail
+          trial 3  convert dummy atoms without isotope labels to any-atom queries   pass
+
+dummy-c4  "Give the name ... without the RDKit namespace prefix"
+          trial 1  MolOps::adjustQueryProperties    fail
+          trial 2  adjustQueryProperties            pass
+          trial 3  adjustQueryProperties            pass
+```
+
+Neither failure is a chemistry error. One is a paraphrase where a verbatim quote was
+demanded; the other left on a namespace prefix the prompt said to strip. The run's own
+critique had already flagged that these prompts leak the identifier being asked about
+and test only the semantics half of the behavior. **The sandbox having no RDKit is the
+root cause of the weak science in this run**; it is a resource-policy decision, not a
+defect.
+
+**5. Two substantive findings for the skill author, not scored against the skill.**
+
+Both surfaced from retrieved RDKit documentation: `makeDummiesQueries` is documented as
+defaulting to `true`, so the skill's explicit `= True` restates a default rather than
+changing behavior; and the documented conversion applies only to dummy atoms *without
+isotope labels*, which R-group decomposition dummies frequently carry.
+
+### The proposed design: six independent axes
+
+The current card welds independent facts together and, in the most informative case,
+emits nothing. The `makeDummiesQueries` claim scored **13 passes and 2 fails across 15
+trials against RDKit's own documentation** -- a genuine, reportable finding about
+reliability -- and the report says `evidence_grade: null`, `scientific_status: null`.
+
+The redesign replaces that with six fields that never overwrite one another.
+
+| Field | Answers | Depends on |
+| --- | --- | --- |
+| `evidence_grade` | How good was the reference? | reference and test bundle only |
+| `accuracy` | How often did output match expectation? | the reference |
+| `consistency` | Did repeated trials agree with each other? | nothing external |
+| `completeness` | How much of the plan actually ran? | execution |
+| `scientific_status` | Does the claim hold? | the pre-committed rule |
+| `fault` | What did *we* break? | the runner |
+
+**Grade is narrowed to reference quality only.** A/B/C/D/U already sort roughly by what
+kind of reference was available, so this is a clarification rather than a
+redefinition. It may change for exactly two reasons: no adequate reference was found,
+or the reviewer inspected the test bundle and found problems. It must **never** move for
+a behavioral or an operational reason. Scan the nine illustrative cards below: grade
+only ever reports the reference.
+
+This also disentangles a second existing conflation. The rubric claims to keep AI
+judgment separate as its own question, but the grade table encodes it in the letter
+(A is "no AI judgment in scoring", D is "AI judgment is primary"). Narrowing the grade
+forces AI involvement out into the field where the rubric already says it belongs.
+Counting honestly, this makes **four** axes plus two qualifiers, not three.
+
+**Consistency stops being a gate and becomes an input.** This is the whole repair, in
+one line. Today `agreement < 1` sets `supported = False`, which nulls the grade, which
+then nulls the status. Under the redesign consistency feeds the aggregation rule: a
+unanimity rule makes a split case a `fail`, a majority rule may still allow `pass`.
+Either way a verdict survives. Flakiness becomes a finding instead of a silence.
+
+**Accuracy and consistency are not symmetric,** and the rubric should say so.
+Consistency compares the skill to itself and is therefore valid even against a
+worthless reference. Accuracy compares the skill to the reference and is meaningless
+without a trustworthy one. The operator's position -- accepted -- is that a card showing
+`grade U / accuracy 100% / consistency 100%` is honest and complete, because a human
+reading all six columns draws the right conclusion, and emphasis is the UI's problem.
+The one carve-out is machine consumers: anything that filters candidates or prepares
+catalog contributions must read grade before accuracy, or it will promote a U-grade
+100%.
+
+**No composite score.** The goal is fault localization, not ranking: a reader should see
+which stage broke without guessing. A blended number destroys exactly that, and the
+axes are not commensurable anyway (one ordinal, two ratios over different denominators,
+and a category). Named profiles or a lexicographic sort over
+`(grade, accuracy, consistency)` would give comparability without averaging, but neither
+should be built until something actually needs to rank.
+
+### Status rubric
+
+`status` is one of `pass`, `fail`, `inconclusive`, `null`, with a required reason when
+`null`. Evaluate in order; first match wins.
+
+| # | Condition | Status |
+| --- | --- | --- |
+| 1 | grade is `U` | `null` -- `no_reference_grade` |
+| 2 | zero evaluable observations | `null` -- `not_executed` |
+| 3 | observations not attributable to one subject | `null` -- `unattributable_observations` |
+| 4 | coverage below the plan's audited minimum | `null` -- `incomplete_coverage` |
+| 5 | pre-committed aggregation rule satisfied | `pass` |
+| 6 | pre-committed aggregation rule violated | `fail` |
+| 7 | rule indeterminate on this evidence | `inconclusive` |
+
+Only `U` gates status, and the reason is definitional rather than qualitative: with no
+reference there is no expected answer, so the question has no value -- not a weak one.
+Grades A through D never touch status. A D-grade claim may `pass`; an A-grade claim may
+`fail`.
+
+`aggregation_rule`, one of `unanimity`, `majority` or `threshold(p)`, must appear on the
+card. Without it `fail` is uninterpretable, since 13/15 is a `fail` under unanimity and
+a `pass` under majority. The rubric already requires the rule be fixed before execution;
+it simply is not recorded or parameterized today.
+
+### Nine illustrative cards
+
+| Card | Grade | Accuracy | Consistency | Complete | Status | Reads as |
+| --- | --- | --- | --- | --- | --- | --- |
+| clean | A | 15/15 | unanimous | 15/15 | pass | good reference, skill works |
+| reliably wrong | A | 0/15 | unanimous | 15/15 | fail | strong refutation; grade stays A |
+| blind spot | A | 9/15 | unanimous | 15/15 | fail | repeatable defect -- debuggable |
+| flaky | A | 9/15 | split | 15/15 | fail | nondeterministic -- different fix |
+| docs only | D | 15/15 | unanimous | 15/15 | pass | behaved, but never checked a number |
+| no reference | U | 15/15 | unanimous | 15/15 | null | three green numbers meaning nothing |
+| truncated | B | 4/4 | unanimous | 4/12 | null | our fault, not the skill's |
+| never ran | B | not_obtained | not_obtained | 0/18 | null | infrastructure; reference reusable |
+| documentary | D | not_applicable | not_applicable | n/a | inconclusive | this path never measures behavior |
+
+The blind-spot and flaky cards carry **identical accuracy and identical status** and
+require completely different fixes. Only the consistency column separates them; no
+single number could. The never-ran and documentary cards both lack behavioral data, but
+`not_obtained` and `not_applicable` mean opposite things and must be distinct values.
+
+### Defects this exposes in the current implementation
+
+1. **Grade and status are welded.** `local_science.py:196` is one boolean; any case
+   below unanimity sets `grade = None`, and `:199` then discards an already-computed
+   verdict via `verdict if grade else None`.
+2. **No cascade.** `evidence-rubric.md:70` specifies "total eligibility predicates for
+   A, B, and C" and `:76` requires resolving to the strongest eligible grade with no
+   uncovered observation pattern. The code has no per-grade predicates -- it is
+   `grade = ceiling if supported else None`. The contract already calls for the
+   behavior the redesign wants.
+3. **The aggregation rule is hardcoded and trial-level.** `"fail" if counts["fail"]
+   else "pass"` bakes in unanimity over trials, where the rubric requires a rule chosen
+   from the claim and applied to per-case outcomes.
+4. **`trial_agreement_below_policy` sits in `grade_limit_reasons`,** alongside genuine
+   reference weaknesses, so a reader cannot tell a wobbling skill from a bad reference.
+5. **Preflight does not probe Docker,** so a stopped daemon costs a full run.
+6. **The subject model is an alias.** The MCP registration in `LOCAL-INSTALL.md:139`
+   passes no `--model`, so it defaults to `"opus"` and may resolve to another version
+   mid-run. `serve-local` already accepts `--model`; pinning `claude-opus-5` is a
+   one-flag change.
+7. **The assessor has no retry.** One malformed reply ends a claim. Any retry must fire
+   on reply *shape* only, never on `assessor_citation_invalid` and never because the
+   verdict is unwelcome, or it becomes grade shopping. `local-contract.md:117` currently
+   states outright that invalid assessments are operational failures, so that line is
+   edited before any code.
+8. **`deterministic` is a misleading name and a live trap for this refactor.**
+   `local_science.py:97` defines it as *the comparison method is `exact` or `numeric`*,
+   not as *the subject is deterministic*. The rubric's single-trial carve-out is about
+   the **subject**. Anyone reading `deterministic` at `:121` as a statement about the
+   subject would wrongly conclude `n = 1` is acceptable. Rename to
+   `comparison_deterministic` before touching that block.
+9. **`trial_count` may be set to 1 in a profile where it is never legitimate.**
+   `local_config.py:49` bounds it at `(1,20)`. The rubric permits `n = 1` only for a
+   deterministic subject with a fixed entry point, and the local profile's subject is
+   always a fresh Claude Code session, so that carve-out is unreachable here. The cap
+   itself works -- `trials < STRONG_TRIALS` adds `model_subject_trial_count_below_three`,
+   which blocks A and B and drops the ceiling to C -- but the local lower bound should
+   be raised to 3, since no reachable local path benefits from 1. Check the
+   `"trial_count": 1` fallbacks at `agent.py:221` and `local.py:360` before changing it;
+   they may serve synthetic or non-local paths.
+
+### Open questions and resolutions
+
+**The truncated card, resolved: keep the data, withhold the verdict, blame coverage.**
+The first draft of this entry assigned the truncated card to rule 3
+(`unattributable_observations`), which is wrong. What claim 1 actually collected was
+three clean Opus 5 trials on case `mcs-thr-c1`, one clean trial on `mcs-thr-c2`, a
+contaminated fifth trial, and nothing at all on the remaining two cases. Trials 1-4 are
+perfectly attributable to a single model; nothing poisoned them.
+
+The damage is to **coverage**, not attributability: one usable case against
+`MINIMUM_CASES = 3`. So the card keeps `accuracy 4/4` and `completeness 4/12` and
+withholds status under **rule 4, `incomplete_coverage`**. This satisfies the operator's
+requirement that a runner bug must not destroy surviving evidence, while refusing a
+verdict whose shape nobody audited: the reviewer approved a four-case design, and
+publishing a conclusion from one case would substitute a much weaker test under a grade
+justified for a stronger one.
+
+Note that the surviving `mcs-thr-c2` sample is itself `n = 1`, so salvaging a verdict
+here would mean mixing a three-trial case with a one-trial case in a single decision --
+the exact defect the single-trial rule already forbids. That is the deeper reason to
+withhold, and it links this question to the next one.
+
+**Where the single-trial cap lives.** Today "a single sample caps the grade at C" sits
+inside the grade. Once the grade is purely about the reference, that rule has no home
+there. The likely answer is that accuracy and consistency are never reported as bare
+ratios and `completeness` carries the denominator, but this needs writing down.
+
+### Urgent next steps, if any
+
+Nothing is urgent, because nothing is implemented and the operator has deferred the fix.
+When it starts, order matters: **contracts before behavior.** `evidence-rubric.md` gains
+the axis separation and the status rubric, `artifact-contracts.md` gains the new card
+fields, `local-contract.md:117` changes before any assessor retry exists, and only then
+does `local_science.py` change. A change that lets operational success produce a
+scientific `pass`, or an evidence grade imply a verdict, remains a bug however the tests
+read.
+
+### Suggested next move
+
+Pin the model first. It is one flag, it needs no contract edit, and it removes a fault
+that can void any future run at any point. Then implement the cascade, because it is the
+change that makes the other work visible: with it, both claims that vanished in this run
+would have produced graded verdicts, and the `makeDummiesQueries` claim would never have
+reached the assessor at all -- the malformed-reply fault would have stopped mattering on
+its own.
+
+Do not treat the redesign as licence to relax anything. The model-identity refusal, the
+no-retry rule on subject trials, and the ban on choosing an aggregation rule after
+seeing results are all working correctly and all protect against grade shopping.
+
+### Recommended next action
+
+Rerun `sar-analysis` with `--model claude-opus-5` pinned and nothing else changed, and
+compare against run `1bb3f07a`. It is finished when either the `rdFMCS threshold` claim
+reaches a settled B with executed trials, or a different fault appears and is named.
+That single comparison establishes whether the model alias was the whole story on
+claim 1 before any card redesign is written.
