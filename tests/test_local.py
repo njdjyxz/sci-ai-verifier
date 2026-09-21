@@ -385,5 +385,46 @@ class ReportAxisTests(unittest.TestCase):
         self.assertIn("ours, not the skill's", text)
 
 
+class TruncatedRunTests(unittest.TestCase):
+    """A fault discards the trials that completed before it; decided 2026-09-21.
+
+    A prefix of a plan is not the plan the critique reviewed, and which cases survived is
+    decided by where the failure landed. Reporting accuracy over that subset would look
+    like a measurement while describing an arbitrary sample, so the observations stay in
+    the receipts and are never promoted to an axis.
+    """
+
+    def record(self, code, receipts):
+        from sci_ai_verifier.local import limitation
+        captured = {}
+
+        class Store:
+            def get_json(self, key):
+                return {}
+
+            def put_json(self, value):
+                captured.update(value)
+                return "ref"
+        state = {"local_work": {"c1": {}}, "claim_states": {}, "objects": []}
+        with patch("sci_ai_verifier.local.keep", side_effect=lambda s, st, v: captured.update(v) or "ref"):
+            limitation(Store(), state, "c1", code, "reason", receipts)
+        return captured
+
+    def test_surviving_trials_are_retained_as_receipts_but_never_scored(self):
+        record = self.record("subject_model_changed", ["obs-1", "obs-2", "obs-3", "obs-4"])
+        self.assertEqual(record["accuracy"], "not_obtained")
+        self.assertEqual(record["consistency"], "not_obtained")
+        self.assertIsNone(record["evidence_grade"])
+        self.assertIsNone(record["scientific_status"])
+        self.assertEqual(record["receipts"], ["obs-1", "obs-2", "obs-3", "obs-4"])
+
+    def test_the_withheld_reason_names_the_fault_that_caused_it(self):
+        self.assertEqual(self.record("subject_model_changed", [])["status_withheld_reason"],
+                         "unattributable_observations")
+        self.assertEqual(self.record("sandbox_image_unavailable", [])["status_withheld_reason"],
+                         "not_executed")
+        self.assertEqual(self.record("sandbox_image_unavailable", [])["fault"], "sandbox_image_unavailable")
+
+
 if __name__ == "__main__":
     unittest.main()

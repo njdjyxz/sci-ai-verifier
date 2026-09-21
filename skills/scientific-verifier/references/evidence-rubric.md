@@ -116,6 +116,8 @@ Only `U` gates status by way of the grade, and that dependency is definitional r
 
 The card records which `aggregation_rule` produced the verdict, because `fail` is uninterpretable without it: thirteen passes in fifteen trials is a `fail` under unanimity and a `pass` under a majority rule. Synthetic fixture runs withhold status for the same reason they stay ungraded.
 
+`status` is a scientific verdict and never a report on whether the workflow completed. Redefining it so that a finished run yields `pass` was considered and rejected on 2026-09-21: it would print `status: pass` beside `accuracy: 0 of 15` for a skill that was reliably wrong, which is the single most dangerous misreading this card can produce and is the case the independence rule exists to prevent. Whether the process finished is already answered by `completeness`, by `fault`, and by `verification_complete` on the report.
+
 Missing trials caused by runner, provider, evaluator, or other operational failures use bounded execution retries and then `operational_failure`; they are not scientifically invalid observations, a scientific `fail`, or grounds for assigning U. For a completed scientific evaluation with `no_supported_execution_grade`, execution returns `lower_grade_required`, `achieved_grade_ceiling: null`, and `next_target_grade: D`. The claim returns to planning and capability selection to attempt documentary evidence under a separate audited plan. This outcome does not authorize a D result or bypass that assessment. U is reached only through the existing no-acceptable-evidence paths after no grade A through D is supportable.
 
 ## AI-involvement disclosure

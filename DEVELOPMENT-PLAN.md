@@ -1889,26 +1889,60 @@ axis being populated on a clean pass, the assessor retry accepting a good second
 a second bad shape failing, citations never being retried, and all five card shapes
 rendering including a pre-redesign record.
 
+### Decisions taken 2026-09-21
+
+Two questions raised by the implementation were put to the operator and settled. Both
+confirm the behaviour already built, so neither required a code change; what they change is
+that these are now **decided, not deferred**, and the comments and tests say so.
+
+**1. A truncated trial set discards the trials that completed. Decided: discard.** This
+supersedes the 2026-09-18 note that a fault should salvage its clean prefix and report
+`incomplete_coverage` against it. On claim 1 of run `1bb3f07a` that prefix was four good
+Opus 5 trials, and the tempting reading is that throwing them away lets our bug destroy
+evidence. The reason it is still right to throw them away: a prefix of a plan is not the
+plan the critique reviewed, and which cases survive is decided by wherever the failure
+happened to land, so an accuracy computed over them describes an arbitrary subset while
+looking like a measurement. The observations stay in the claim's receipts for anyone who
+wants to read them; they are simply never promoted to an axis. `TruncatedRunTests` in
+`tests/test_local.py` pins this, and `WITHHELD_FOR_FAULT` carries the reasoning inline so a
+later reader does not add partial-accuracy reporting as an improvement.
+
+**2. `status` stays a scientific verdict. Decided: keep.** The operator proposed
+redefining it as an indicator of process completeness — `pass` when the workflow finished,
+`fail` otherwise, with the detail in `fault` — on the sound reasoning that a pass/fail
+summary duplicates what accuracy and consistency already report and forces a judgement the
+human should make. It was rejected for one specific consequence: the reliably-wrong card
+would then read `status: pass` beside `accuracy: 0 of 15`, which is operational success
+producing a scientific `pass`, the exact thing `CLAUDE.md` names as a bug however the tests
+read. Whether the process finished is already answered three times over by `completeness`,
+`fault`, and `verification_complete`. The misleading-ness the proposal targeted was a
+property of the old card, where status was the only field and was nulled to nothing; on the
+six-axis card the verdict sits beside the numbers it came from and the rule that produced
+it. The rejection is recorded in `evidence-rubric.md` so it is not re-proposed from scratch.
+
+If the verdict later proves unhelpful in practice, the clean move is to **remove** `status`
+and let readers conclude from grade, accuracy and consistency. Repurposing the word `pass`
+is not an available option.
+
 ### Open questions for the operator
 
-**1. Salvaging a truncated trial set.** The 2026-09-18 entry resolved that a runner fault
-should keep its surviving observations and withhold the verdict under `incomplete_coverage`.
-That is only half-built. `limitation()` now records the fault, the withheld reason and
-`not_obtained` axes, and maps `subject_model_changed` to `unattributable_observations`, but
-it does not yet compute accuracy, consistency or a surviving-case count from the trials that
-did complete, so the clean prefix is still discarded. Threading that through needs a decision
-about what a partial set may report, which is the point the operator said was misread.
-
-**2. Should the aggregation rule become a plan field?** It is currently the installed
+**1. Should the aggregation rule become a plan field?** It is currently the installed
 constant `unanimity`, recorded on every card so `fail` is interpretable. Making it
 planner-selectable per claim is the right end state — the rubric already requires the rule
 be chosen from the claim — but it changes an audited tool schema, which means the
-`workflow.md` matrix and `tool-contracts.md` move together with it. Not started.
+`workflow.md` matrix and `tool-contracts.md` move together with it. Not started, and not
+yet urgent: every claim seen so far is a correctness claim that unanimity scores correctly.
+Two triggers should reopen it — a submitted claim genuinely worded as typical behaviour, or
+a trial count raised far enough that unanimity starts failing sound skills on noise. That
+second one is arithmetic rather than opinion: a skill reliable 99% of the time per trial
+passes 15 trials 86% of the time, 30 trials 74%, and 50 trials 60%, so the same skill looks
+worse the more thoroughly it is tested.
 
-**3. Re-registration is required for the model pin.** The `--model claude-opus-5` change is
+**2. Re-registration is required for the model pin.** The `--model claude-opus-5` change is
 in the install guide only. The live MCP server is registered in the operator's personal
-Claude Code configuration and still runs with the `opus` alias until it is removed and
-re-added.
+Claude Code configuration, outside this repository, and still runs with the `opus` alias
+until it is removed and re-added. Until that happens the fault that voided claim 1 of run
+`1bb3f07a` can recur on any run.
 
 ### Urgent next steps, if any
 

@@ -114,9 +114,15 @@ def pin_candidate(store, state, key):
 
 # Why the verdict is withheld, per fault. Most faults mean nothing usable came back at
 # all; a changed subject model is different, because observations did arrive and are
-# simply not attributable to one subject. Salvaging the attributable prefix of a
-# truncated trial set, and reporting `incomplete_coverage` against it, needs the
-# surviving-case count threaded through here and is deliberately not done yet.
+# simply not attributable to one subject.
+#
+# A truncated trial set reports no measurement: the observations that completed before
+# the fault are discarded rather than salvaged into a partial accuracy. Decided
+# 2026-09-21, not pending. A prefix of a plan is not the plan the critique reviewed, and
+# the surviving cases are whichever ones happened to run before the failure, so a figure
+# computed from them describes an arbitrary subset while looking like a measurement. The
+# raw observations stay in the receipts for anyone who wants them; they are simply not
+# promoted to an axis. Do not add partial-accuracy reporting here without revisiting that.
 WITHHELD_FOR_FAULT = {"subject_model_changed": "unattributable_observations"}
 
 
