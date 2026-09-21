@@ -118,6 +118,13 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
     settings=load_configuration(config_path)
     adapter = ClaudeCode(executable=executable, model=model, auth=auth, log=log,settings=settings)
     preflight = adapter.preflight()
+    if settings["sandbox_image"]:
+        # Probe the container engine before spending a planner session. The CLI preflight
+        # reports `live_execution_tested: false` and never touches Docker, so a stopped
+        # daemon used to surface at the first subject call, minutes and dollars into a run
+        # whose every execution claim was already doomed.
+        from .sandbox import DockerSandbox
+        preflight["sandbox"] = DockerSandbox(workspace, settings).preflight()
     log.emit("setup_finished", preflight=preflight)
     runtime = Runtime(workspace, source if source.is_dir() else source.parent, instructions,
                       profile="local", subject_adapter=adapter)

@@ -46,7 +46,11 @@ def load_configuration(path=None):
     bounds = {"memory_mib": (128,32768), "cpus": (1,32), "pids_limit": (16,1024),
               "workspace_mib": (16,4096), "max_file_bytes": (1024,64*1024*1024),
               "max_artifact_bytes": (1024,256*1024*1024), "max_artifacts": (1,1000),
-              "trial_count": (1,20), "max_subject_calls": (1,10000),
+              # Floor of three, not one: the rubric permits a single trial only against a
+              # deterministic subject with a fixed entry point, and this profile's subject
+              # is always a fresh model session. A lone sample cannot tell a skill that is
+              # right from one that is sometimes right, so n=1 is never legitimate here.
+              "trial_count": (3,20), "max_subject_calls": (1,10000),
               "subject_timeout_seconds": (1,3600)}
     for key, (minimum, maximum) in bounds.items():
         if type(settings[key]) is not int or not minimum <= settings[key] <= maximum:

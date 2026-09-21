@@ -18,6 +18,11 @@ ORDER = ("A", "B", "C", "D")
 GRADES = ("A", "B", "C", "D", "U")
 MINIMUM_CASES = 3
 STRONG_TRIALS = 3
+# The installed aggregation rule. It is recorded on every card because `fail` cannot be
+# read without it: thirteen passes in fifteen trials is a failure under unanimity and a
+# pass under a majority rule. Making this planner-selectable per claim is deliberately
+# not done here; it would change an audited tool schema.
+AGGREGATION_RULE = "unanimity"
 # One round per grade in the rubric. The count is a policy choice bounded by session
 # cost, not a derivation; what makes it safe is that a round is only spent on a design
 # that actually changed, so the limit bounds real revisions rather than repetition.
@@ -31,9 +36,15 @@ POLICY = {
                 "last critique of this exact design supported",
     "revision": "a further round requires a changed design; repeating one spends no session",
     "coverage": "every planned trial of every planned case is scored",
-    "invalid": "retained in the denominator; no execution grade",
-    "agreement": "unanimous scored status within each case",
-    "verdict": "all pass; any fail; any invalid inconclusive",
+    "invalid": "retained in the denominator; status inconclusive; the grade is unaffected",
+    "agreement": "unanimous scored status within each case; reported as consistency and fed to "
+                 "the aggregation rule, never applied to the grade",
+    "aggregation_rule": AGGREGATION_RULE,
+    "verdict": "all cases unanimously pass; anything else fails; any invalid inconclusive",
+    "status_withheld": "no_reference_grade, synthetic_observations, not_executed, "
+                       "unattributable_observations, incomplete_coverage",
+    "axes": "grade reports the reference and test bundle only; accuracy, consistency, "
+            "completeness and status are recorded separately and none overwrites another",
     "ceiling": "strongest grade supported by recorded evidence facts, lowered by the independent critique",
     "grades": {
         "A": "expected answers independently retrieved by Python, scored by an installed comparison "
@@ -94,8 +105,11 @@ def evidence_ceiling(candidate, references, trials):
     """The strongest grade Python's own recorded facts support, with the reasons it stops there."""
     origins = [references.get(case["reference_ref"], {}).get("origin") for case in candidate["cases"]]
     pinned = {"retrieved_public_https", "operator_local_resource"}
-    deterministic = (candidate["method"] in {"exact", "numeric"}
-                     or all(item["passed"] for item in candidate.get("controls_receipts", [])))
+    # Names the *comparison*, not the subject. The subject of a local run is always a
+    # fresh model session and is never deterministic; reading this as a statement about
+    # the subject would wrongly make a single trial look sufficient.
+    comparison_deterministic = (candidate["method"] in {"exact", "numeric"}
+                                or all(item["passed"] for item in candidate.get("controls_receipts", [])))
     reasons = []
     if any(origin not in pinned for origin in origins):
         reasons.append("reference_origin_unknown")
@@ -105,7 +119,7 @@ def evidence_ceiling(candidate, references, trials):
         # Direct validation requires that no AI judgment enters scoring. A generated
         # scorer is reproducible and control-tested, but the planner wrote the rule.
         reasons.append("scoring_code_authored_by_planner")
-    if not deterministic:
+    if not comparison_deterministic:
         reasons.append("comparison_not_deterministic")
     if not all(token_exact(case) for case in candidate["cases"]):
         reasons.append("expected_value_not_token_exact_in_source")
@@ -118,7 +132,7 @@ def evidence_ceiling(candidate, references, trials):
         ceiling = "A"
     elif blocking <= {"expected_answers_not_independently_retrieved", "scoring_code_authored_by_planner"}:
         ceiling = "B"
-    elif deterministic and len(candidate["cases"]) >= MINIMUM_CASES:
+    elif comparison_deterministic and len(candidate["cases"]) >= MINIMUM_CASES:
         # A previously qualified candidate reused offline keeps a reproducible
         # comparison against its pinned quote even when its origin is unrecorded.
         ceiling = "C"
@@ -174,6 +188,32 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
     }
 
 
+def verdict_for(*, ceiling, synthetic, constant, usable_cases, evaluated, per_case, counts, trials):
+    """The ordered status rubric. Returns `(status, withheld_reason)`; first match wins.
+
+    Status answers whether the claim holds, and is kept independent of the grade. Only a
+    missing reference gates it, and that dependency is definitional rather than
+    qualitative: with nothing to compare against, "did the output match the expected
+    answer" has no value at all rather than a weak one. Disagreement between trials does
+    not withhold a verdict — it is an input to the aggregation rule, so a flaky skill
+    produces a recorded `fail` instead of an absent result.
+    """
+    if ceiling is None:
+        return None, "no_reference_grade"
+    if synthetic:
+        return None, "synthetic_observations"
+    if not evaluated:
+        return None, "not_executed"
+    if not constant:
+        return None, "unattributable_observations"
+    if usable_cases < MINIMUM_CASES:
+        return None, "incomplete_coverage"
+    if counts["invalid"]:
+        return "inconclusive", None
+    satisfied = all(row["counts"].get("pass", 0) == trials for row in per_case)
+    return ("pass" if satisfied else "fail"), None
+
+
 def decide(audit_record, observations, cases, trials, *, synthetic=False):
     """Apply the installed policy to scored trials. The planner cannot change this outcome."""
     planned = len(cases) * trials
@@ -193,31 +233,51 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     models = sorted({model for row in observations for model in row.get("model_ids", [])})
     constant = len({tuple(sorted(row.get("model_ids", []))) for row in observations}) == 1
     ceiling = audit_record["settled_ceiling"]
-    supported = bool(ceiling) and constant and not synthetic and not counts["invalid"] \
-        and len(cases) >= MINIMUM_CASES and all(row["agreement"] == 1 for row in per_case)
-    grade = ceiling if supported else None
-    verdict = "inconclusive" if counts["invalid"] else "fail" if counts["fail"] else "pass"
-    reasons = list(audit_record["evidence_limits"])
+    # The grade reports the reference and the test bundle, both settled before any trial
+    # ran, so nothing observed during execution may move it. A skill that fails every
+    # case against a gold-standard oracle keeps its grade: the evidence is exactly as
+    # strong, it simply refutes the claim. A synthetic run has no real reference at all.
+    grade = ceiling if (ceiling and not synthetic) else None
+    evaluated = len(observations)
+    status, withheld = verdict_for(ceiling=ceiling, synthetic=synthetic, constant=constant,
+                                   usable_cases=len(per_case), evaluated=evaluated,
+                                   per_case=per_case, counts=counts, trials=trials)
+    # Two lists, never merged: a reader must be able to tell a weak reference from a
+    # wobbling skill without reading the raw trials.
+    grade_reasons = list(audit_record["evidence_limits"])
     if ceiling is None:
-        reasons.append("no_supported_execution_grade")
+        grade_reasons.append("no_supported_execution_grade")
     if synthetic:
-        reasons.append("synthetic_observations")
+        grade_reasons.append("synthetic_observations")
+    execution_reasons = []
     if counts["invalid"]:
-        reasons.append("invalid_observations_retained")
+        execution_reasons.append("invalid_observations_retained")
     if any(row["agreement"] < 1 for row in per_case):
-        reasons.append("trial_agreement_below_policy")
+        execution_reasons.append("trial_agreement_below_policy")
     if not constant:
-        reasons.append("observed_model_identity_changed")
+        execution_reasons.append("observed_model_identity_changed")
+    unanimous = sum(1 for row in per_case if row["agreement"] == 1)
     return {
-        "scientific_status": verdict if grade else None, "evidence_grade": grade,
+        "scientific_status": status, "status_withheld_reason": withheld,
+        "evidence_grade": grade,
         "achieved_grade_ceiling": grade, "grade_policy_ref": audit_record["policy_ref"],
         "proposed_grade": audit_record["proposed_grade"],
+        "aggregation_rule": AGGREGATION_RULE, "fault": None,
         # Named for the audit field it copies. `evidence_ceiling` in the audit is the
         # mechanical ceiling; reusing that name here for a different value would mislead.
-        "settled_ceiling": ceiling, "grade_limit_reasons": sorted(set(reasons)),
+        "settled_ceiling": ceiling, "grade_limit_reasons": sorted(set(grade_reasons)),
+        "execution_limit_reasons": sorted(set(execution_reasons)),
+        "accuracy": {"matched": counts["pass"], "evaluated": evaluated,
+                     "ratio": round(counts["pass"] / evaluated, 4) if evaluated else None},
+        "consistency": {"label": "unanimous" if unanimous == len(per_case) else "split",
+                        "overall_agreement": round(sum(row["agreement"] for row in per_case) / len(per_case), 4)
+                        if per_case else None,
+                        "unanimous_cases": unanimous, "split_cases": len(per_case) - unanimous},
+        "completeness": {"obtained": evaluated, "planned": planned,
+                         "usable_cases": len(per_case), "planned_cases": len(cases)},
         "next_target_grade": None if grade else "D",
-        "trial_counts": {"planned": planned, "attempted": planned, "obtained": len(observations),
-                         "evaluated": len(observations), "invalid": counts["invalid"], "missing": 0},
+        "trial_counts": {"planned": planned, "attempted": planned, "obtained": evaluated,
+                         "evaluated": evaluated, "invalid": counts["invalid"], "missing": 0},
         "case_agreement": per_case, "observed_model_ids": models,
         "ai_involvement": {
             "orchestration": True,

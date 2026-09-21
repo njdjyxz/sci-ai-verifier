@@ -1796,3 +1796,135 @@ compare against run `1bb3f07a`. It is finished when either the `rdFMCS threshold
 reaches a settled B with executed trials, or a different fault appears and is named.
 That single comparison establishes whether the model alias was the whole story on
 claim 1 before any card redesign is written.
+
+## Claude: 2026-09-21 (six-axis report card implemented)
+
+### Current stage and status
+
+The report-card redesign proposed on 2026-09-18 is **implemented**, contracts first, with
+the automatic-dependency section of that entry deliberately untouched. The suite is green
+at **251 tests, 2 skipped** (baseline before this work: 240). No live verification run was
+made: Docker Desktop is stopped again on this machine, and the operator asked to be
+consulted before any run is started.
+
+The central defect is fixed. A claim that scores thirteen passes and two fails across
+fifteen trials against a good reference now reports **grade A, status `fail`, consistency
+`split`**. Before this change it reported nothing at all.
+
+### What has been done
+
+**1. Contracts, before any behaviour.**
+
+`evidence-rubric.md` replaces its three separated questions with six and states the rule
+that carries the whole design: the grade answers *how good was the reference* and nothing
+else, and never moves for a behavioural or operational reason. The A/B/C eligibility
+predicates are restated over reference and test-bundle facts only, all of which are known
+before a trial runs. Observed trial outcomes are explicitly excluded from them. A new
+**Status** section carries the ordered seven-row rubric and the requirement to record which
+`aggregation_rule` produced a verdict.
+
+The three consequences under *Subject non-determinism* were rewritten. Only the first still
+touches the grade: a *planned* `n = 1` is a test-bundle fact and still caps at C. Observed
+disagreement no longer lowers anything, and a changed subject model now withholds the
+verdict while leaving the grade alone.
+
+`artifact-contracts.md` gains `accuracy`, `consistency`, `completeness`, `aggregation_rule`,
+`fault` and `status_withheld_reason`, and states that `grade_limit_reasons` and
+`execution_limit_reasons` are separate lists that may not be merged.
+
+`local-contract.md` replaces "Invalid or missing assessments are operational failures" with
+the bounded retry rule: shape is retried once against an identical packet, citations are
+never retried, and the first valid assessment counts whatever status it carries.
+
+No tool was added or removed and no tool's legality changed, so the `workflow.md` matrix and
+`tool-contracts.md` needed no edit.
+
+**2. `decide()` no longer welds the axes together** (`local_science.py`).
+
+`grade = ceiling if (ceiling and not synthetic) else None`. Model constancy, retained
+invalid observations and per-case agreement are all gone from the grade gate. A new
+`verdict_for()` implements the ordered status rubric and returns `(status, reason)`, so a
+missing grade no longer silently erases a computed verdict. The record gained `accuracy`,
+`consistency`, `completeness`, `aggregation_rule`, `fault`, `status_withheld_reason` and
+`execution_limit_reasons`; `grade_limit_reasons` now carries reference facts only.
+
+**3. The agreement-based cascade was deliberately *not* built, because the design retired
+it.** The 2026-09-18 entry listed "no cascade" as defect 2, reasoning from a rubric whose
+A/B/C predicates consumed agreement. Once the grade stops moving for behavioural reasons
+there is nothing to cascade down from: `evidence_ceiling()` already selects A, B, C or None
+from reference facts, and that *is* the cascade. Implementing an agreement-based one would
+have put behaviour back into the grade and contradicted the design the operator confirmed.
+Defect 2 is therefore closed as obsolete rather than fixed.
+
+**4. Smaller fixes from the same entry.**
+
+- `deterministic` renamed to `comparison_deterministic` (`local_science.py:97`) with a
+  comment saying it describes the comparison, never the subject. This was flagged as a live
+  trap for exactly this refactor.
+- `trial_count` floor raised from 1 to 3 (`local_config.py`). The single-trial exemption
+  applies to a deterministic subject with a fixed entry point, which this profile can never
+  have. The internal `trial_count: 1` fallbacks at `agent.py:221` and `local.py:360` were
+  left alone: they serve subjects that carry no settings, which are the synthetic and test
+  paths, and those are ungraded anyway.
+- The assessor retries once on unusable shape and never on citations (`documentary.py`),
+  with both attempts recorded on the result.
+- `verify` now probes the container engine before spending a planner session
+  (`local_entry.py`). **Verified against the real failure:** with Docker Desktop stopped it
+  raises `sandbox_image_unavailable` in about a second, where the 2026-09-18 run reached the
+  same fault roughly thirteen minutes and $6.05 in.
+- `LOCAL-INSTALL.md` pins `--model claude-opus-5` in the registration command, with the
+  reason recorded next to it.
+
+**5. The card renders the axes** (`local.py:axis_lines`). Limitation records now carry
+`fault`, `not_obtained` behavioural axes and a withheld reason mapped from the fault code;
+documentary records carry `not_applicable`, which is a different statement from
+`not_obtained` and is rendered as such. Records written before the axes existed still
+render, returning nothing rather than raising.
+
+**6. Tests.** Four rewritten in `test_local_science.py` to assert the new contract where they
+previously asserted the old one, plus new coverage for: disagreement producing a graded
+`fail`, invalid observations producing `inconclusive` at full grade, a changed model
+withholding only the verdict, `grade_limit_reasons` never carrying behavioural facts, every
+axis being populated on a clean pass, the assessor retry accepting a good second reply,
+a second bad shape failing, citations never being retried, and all five card shapes
+rendering including a pre-redesign record.
+
+### Open questions for the operator
+
+**1. Salvaging a truncated trial set.** The 2026-09-18 entry resolved that a runner fault
+should keep its surviving observations and withhold the verdict under `incomplete_coverage`.
+That is only half-built. `limitation()` now records the fault, the withheld reason and
+`not_obtained` axes, and maps `subject_model_changed` to `unattributable_observations`, but
+it does not yet compute accuracy, consistency or a surviving-case count from the trials that
+did complete, so the clean prefix is still discarded. Threading that through needs a decision
+about what a partial set may report, which is the point the operator said was misread.
+
+**2. Should the aggregation rule become a plan field?** It is currently the installed
+constant `unanimity`, recorded on every card so `fail` is interpretable. Making it
+planner-selectable per claim is the right end state — the rubric already requires the rule
+be chosen from the claim — but it changes an audited tool schema, which means the
+`workflow.md` matrix and `tool-contracts.md` move together with it. Not started.
+
+**3. Re-registration is required for the model pin.** The `--model claude-opus-5` change is
+in the install guide only. The live MCP server is registered in the operator's personal
+Claude Code configuration and still runs with the `opus` alias until it is removed and
+re-added.
+
+### Urgent next steps, if any
+
+None. Everything above is committed and green, and nothing is half-applied.
+
+### Suggested next move
+
+Re-register the MCP connection with the pinned model, start Docker, and rerun
+`sar-analysis`. That exercises the whole change against the run that motivated it: the
+`rdFMCS threshold` claim should now either reach a settled B with executed trials or fail
+for a newly named reason, and the `makeDummiesQueries` claim should produce a graded
+verdict instead of vanishing — which also means it never reaches the assessor, so the
+malformed-reply fault stops mattering on its own.
+
+### Recommended next action
+
+Compare the new run's card against run `1bb3f07a` claim by claim. It is finished when a
+claim that splits its trials shows a grade, a status and a `split` consistency label on the
+same card, because that is the outcome the old code could not express.

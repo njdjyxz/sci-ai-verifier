@@ -112,14 +112,28 @@ def pin_candidate(store, state, key):
     return candidate
 
 
+# Why the verdict is withheld, per fault. Most faults mean nothing usable came back at
+# all; a changed subject model is different, because observations did arrive and are
+# simply not attributable to one subject. Salvaging the attributable prefix of a
+# truncated trial set, and reporting `incomplete_coverage` against it, needs the
+# surviving-case count threaded through here and is deliberately not done yet.
+WITHHELD_FOR_FAULT = {"subject_model_changed": "unattributable_observations"}
+
+
 def limitation(store, state, claim_id, code, reason, receipts=None, *, asserted_by="runtime"):
     work = state["local_work"].setdefault(claim_id, {})
     previous=[]
     if work.get("result_ref"):
         work["comparison_ref"]=work.pop("result_ref")
         previous=store.get_json(work["comparison_ref"]).get("receipts",[])
+    # A fault is the runner's, never the skill's, so it is named in its own field and
+    # never becomes a grade or a verdict. The behavioural axes read `not_obtained`
+    # rather than `not_applicable`: execution was attempted and returned nothing usable,
+    # which is a different statement from a path that never measures behaviour at all.
     record = {"kind": "local-limitation", "claim_id": claim_id, "code": code, "reason": reason,
               "asserted_by": asserted_by, "scientific_status": None, "evidence_grade": None,
+              "status_withheld_reason": WITHHELD_FOR_FAULT.get(code, "not_executed"), "fault": code,
+              "accuracy": "not_obtained", "consistency": "not_obtained",
               "receipts":list(dict.fromkeys([*previous,*(receipts or [])]))}
     work["outcome_ref"] = keep(store, state, record)
     state["claim_states"][claim_id] = "terminal_operational"
@@ -444,6 +458,12 @@ def documentary_step(store,state,claim_id,name,args,subject):
         record={**retained,"kind":"local-documentary","assessment_ref":assessment_ref,"packet_ref":packet_ref,
                 "rubric_ref":RUBRIC_REF,
                 "scientific_status":response["assessment"]["status"] if graded else None,"evidence_grade":"D" if graded else None,
+                "status_withheld_reason":None if graded else "synthetic_observations",
+                # This path compares documents and never runs the skill, so there is no
+                # behaviour to measure. `not_applicable` says that; `not_obtained` would
+                # wrongly suggest a measurement was attempted and lost.
+                "accuracy":"not_applicable","consistency":"not_applicable","completeness":"not_applicable",
+                "fault":None,
                 "documentary_status":response["assessment"]["status"],"ai_involvement":{"orchestration":True,"evidence_generation":True,"verdict":True},
                 "limitations":["Documentary consistency only; scientific performance remains unverified.",
                     response["assessment"]["limitations"],
@@ -562,6 +582,47 @@ def execute(store, state, claim_id, subject):
     return {"outcome": "local_documentary_required" if needs_documentary else "local_comparison_complete", "result": result}
 
 
+def axis_lines(terminal, cell):
+    """Render the independent axes so a reader can localise the fault at a glance.
+
+    Grade reports the reference, accuracy and consistency report the skill, completeness
+    and fault report the run. Printing them together is the point: a weak reference and a
+    wobbling skill produce very different cards that a single verdict line would flatten.
+    """
+    def measured(value, render):
+        """Sentinels arrive as bare strings; only a dict carries an actual measurement."""
+        return render(value) if isinstance(value, dict) else cell(value or "unassigned")
+
+    lines = []
+    if terminal.get("scientific_status") is None and terminal.get("status_withheld_reason"):
+        lines.append("Status withheld: " + cell(terminal["status_withheld_reason"]) + ".")
+    if terminal.get("accuracy") is not None or terminal.get("consistency") is not None:
+        # `not_applicable` and `not_obtained` arrive as bare strings, not measurements:
+        # the documentary path never measures behaviour, which is a different statement
+        # from an execution that was attempted and returned nothing.
+        def spread(value):
+            label = cell(value.get("label", "unassigned"))
+            if value.get("label") == "split":
+                label += (f" ({value['split_cases']} split of "
+                          f"{value['split_cases'] + value['unanimous_cases']} cases)")
+            return label
+
+        lines.append("Accuracy: "
+                     + measured(terminal.get("accuracy"), lambda v: cell(f"{v['matched']} of {v['evaluated']}"))
+                     + "; consistency: " + measured(terminal.get("consistency"), spread)
+                     + "; completeness: "
+                     + measured(terminal.get("completeness"),
+                                lambda v: cell(f"{v['obtained']} of {v['planned']} trials")) + ".")
+    if terminal.get("aggregation_rule"):
+        lines.append("Aggregation rule: " + cell(terminal["aggregation_rule"]) + ".")
+    if terminal.get("execution_limit_reasons"):
+        lines.append("Execution limited by: " + cell(", ".join(terminal["execution_limit_reasons"]))
+                     + ". These describe the run and the skill, not the reference.")
+    if terminal.get("fault"):
+        lines.append("Runner fault: " + cell(terminal["fault"]) + ". This is ours, not the skill's.")
+    return lines + [""] if lines else []
+
+
 def report(store, state):
     def cell(value):
         return escape(str(value)).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
@@ -606,6 +667,7 @@ def report(store, state):
         lines.extend(["## " + cell(claim["statement"]), "",
                       "Outcome: " + terminal.get("comparison_status", terminal.get("documentary_status",terminal.get("code",terminal.get("scientific_status") or "unavailable"))), "",
                       "Scientific status: "+cell(terminal.get("scientific_status") or "unassigned")+"; evidence grade: "+cell(terminal.get("evidence_grade") or "unassigned"),""])
+        lines.extend(axis_lines(terminal, cell))
         if required_grade:
             lines.extend(["Required grade: "+required_grade+"; requirement "+("met" if meets_required else "not met"),""])
         lines.extend(["Trials: "+"; ".join(key+" "+str(value) for key,value in execution_counts.items())+".",""])

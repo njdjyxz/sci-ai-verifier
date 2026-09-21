@@ -339,19 +339,26 @@ Every claim result contains the claim, route, plan, source-snapshot, applicable 
 Additional fields include:
 
 - `result_kind`: `evaluated_result`, `documentary_result`, or `unverified_result`.
-- `status`: `pass`, `fail`, or `inconclusive`, subject to the form rules above.
-- `evidence_grade`: A, B, C, D, or U.
+- `status`: `pass`, `fail`, `inconclusive`, or `null`, subject to the form rules above. When `null`, a `status_withheld_reason` of `no_reference_grade`, `not_executed`, `unattributable_observations`, `incomplete_coverage`, or `synthetic_observations` is required.
+- `evidence_grade`: A, B, C, D, or U. Reports the reference and the test bundle only, and never moves for a behavioural or operational reason.
+- `accuracy`: matched against evaluated, with both numbers, or `not_obtained` when execution was attempted and produced nothing, or `not_applicable` on a path that never measures behaviour. A bare ratio without its denominator is not a valid value.
+- `consistency`: a label with its per-case agreement, or `not_obtained` / `not_applicable` on the same terms. Reference-independent, so it remains meaningful at any grade.
+- `completeness`: obtained against planned trials, and usable against planned cases.
+- `aggregation_rule`: the identity of the rule that produced `status`. Required whenever `status` is `pass` or `fail`, because neither is interpretable without it.
+- `fault`: the operational failure that interrupted this claim, or `null`. A fault is the runner's, never the skill's, and never alters the grade.
 - Requested, planned, and achieved grade.
 - Metrics, tolerances, decision outputs, and raw-output references.
 - Coverage including tested cases, included scope, and excluded scope.
 - For an evaluated result: the subject-runner identity and catalog provenance, subject model, generation settings, trial count, aggregation-rule identity, per-trial output and evaluator-score references, aggregated case outcomes, and observed per-case trial agreement.
-- For an evaluated result: the exact audited `trial_grade_policy` ID, version, and digest (`grade_policy_ref`), measured inputs and matched branches, `grade_limit_reasons`, requested/attempted/obtained/evaluated/invalid/missing trial counts, and authoritative `achieved_grade_ceiling` copied from execution. The result cannot substitute an agent-estimated ceiling or different grade.
+- For an evaluated result: the exact audited `trial_grade_policy` ID, version, and digest (`grade_policy_ref`), measured inputs and matched branches, `grade_limit_reasons`, `execution_limit_reasons`, requested/attempted/obtained/evaluated/invalid/missing trial counts, and authoritative `achieved_grade_ceiling` copied from execution. The result cannot substitute an agent-estimated ceiling or different grade.
 - AI involvement in orchestration, evidence generation, and verdict.
 - Warnings, downgrade reasons, operational errors, and report notes.
 
+`grade_limit_reasons` and `execution_limit_reasons` are separate lists and may not be merged. The first names only facts about the reference and the test bundle; the second names disagreement between trials, retained invalid observations, a changed subject model, and anything else observed during or after execution. Collapsing them leaves a reader unable to distinguish a weak reference from a wobbling skill, which is the single most useful thing the card tells them.
+
 Trial agreement is reported, never silently folded into the status. A result that held on every trial and one that survived aggregation are different claims about the skill, and a reader who cannot tell them apart has been given a number without its uncertainty.
 
-The result status and evidence grade are independent. A high-grade failure is strong evidence against the claim; a low-grade pass does not establish broad scientific accuracy.
+The six recorded axes are independent and none may overwrite another. In particular a missing grade does not erase a computed status, and observed disagreement does not erase a grade: a skill that is right thirteen times in fifteen against a good reference is a graded failure with recorded inconsistency, not an absent result. A high-grade failure is strong evidence against the claim; a low-grade pass does not establish broad scientific accuracy; and an accuracy figure beside a `U` grade measures nothing at all.
 
 ## Report card
 

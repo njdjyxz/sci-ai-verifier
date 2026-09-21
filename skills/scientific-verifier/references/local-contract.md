@@ -114,7 +114,16 @@ fresh assessor or records searches establishing no acceptable evidence. A new
 Claude session, selected by the host, receives the exact claim, source quotes,
 limitations and fixed rubric only. It has no tools or planning history. Its final
 JSON must contain a status, supported rubric findings and exact citations to the
-pinned packet. Invalid or missing assessments are operational failures.
+pinned packet.
+
+A reply whose *shape* is unusable — unparseable JSON, wrong keys, a findings list of
+the wrong length — is retried at most once against an identical packet in a second
+fresh session, and both attempts are recorded. A reply that parses but whose citations
+do not quote the pinned packet is never retried: that is a judgement the assessor made
+about the evidence, and re-rolling it until the answer is acceptable is grade shopping.
+Only shape is retried, the packet may not change between attempts, and the first valid
+assessment is the one that counts regardless of the status it carries. A second invalid
+reply, or a missing assessment, is an operational failure.
 
 A completed assessment against the installed rubric is grade D with the assessor's
 status. Grade D is documentary consistency only; execution accuracy remains

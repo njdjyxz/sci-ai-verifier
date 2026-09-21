@@ -347,5 +347,43 @@ class LocalTests(unittest.TestCase):
             fetch_public("https://example.org")
 
 
+class ReportAxisTests(unittest.TestCase):
+    """The card must render every axis shape, including ones that hold no measurement."""
+
+    @staticmethod
+    def render(record):
+        from sci_ai_verifier.local import axis_lines
+        return "\n".join(axis_lines(record, str))
+
+    def test_a_flaky_claim_reports_its_grade_accuracy_and_split(self):
+        text = self.render({"scientific_status": "fail", "evidence_grade": "A",
+                            "accuracy": {"matched": 13, "evaluated": 15},
+                            "consistency": {"label": "split", "unanimous_cases": 3, "split_cases": 2},
+                            "completeness": {"obtained": 15, "planned": 15},
+                            "aggregation_rule": "unanimity", "fault": None,
+                            "execution_limit_reasons": ["trial_agreement_below_policy"]})
+        self.assertIn("Accuracy: 13 of 15", text)
+        self.assertIn("split (2 split of 5 cases)", text)
+        self.assertIn("unanimity", text)
+        self.assertIn("not the reference", text)
+
+    def test_paths_that_never_measure_behaviour_render_their_sentinel(self):
+        """`not_applicable` and `not_obtained` arrive as bare strings, not dicts."""
+        for sentinel, withheld in (("not_applicable", None), ("not_obtained", "not_executed")):
+            text = self.render({"scientific_status": None, "status_withheld_reason": withheld,
+                                "accuracy": sentinel, "consistency": sentinel, "completeness": sentinel})
+            self.assertIn("consistency: " + sentinel, text)
+            self.assertEqual("withheld" in text, withheld is not None)
+
+    def test_a_record_written_before_the_axes_existed_still_renders(self):
+        self.assertEqual(self.render({"scientific_status": "pass", "evidence_grade": "A"}), "")
+
+    def test_a_runner_fault_is_named_as_ours(self):
+        text = self.render({"scientific_status": None, "status_withheld_reason": "unattributable_observations",
+                            "evidence_grade": "B", "fault": "subject_model_changed"})
+        self.assertIn("Status withheld: unattributable_observations", text)
+        self.assertIn("ours, not the skill's", text)
+
+
 if __name__ == "__main__":
     unittest.main()

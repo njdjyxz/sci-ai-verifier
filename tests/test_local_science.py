@@ -1,15 +1,19 @@
 """Evidence-strength ceilings, the critique boundary and assessor limits; no live models."""
 
+import json
 import sys
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import patch
+from uuid import uuid4
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
 from sci_ai_verifier.common import Fault
 from sci_ai_verifier.local_science import (GRADES,MAX_ROUNDS,POLICY_REF,audit,decide,evidence_ceiling,
                                            proposal_problem,weaker)
-from sci_ai_verifier.documentary import CRITIQUE_RUBRIC,RUBRIC,validate_assessment,validate_critique
+from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC,RUBRIC,assess,validate_assessment,
+                                         validate_critique)
 from sci_ai_verifier.local_evaluators import qualify,validate_spec
 
 RETRIEVED={"origin":"retrieved_public_https","url":"https://example.org/r","version":"1","license":"unknown"}
@@ -115,24 +119,67 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(result["evidence_grade"],"C")
         self.assertEqual(result["proposed_grade"],"A")
 
-    def test_missing_duplicate_invalid_and_disagreeing_trials(self):
+    def test_missing_or_duplicate_trials_cannot_become_a_verdict(self):
         for rows in (self.rows(3)[:-1],self.rows(3)+self.rows(3)[:1]):
             with self.assertRaises(Fault):
                 decide(self.audit,rows,self.cases,3)
-        for changed in ("invalid","fail"):
-            rows=self.rows(3)
-            rows[0]["comparison_status"]=changed
-            result=decide(self.audit,rows,self.cases,3)
-            self.assertIsNone(result["evidence_grade"])
-            self.assertEqual(result["trial_counts"]["evaluated"],9)
-            self.assertEqual(result["trial_counts"]["invalid"],int(changed=="invalid"))
 
-    def test_changed_observed_model_identity_removes_the_grade(self):
+    def test_disagreement_fails_the_claim_and_leaves_the_grade_alone(self):
+        """The headline repair: a flaky skill is a recorded failure, not an absent result."""
+        rows=self.rows(3)
+        rows[0]["comparison_status"]="fail"
+        result=decide(self.audit,rows,self.cases,3)
+        self.assertEqual(result["evidence_grade"],"A")
+        self.assertEqual(result["scientific_status"],"fail")
+        self.assertIsNone(result["status_withheld_reason"])
+        self.assertEqual(result["consistency"]["label"],"split")
+        self.assertEqual(result["consistency"]["split_cases"],1)
+        self.assertEqual(result["accuracy"],{"matched":8,"evaluated":9,"ratio":round(8/9,4)})
+        self.assertIn("trial_agreement_below_policy",result["execution_limit_reasons"])
+        self.assertNotIn("trial_agreement_below_policy",result["grade_limit_reasons"])
+
+    def test_invalid_observations_are_inconclusive_and_keep_the_grade(self):
+        rows=self.rows(3)
+        rows[0]["comparison_status"]="invalid"
+        result=decide(self.audit,rows,self.cases,3)
+        self.assertEqual(result["evidence_grade"],"A")
+        self.assertEqual(result["scientific_status"],"inconclusive")
+        self.assertEqual(result["trial_counts"]["evaluated"],9)
+        self.assertEqual(result["trial_counts"]["invalid"],1)
+        self.assertIn("invalid_observations_retained",result["execution_limit_reasons"])
+        self.assertNotIn("invalid_observations_retained",result["grade_limit_reasons"])
+
+    def test_changed_observed_model_identity_withholds_the_verdict_not_the_grade(self):
         rows=self.rows(3)
         rows[0]["model_ids"]=["another-model"]
         result=decide(self.audit,rows,self.cases,3)
-        self.assertIsNone(result["evidence_grade"])
-        self.assertIn("observed_model_identity_changed",result["grade_limit_reasons"])
+        self.assertEqual(result["evidence_grade"],"A")
+        self.assertIsNone(result["scientific_status"])
+        self.assertEqual(result["status_withheld_reason"],"unattributable_observations")
+        self.assertIn("observed_model_identity_changed",result["execution_limit_reasons"])
+        self.assertNotIn("observed_model_identity_changed",result["grade_limit_reasons"])
+
+    def test_grade_limit_reasons_never_carry_behavioural_facts(self):
+        """The grade reports the reference only; behaviour lives in the other list."""
+        behavioural={"trial_agreement_below_policy","invalid_observations_retained",
+                     "observed_model_identity_changed"}
+        rows=self.rows(3)
+        rows[0]["comparison_status"]="fail"
+        rows[1]["comparison_status"]="invalid"
+        rows[2]["model_ids"]=["another-model"]
+        result=decide(self.audit,rows,self.cases,3)
+        self.assertEqual(behavioural&set(result["grade_limit_reasons"]),set())
+        self.assertEqual(behavioural,set(result["execution_limit_reasons"]))
+
+    def test_unanimous_pass_records_every_axis(self):
+        result=decide(self.audit,self.rows(3),self.cases,3)
+        self.assertEqual(result["accuracy"],{"matched":9,"evaluated":9,"ratio":1.0})
+        self.assertEqual(result["consistency"]["label"],"unanimous")
+        self.assertEqual(result["consistency"]["overall_agreement"],1.0)
+        self.assertEqual(result["completeness"],
+                         {"obtained":9,"planned":9,"usable_cases":3,"planned_cases":3})
+        self.assertEqual(result["aggregation_rule"],"unanimity")
+        self.assertIsNone(result["fault"])
 
     def test_audit_records_the_critique_that_settled_the_grade(self):
         candidate={"method":"numeric","method_version":"local-reference-comparison-1","name":"Fixture",
@@ -164,6 +211,55 @@ class IndependentSessionTests(unittest.TestCase):
         response["citations"][0]["quote"]="Invented source"
         with self.assertRaises(Fault):
             validate_assessment(response,packet)
+
+    def _assessor_packet_and_reply(self):
+        packet={"evidence":[{"reference_ref":"b"*64,"quote":"Known source text."}]}
+        reply={"status":"inconclusive","findings":["Evidence bounded"]*len(RUBRIC["criteria"]),
+               "citations":[{"reference_ref":"b"*64,"quote":"Known source"}],
+               "limitations":"Documentary only."}
+        return packet,json.dumps(reply)
+
+    def _replies(self,*texts):
+        """Stand in for the fresh assessor sessions, one reply each, in order."""
+        calls=iter(texts)
+        def isolated(adapter,packet,*,role,system_prompt):
+            return ({"text":next(calls),"observed_model_ids":["fixture-model"],
+                     "usage":{},"total_cost_usd":0.0},str(uuid4()))
+        return isolated
+
+    def test_unusable_assessor_shape_is_retried_once_then_accepted(self):
+        packet,good=self._assessor_packet_and_reply()
+        with patch("sci_ai_verifier.documentary.isolated_answer",
+                   side_effect=self._replies("not json at all",good)):
+            result=assess(object(),packet)
+        self.assertEqual(result["assessment"]["status"],"inconclusive")
+        self.assertEqual(len(result["attempts"]),2)
+        self.assertEqual(result["attempts"][0]["rejected"],"reply_not_parseable")
+        self.assertNotIn("rejected",result["attempts"][1])
+
+    def test_a_second_unusable_shape_is_an_operational_failure(self):
+        packet,_=self._assessor_packet_and_reply()
+        with patch("sci_ai_verifier.documentary.isolated_answer",
+                   side_effect=self._replies("not json","{\"status\":\"pass\"}")):
+            with self.assertRaises(Fault) as caught:
+                assess(object(),packet)
+        self.assertEqual(caught.exception.code,"assessor_response_invalid")
+
+    def test_bad_citations_are_never_retried(self):
+        """Re-rolling a parsed judgement until it is acceptable would be grade shopping."""
+        packet,_=self._assessor_packet_and_reply()
+        invented=json.dumps({"status":"pass","findings":["f"]*len(RUBRIC["criteria"]),
+                             "citations":[{"reference_ref":"b"*64,"quote":"Invented source"}],
+                             "limitations":"Documentary only."})
+        calls=[]
+        def counting(adapter,packet,*,role,system_prompt):
+            calls.append(role)
+            return ({"text":invented,"observed_model_ids":[],"usage":{},"total_cost_usd":0.0},str(uuid4()))
+        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=counting):
+            with self.assertRaises(Fault) as caught:
+                assess(object(),packet)
+        self.assertEqual(caught.exception.code,"assessor_citation_invalid")
+        self.assertEqual(len(calls),1)
 
     def test_critique_must_answer_inside_its_rubric(self):
         # `required_revisions` is a list beside `objections`, which is what a real session

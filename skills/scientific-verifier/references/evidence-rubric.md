@@ -6,11 +6,29 @@ Read the grade as a statement about where the evidence came from. A high grade m
 
 No human sign-off assigns a grade. The verifier proposes the grade its design supports, the runner checks that proposal against facts it recorded itself, and an independent critique session can lower it. That settlement is the grade.
 
-Every evaluated claim keeps three questions separate:
+Every evaluated claim keeps six questions separate. No answer may overwrite another:
 
-1. What was the result: `pass`, `fail`, or `inconclusive`?
-2. How strong was the evidence: A, B, C, D, or U?
-3. How much AI judgment influenced orchestration, evidence, and the final verdict?
+1. **Grade.** How good was the reference the skill was checked against: A, B, C, D, or U?
+2. **Accuracy.** How often did the skill's output match the expected answer?
+3. **Consistency.** Did repeated trials of the same case agree with each other?
+4. **Completeness.** How much of the planned trial set actually ran?
+5. **Status.** Does the claim hold: `pass`, `fail`, `inconclusive`, or withheld?
+6. **AI involvement.** How much AI judgment influenced orchestration, evidence, and the verdict?
+
+The grade answers question 1 **only**. It is a statement about the reference and the test
+bundle built from it, both of which are known before any trial runs. It must never move
+because of how the skill behaved or because something in the runner broke. A skill that
+fails every case against a gold-standard oracle keeps grade A: the evidence is exactly as
+strong, it simply refutes the claim. Behavioural facts belong to accuracy and consistency;
+operational facts belong to completeness and to the recorded fault.
+
+Accuracy and consistency are not symmetric. Consistency compares the skill against itself,
+so it is meaningful even against a worthless reference. Accuracy compares the skill against
+the reference, so it is only interpretable through the grade: an accuracy figure carried
+next to a `U` grade measures nothing. A reader with all six answers in front of them can
+tell these apart, which is why the card reports them side by side rather than folding them
+into a single score. Any automated consumer that filters or promotes claims must read the
+grade before it reads accuracy.
 
 ## Rubric
 
@@ -55,11 +73,13 @@ Most submitted skills are instructions for a model. Running one twice can produc
 
 The plan fixes the subject model, its generation settings, the trial count `n`, the deterministic trial-aggregation rule, and the `trial_grade_policy` before execution. Python first runs the subject with expected answers withheld, then scores each trial with the audited evaluator, then aggregates the scored trials into per-case outcomes and the claim decision. Raw outputs are not aggregated before scoring. These fixed rules make an A-through-C decision reproducible given the recorded trial set; recording model settings does not guarantee that a non-deterministic subject will generate identical outputs again.
 
-Three consequences for grading:
+Three consequences, and only the first touches the grade:
 
-- **`n = 1` against a non-deterministic subject caps the grade at C.** A single sample cannot distinguish a skill that is right from one that is sometimes right, and a claim of direct validation from one observation is a claim the evidence does not support. A deterministic subject with a fixed entry point is unaffected and uses `n = 1` legitimately.
-- **Exceeding audited agreement or coverage limits lowers the ceiling.** The permitted variation depends on the claim and is fixed by the audited policy, not by a universal numerical cutoff. Agreement measures consistency of scored evidence, not correctness: unanimous failure can support the same evidence grade as unanimous success when the other evidence requirements are equal. Passing most trials is not interchangeable with passing every trial; the recorded observations and audited rules determine what can be concluded.
-- **Changing the subject model invalidates the result, not just the audit.** A grade earned on one model is evidence about that model running that skill. Reporting it as a property of the skill alone overstates it, so the subject model appears in the result and in the report card.
+- **A planned `n = 1` against a non-deterministic subject caps the grade at C.** This is a fact about the test bundle, fixed before execution, so it belongs to the grade. A single sample cannot distinguish a skill that is right from one that is sometimes right, and a claim of direct validation from one observation is a claim the evidence does not support. A deterministic subject with a fixed entry point is unaffected and uses `n = 1` legitimately; in a profile whose subject is always a fresh model session, that exemption is unreachable and the planned trial count must be at least three.
+- **Observed disagreement between trials never lowers the grade.** Agreement measures consistency of scored evidence, not the quality of the reference, and nothing about the reference changed when the subject wobbled. Disagreement is reported as `consistency` and feeds the audited aggregation rule, which decides `status`. Under a unanimity rule a split case makes the claim `fail`; under a majority rule it may still `pass`. Either way a verdict is produced: a flaky skill is a finding, not an absence of one. Unanimous failure supports the same grade as unanimous success when the other evidence requirements are equal.
+- **Changing the subject model withholds the verdict without touching the grade.** A verdict earned on one model is evidence about that model running that skill, so a trial set containing two models has no single subject to describe and `status` is withheld as `unattributable_observations`. The reference is unaffected and keeps its grade. The observed models appear in the result and in the report card.
+
+A runner fault that truncates a trial set is treated the same way: the surviving observations are kept and reported with their `completeness` denominator, and `status` is withheld rather than computed from a sample nobody audited. Where the surviving cases fall below the audited minimum, the withholding reason is `incomplete_coverage`, not `unattributable_observations` — the observations were fine, there were simply too few cases left to answer the question that was reviewed.
 
 The aggregation rule is chosen from the claim. A claim that a calculation is correct is not served by a majority rule, since being right most of the time is the thing that claim denies. A claim about typical behavior is not served by requiring unanimity. Choosing the rule after seeing the trials is not grading; it is fitting the rule to the answer, and the audit rejects a plan that leaves it open.
 
@@ -67,15 +87,34 @@ The aggregation rule is chosen from the claim. A claim that a calculation is cor
 
 `trial_grade_policy` names an exact policy identity, version, and digest installed in the runner, plus parameters restricted to its declared bounds. A registered evaluator retains this policy reference. The policy's applicability to the claim is settled before execution; neither the verifier agent nor execution may invent a policy or tune its parameters after observing results.
 
-The policy defines total eligibility predicates for A, B, and C. Each predicate combines the applicable rubric requirements with the audited trial-count, agreement, coverage, and invalid-observation requirements. Unsupported grades have an explicitly false predicate. The contract must specify:
+The policy defines total eligibility predicates for A, B, and C over the **reference and test-bundle facts only**: where the expected answers came from, how independent they are of the skill, whether they are token-exact in their source, how the comparison is scored, the number of distinct cases, and the planned trial count. Every one of these is known before a trial runs, which is what makes the grade a statement about the reference rather than about the run. Unsupported grades have an explicitly false predicate. Simultaneous eligibility is resolved by choosing the strongest eligible grade no higher than the planned and audited ceilings; when none is satisfied the default is `no_supported_execution_grade`.
 
-- What agreement measures over the scored trials, including ties, numerical boundary equality, and mixed `pass`, `fail`, and `inconclusive` outcomes.
-- The denominators used for trial and case coverage, the treatment of scientifically invalid outputs or cases, and the reduction from per-case evidence to claim-level eligibility. Invalid observations cannot silently disappear from counts or denominators.
-- Every supported trial count, including the C ceiling for `n = 1` with a non-deterministic subject, and the distinction between requested, attempted, obtained, evaluated, invalid, and missing trials.
-- Explicit behavior for zero usable cases or zero scientifically evaluable trials: no A-through-C grade is eligible. An initially empty evaluation bundle fails audit rather than running.
-- An explicit default, `no_supported_execution_grade`, when no A-through-C eligibility predicate is satisfied. There must be no uncovered observation pattern; simultaneous eligibility for several grades is resolved by choosing the strongest eligible grade no higher than the planned and audited ceilings.
+Observed trial outcomes are **not** inputs to those predicates. The contract must still specify, for the axes that do consume them:
 
-The strongest eligible grade is Python's authoritative `achieved_grade_ceiling`. A downgrade must still satisfy that grade's rubric; it is not merely changing an A label to B or C. Execution records `grade_policy_ref`, `grade_limit_reasons`, trial counts, per-trial scores and decisions, and per-case agreement and coverage alongside that ceiling. Verdict rules remain separate from grade eligibility, so evidence against a claim is not weakened merely because the claim failed.
+- What agreement measures over the scored trials, including ties, numerical boundary equality, and mixed `pass`, `fail`, and `inconclusive` outcomes. This determines `consistency`, never the grade.
+- The denominators used for trial and case coverage, the treatment of scientifically invalid outputs or cases, and the reduction from per-case evidence to a claim-level verdict. Invalid observations cannot silently disappear from counts or denominators.
+- The distinction between requested, attempted, obtained, evaluated, invalid, and missing trials, which `completeness` reports.
+- Explicit behaviour for zero usable cases or zero scientifically evaluable trials. An initially empty evaluation bundle fails audit rather than running.
+
+The strongest eligible grade is Python's authoritative `achieved_grade_ceiling`. A downgrade must still satisfy that grade's rubric; it is not merely changing an A label to B or C. Execution records `grade_policy_ref`, `grade_limit_reasons`, `execution_limit_reasons`, trial counts, per-trial scores and decisions, and per-case agreement and coverage alongside that ceiling. The two reason lists are kept apart on purpose: `grade_limit_reasons` may name only facts about the reference and the test bundle, and anything behavioural or operational — disagreement between trials, retained invalid observations, a changed subject model — belongs in `execution_limit_reasons`. A reader must be able to tell a weak reference from a wobbling skill without inspecting the raw trials.
+
+### Status
+
+`status` answers whether the claim holds. It is one of `pass`, `fail`, `inconclusive`, or `null` with a recorded `status_withheld_reason`. It is evaluated in order, first match winning:
+
+| # | Condition | Status |
+| --- | --- | --- |
+| 1 | grade is `U`, or no reference supports any execution grade | `null` — `no_reference_grade` |
+| 2 | zero evaluable observations | `null` — `not_executed` |
+| 3 | observations not attributable to one subject | `null` — `unattributable_observations` |
+| 4 | usable cases below the audited minimum | `null` — `incomplete_coverage` |
+| 5 | the audited aggregation rule is satisfied | `pass` |
+| 6 | the audited aggregation rule is violated | `fail` |
+| 7 | the rule is indeterminate on this evidence | `inconclusive` |
+
+Only `U` gates status by way of the grade, and that dependency is definitional rather than qualitative: with no reference there is no expected answer, so the question has no value at all — not a weak one. Grades A through D never touch status. A D-grade claim may `pass` and an A-grade claim may `fail`.
+
+The card records which `aggregation_rule` produced the verdict, because `fail` is uninterpretable without it: thirteen passes in fifteen trials is a `fail` under unanimity and a `pass` under a majority rule. Synthetic fixture runs withhold status for the same reason they stay ungraded.
 
 Missing trials caused by runner, provider, evaluator, or other operational failures use bounded execution retries and then `operational_failure`; they are not scientifically invalid observations, a scientific `fail`, or grounds for assigning U. For a completed scientific evaluation with `no_supported_execution_grade`, execution returns `lower_grade_required`, `achieved_grade_ceiling: null`, and `next_target_grade: D`. The claim returns to planning and capability selection to attempt documentary evidence under a separate audited plan. This outcome does not authorize a D result or bypass that assessment. U is reached only through the existing no-acceptable-evidence paths after no grade A through D is supportable.
 
