@@ -36,6 +36,15 @@ that the provider, not the skill, was the thing that failed.
 - Never hand-edit a recorded file to make a test pass. If the code must
   change to accept it, change the code; if the reply is genuinely
   non-conforming, the test asserting its rejection is the point.
+- A critic recording is judged against the rubric it was **answering**, not the
+  current one. Every critic recording here answered rubric v2. v3 appended a sixth
+  criterion, on whether each case stays inside what its claim asserts, so these
+  replies are complete answers to v2 and incomplete answers to v3 — and the tests
+  assert both. The v2 rubric is rebuilt from the live one and pinned by its digest,
+  which only holds while criteria are appended rather than inserted or reordered.
+  The scope criterion was not invented here: `critic-extra-finding.jsonl`'s
+  unprompted sixth finding, that its cases "test facts the claim does not print",
+  is that criterion, raised by a real reviewer before it existed.
 - Add new recordings from real runs only, with the run ID noted above.
 - Recordings are scanned for credential-like bytes by
   `test_recorded_replies.py` before any other assertion runs.

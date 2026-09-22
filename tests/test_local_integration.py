@@ -446,6 +446,42 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertIsNone(h.data["result"]["scientific_status"])
         self.assertEqual(h.data["result"]["next_target_grade"],"D")
 
+    def test_a_critique_supporting_d_can_be_accepted_and_the_plan_still_runs(self):
+        """For an execution design, D means what "none" means: no execution grade. It used
+        to be unacceptable -- D cannot be proposed, and reproposing the ceiling on the same
+        design was refused as unchanged -- so run b43780be's planner could neither accept
+        the verdict nor run the plan, and abandoned it for documentary."""
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("D")):
+            h.select(self.key,target_grade="A")
+            self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            self.assertEqual(h.data["supported_grade"],"D")
+            # As with "none": reproposing the ceiling accepts a verdict of no execution grade.
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        self.assertEqual(len(self.packets),1)  # accepting spends no second session
+        self.assertIsNone(h.data["audit"]["settled_ceiling"])
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual(h.data["outcome"],"local_documentary_required")
+        self.assertIsNone(h.data["result"]["evidence_grade"])
+
+    def test_a_selected_plan_cannot_skip_to_documentary_without_running(self):
+        """workflow.md refuses documentary while a claim holds a candidate it qualified and
+        never executed. The guard asked whether one was *selected* instead, so a plan the
+        critique held below its proposal could be abandoned; b43780be lost 18 trials so."""
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("D")):
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+        self.assertEqual(h.data["claim_states"][h.claim_id],"local_discovery")
+        reference=h.runtime.store.get_json(self.key)["cases"][0]["reference_ref"]
+        refused=h.runtime.call("assess_local_documentary",
+                               {"run_id":h.data["run_id"],"state_token":h.data["state_token"],
+                                "claim_id":h.claim_id,"limitations":"Skipping execution.",
+                                "evidence":[{"reference_ref":reference,"quote":fixture.REFERENCE}]})
+        self.assertEqual(refused["status"],"retryable")
+        self.assertEqual(refused["error"]["code"],"stronger_evidence_available")
+
     def test_unavailable_critic_is_operational_and_never_a_grade(self):
         h=self.h
         with patch("sci_ai_verifier.documentary.critique",side_effect=Fault("critic_unavailable","fixture")):

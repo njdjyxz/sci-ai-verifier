@@ -282,13 +282,17 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                                "note": "Python already verified that every expected answer is quoted exactly "
                                        "from the pinned reference bytes. Judge whether that evidence is "
                                        "fit for this claim at the proposed grade. Python counts cases and "
-                                       "cannot weigh them: a function name and a scientific value are the "
-                                       "same shape once quoted, so whether each case tests what the claim "
-                                       "asserts or only what it is named is decided here. A behavioural "
-                                       "claim whose cases only recite naming or spelling lacks the "
-                                       "representative cases grade A requires. Lowering the grade is what "
-                                       "returns the design to the planner for better cases, so a finding "
-                                       "that does not move the grade changes nothing."}}
+                                       "cannot weigh them: a function name, a scientific value and a fact "
+                                       "the claim never states are the same shape once quoted, so whether "
+                                       "each case tests exactly what the claim asserts is decided here, "
+                                       "under the rubric's last criterion. A case that only recites naming "
+                                       "for a behavioural claim tests less than the claim; a case asking "
+                                       "about a consequence the claim never states tests more, and a subject "
+                                       "applying the skill can answer it only from the base model's own "
+                                       "knowledge or not at all. Neither counts toward the representative "
+                                       "cases grade A requires. Lowering the grade is what returns the "
+                                       "design to the planner for better cases, so a finding that does not "
+                                       "move the grade changes nothing."}}
 
 
 def select(store, state, claim_id, work, args, subject):
@@ -312,17 +316,28 @@ def select(store, state, claim_id, work, args, subject):
                     if record["candidate_fingerprint"] == identity and record.get("critique")), None)
     # Clamped to the ceiling: a critique naming something stronger than the facts support
     # is still capped, and an uncapped value here would leave the design unselectable.
-    accepted = weaker(ceiling, settled["supported_grade"]) if settled else None
+    # A critique supporting D or none says the design supports no *execution* grade, and
+    # audit() already reads it that way; acceptance must too. Only A, B and C can be
+    # proposed, so an accepted "D" left a no-grade design unselectable: the planner of run
+    # b43780be could neither accept the verdict nor run the plan, only abandon it.
+    supported = settled["supported_grade"] if settled else None
+    accepted = weaker(ceiling, supported) if supported in ("A", "B", "C") else None
     problem = proposal_problem(args["target_grade"], ceiling, accepted)
     if problem:
         # Refuse before spending a critique session, and leave the claim in discovery so
         # strengthening the design or proposing the ceiling is the next ordinary step.
+        if accepted:
+            tail = ", or accept " + accepted + " as its last critique concluded."
+        elif settled and ceiling:
+            tail = (". Its last critique supported no execution grade; proposing " + ceiling + " accepts "
+                    "that, and the plan still runs to produce ungraded comparison evidence before the "
+                    "documentary path.")
+        else:
+            tail = ". Strengthen the design to reach a stronger one."
         return {"outcome": "local_grade_proposal_refused", "reason": problem,
                 "evidence_ceiling": ceiling, "evidence_limits": limits, "candidate_ref": key,
                 "acceptable_grades": sorted({item for item in (ceiling, accepted) if item}),
-                "message": "Propose the grade this design supports, " + (ceiling or "which is none")
-                           + (", or accept " + accepted + " as its last critique concluded."
-                              if accepted else ". Strengthen the design to reach a stronger one.")}
+                "message": "Propose the grade this design supports, " + (ceiling or "which is none") + tail}
     claim = claim_record(store, state, claim_id)
     rounds = len(history) + 1
     critique = None
@@ -412,8 +427,13 @@ def stronger_evidence_available(store,state,claim_id,work):
     lookup may belong to another claim's scope, and whether it applies here is a
     semantic judgment Python cannot make; blocking on it would refuse the
     documentary path for every claim as soon as any candidate exists.
+
+    "Never ran" is the claim still being in local_discovery, since no path returns there
+    after execution. It used to be "never selected", which let a selected but unexecuted
+    plan skip to documentary; run b43780be did exactly that and discarded 18 planned trials
+    that workflow.md and the rubric both say a no-grade design must still run.
     """
-    if work.get("candidate_ref") or state["claim_states"][claim_id]!="local_discovery":
+    if state["claim_states"][claim_id]!="local_discovery":
         return False
     return any(store.get_json(key).get("status")=="qualified_local"
                for key in work.get("candidate_refs",[]))

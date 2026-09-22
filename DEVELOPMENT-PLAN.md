@@ -32,6 +32,7 @@ deterministic tools, bounded processes and saved evidence.
 | `e13f50ee` (2026-09-21) | sar-analysis | 4 at A, 1 at B, 1 voided by a fault |
 | `fb64115f` (2026-09-22) | sar-analysis | 2 at A, 2 at B, no faults, 51 of 51 observed |
 | `7efbdd8c` (2026-09-22) | sar-analysis | 3 at A, 1 at B; 57 of 57 answered correctly, 5 misread |
+| `b43780be` (2026-09-22) | sar-analysis | 3 at A, 2 at B, 1 at D; 63 observed, 0 misread, 18 never run |
 
 Every run above used Opus 5, and the verifier is still pinned to it. A move to
 `claude-opus-5-5` was made and reverted the same day: the installed Claude Code, 2.1.268,
@@ -41,18 +42,20 @@ What that does and does not establish: the **A and B branches** both carry settl
 from live runs, and the planner has now used all three comparison methods, including an
 open `exact` case written specifically to make the subject generate an answer rather than
 recognise one. **Grade C and `qualify_local_evaluator` have never been exercised.** The
-documentary path has run twice, once to completion and once rejected, and in none of the
-last three runs.
+documentary path has now run three times: once to completion, once rejected, and once in
+`b43780be` for a claim that should have executed first and could not.
 
-No run has yet produced a scientific result free of harness noise. The same fault has
-appeared three times in different forms — a plural in `e13f50ee`, a capital letter in
-`fb64115f`, markdown bold in `7efbdd8c` — each time a correct answer the scorer could not
-read. The first two were reported as `fail`, falsely accusing the skill; the third was
-reported as `invalid`, which is honest but still left three of four claims inconclusive.
-All three are now fixed, and the reply reader was replayed against every saved
-observation from `7efbdd8c` without changing a single passing verdict.
+**Reply-format noise is gone.** It appeared three times in three forms — a plural in
+`e13f50ee`, a capital letter in `fb64115f`, markdown bold in `7efbdd8c` — each a correct
+answer the scorer could not read. Run `b43780be` is the first with **zero `invalid`**, and it
+exercised the fix rather than avoiding it: nine replies put the answer on the first line and
+explained below, which the old reader would have scored `invalid`.
 
-Automated suite: **265 passed, 2 skipped**. Fixtures remain synthetic, reviewed registries
+That run still had one false `fail`, of a new kind: a case asking about a consequence the
+claim never states, so a subject faithfully applying the skill had nothing to answer from.
+That and the reason its D claim never ran are both fixed; see the 2026-09-22 entry.
+
+Automated suite: **270 passed, 2 skipped**. Fixtures remain synthetic, reviewed registries
 remain empty, and nothing in the automated suite establishes scientific acceptance.
 
 ## History
@@ -98,7 +101,7 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
   cases grade A needs. Model pin confirmed live; `subject_model_changed` recurred on a
   different claim from a single-session CLI fallback.
 
-## Claude: 2026-09-22 (third and fourth sar-analysis runs; indexed choices; replies read by first line)
+## Claude: 2026-09-22 (four sar-analysis runs; indexed choices; reply reader; case scope; no-grade plans run)
 
 ### Current stage and status
 
@@ -323,6 +326,98 @@ with the switch: step 2 declared 2.1.248 sufficient while step 5 pinned a model 
 explains that `Not logged in` in a plain shell is expected and does not mean the check
 failed.
 
+**13. The reader test run, `b43780be-7a3b-4c6d-b37c-d649fba918bb`.** Opus 5, confirmed on the
+running server before starting. 53 minutes, $15.69, 56 steps. **Six claims**, 81 trials
+planned, 63 observed, **zero `invalid`**, 18 never run.
+
+| Claim | Grade | Status | Observed | Accuracy |
+| --- | --- | --- | --- | --- |
+| `rdFMCS` threshold | A | pass | 12/12 | 12/12 |
+| `ringMatchesRingOnly` (new) | A | pass | 12/12 | 12/12 |
+| `RGroupDecompose` | D | inconclusive | 0/18 | — |
+| R-group dummy atoms | B | pass | 12/12 | 12/12 |
+| pIC50 | A | fail | 12/12 | 9/12 |
+| `DrawMoleculeACS1996` | B | pass | 15/15 | 15/15 |
+
+*The reply reader works on a live subject.* Every observation was a `choice`, and nine were
+not bare numbers: each put the answer on its first line and explained below. The previous
+reader would have scored all nine `invalid`; this one read six correct answers and three
+wrong ones. Opus 5 did not use bold this run, so that branch stays proven by the replay
+and the tests rather than live. The planner now writes "Reply with the option number only
+as the first line of your reply", matching the reader.
+
+*Coverage came back to six.* On the same model as two runs that extracted four, including
+`DrawMoleculeACS1996`. That largely retires the idea that the 2026-09-21 rubric edit was
+narrowing extraction: it was run-to-run variation in what the planner chooses to extract.
+
+**14. The pIC50 `fail` was a case that asked more than the claim.** The definition passed 9
+of 9 on its three relevant cases. The fourth asked "which statement does a reference work
+make about higher pIC50 values", expecting "higher values of pIC50 indicate exponentially
+more potent inhibitors". All three trials chose `none of these`, and said why: "The skill's
+only mention of pIC50 (line 114) defines it as `pIC50 = -log10(IC50_in_M)`; it makes no
+statement about what higher pIC50 values indicate." The claim asserts the definition; the
+direction of the scale is in neither the claim nor the skill. A subject applying the skill
+had nothing to answer from, and read "a reference work" as its own loaded material.
+
+Rewording it to "which is true" would be the wrong fix: the subject would answer from the
+base model's knowledge and pass, crediting the skill for something the model already knew.
+So the rule was extended instead. `evidence-rubric.md` now says a case must test what its
+claim asserts **no less and no more**: not only what something is named, and not a
+consequence the claim never states. The critique was given a sixth criterion saying the
+same, which makes the judgment mandatory rather than advisory — `validate_critique` rejects
+a reply with fewer findings than criteria. The previous critique of this claim had noticed
+the attribution framing and kept grade A; it can no longer leave the question unanswered.
+
+That criterion was not invented here. `critic-extra-finding.jsonl`, a real reply from run
+`e035eef6`, answered the five v2 criteria and then added one more, unprompted: its cases
+"test facts the claim does not print". A reviewer found the gap before the rubric had a slot
+for it.
+
+Adding a criterion made three genuine recordings incomplete, and `tests/recorded/README.md`
+forbids editing a recording to make a test pass. So each is now judged against the rubric it
+was *answering*. v2 is rebuilt as v3's first five criteria and pinned by v2's digest, taken
+before v3 existed, which proves the reconstruction exact; criteria are append-only so that
+stays true. `validate_critique` and `critique` take the rubric they judge against and record
+its digest, defaulting to the installed one. The tests assert both halves: the three
+recordings are complete answers to v2, and the live rubric refuses them.
+
+`tool-contracts.md` also said a unanimous `none of these` means "a broken option set". This
+run is the counterexample — the option set was fine — so it now says a broken case: options
+that omit the answer, or a question about something the claim never asserts.
+
+**15. The D claim could not run, and the guard let it leave.** Two faults, both code drifting
+from contracts that were already right.
+
+*Accepting a D critique was impossible.* The tool contract and the code's own comment say
+accepting a design's critique ends the negotiation "including when it concluded that the
+design supports no grade", and the plan then runs ungraded. `audit()` reads a D verdict as
+no execution grade; `select()` did not. It computed the accepted grade as `weaker(ceiling,
+"D")`, which is `"D"` — and D cannot be proposed, since only A, B and C are proposable, while
+reproposing the ceiling on the same design was refused as unchanged with the message
+"propose D". A `"none"` verdict always worked, because `weaker(x, None)` is `None`; only D was
+trapped. The trace matches: two revision rounds held at D, one refused proposal, one
+rejected attempt, then documentary as the only exit. The planner was not skipping the
+experiment. It had no legal way to run it.
+
+`select()` now maps any verdict other than A, B or C to no execution grade, as `audit()`
+does, so reproposing the ceiling accepts a D exactly as it accepts `"none"`. The refusal
+message now tells a planner that, instead of offering nothing.
+
+*The guard checked selection, not execution.* `workflow.md` refuses documentary while a claim
+"still holds a candidate it qualified for itself and never executed". The code returned
+early as soon as a candidate was **selected**, so a selected but unexecuted plan could leave
+for documentary. It now asks whether the claim is still in `local_discovery`, which no path
+returns to after execution.
+
+The order mattered. Tightening the guard alone would have closed the only exit a D-trapped
+claim had, leaving it nowhere to go; the accept path had to open first.
+
+Two tests, and all three changes were mutation-tested — reverting the accept fix, reverting
+the guard and removing the criterion each fail a test. The criterion's first mutation
+reported "caught" through a syntax error in the edited module rather than a test; it was
+discarded and redone as a removal the parser accepts, which fails four tests on its own.
+Suite 265 → 270.
+
 ### Decisions taken 2026-09-22
 
 **1. Index the choices rather than loosen the comparison.** Operator's proposal. Turning
@@ -367,6 +462,19 @@ staying on Opus 5 tests one change instead of two. Changing the model and the re
 same run would have left a clean result unattributable, since Opus 5.5 might simply not
 write bold. The switch happens as its own step once WinGet ships 2.1.280, and that run
 starts the new series.
+
+**7. A case asking more than its claim is fixed by scope, not by rewording.** Operator's
+decision. Rewording an attribution-framed case to "which is true" would convert a false
+fail into a false pass by letting the base model answer; restricting cases to what the claim
+asserts removes the case instead.
+
+**8. Case scope is a mandatory reviewer criterion, not guidance.** Operator's decision. A
+rubric sentence alone left the last critique free to notice the problem and keep grade A.
+A criterion must be answered or the whole critique is rejected.
+
+This is the rubric's second case-type rule, after naming. The case-level contract below is
+flagged not to be built until four or five such rules accumulate; two is not the trigger,
+but this is the direction it counts toward.
 
 ### Designed, flagged do-not-implement: a case-level contract
 
@@ -422,17 +530,12 @@ is not a trigger.
 
 **1. Should the aggregation rule become a plan field?** Carried forward unchanged.
 
-**2. Claim coverage fell from six to four.** The two that disappeared,
-`DrawMoleculeACS1996` and `GenerateDepictionMatching2DStructure`, are the most
-API-surface-flavoured of the six — exactly the kind the new rubric sentence says remains
-legitimate. Claim extraction happens before qualification and varies between runs, so this
-cannot yet be attributed to the rubric edit. It is the narrowing regression the previous
-entry flagged, and it now has **two consecutive observations** behind it: `fb64115f` and
-`7efbdd8c` extracted the same four claims and dropped the same two. With the Opus 5.5 move
-deferred, the next run stays on Opus 5 and its claim count is comparable with both — a
-third four strengthens the pattern, a six weakens it. Neither attributes it to the rubric
-edit, though: that needs a run with the rubric sentence temporarily reverted, or a decision
-that four is acceptable.
+**2. Claim coverage — largely answered, kept open one more run.** After six, four and four,
+`b43780be` extracted six again on the same model, including `DrawMoleculeACS1996`, one of the
+two that had disappeared. The narrowing looked like the 2026-09-21 rubric edit and was
+run-to-run variation in what the planner extracts. It stays here only because this run
+also added a new criterion and a scope rule the planner reads before extracting, so the next
+count is worth a glance; a fall back to four would reopen it.
 
 **3. A narrow capitalization residue remains by choice.** `forced_surface_form()` accepts
 any token carrying both cases, so `Core`, `Threshold` and `Fuc` stay open answers. Their
@@ -460,31 +563,33 @@ generation." Indexing does nothing about that, and neither does raising the opti
 
 ### Urgent next steps, if any
 
-**Restart Claude Desktop before the next run.** The registration on disk is Opus 5 again,
-but the MCP server reads its arguments only at startup, and the one running when this was
-written — pid 7052 — was still serving `claude-opus-5-5`. A run started before the restart
-would fail exactly as `a8036722` did.
+**Restart Claude Desktop before the next run.** The verifier's Python runtime — critique
+validation, `select()`, the documentary guard — runs inside the `serve-local` process, and
+Python does not reload modules in a running process. The one running when this was written
+(pid 23076, started 14:32) loaded the code *before* the scope criterion, the accept fix and
+the guard fix. A run on it would test the old code, and its result would be misread as the
+fixes failing.
 
 Everything else is committed, pushed and green.
 
 ### Suggested next move
 
-Run `sar-analysis` on Opus 5 and find out whether the reply reader closes the last of the
-harness noise on a live subject. This is the clean version of that test: same model as the
-four previous runs, so the reader is the only thing that changed. The reader is already
-established by unit tests and by replaying every saved observation from `7efbdd8c`; what a
-live run adds is whether a *new* surface form appears.
+Run `sar-analysis` on Opus 5 and see whether the two fixes change what happens, not just
+whether the tests pass. Two things can only be seen live: whether a critique answering the
+new scope criterion actually lowers an out-of-scope design, and whether a claim critiqued
+down to D now runs its trials before the documentary path.
 
 Separately, once WinGet offers Claude Code 2.1.280, run the check in `LOCAL-INSTALL.md`
 before moving the pin to Opus 5.5, and treat that run as the start of a new series.
 
 ### Recommended next action
 
-After restarting Claude Desktop, confirm the running server's `--model` argument reads
-`claude-opus-5`, then run `sar-analysis` once and check two things in the saved card.
-First, did every trial come back `pass` or `fail`, with no `invalid`? If any reply is still
-`invalid`, read its verbatim text: a new presentation form is a reader gap, whereas a number
-inside prose is the reader working as designed. Second, record the claim count; on the same
-model it is comparable with the last two runs, both of which extracted four. It is finished
-when both are recorded. A run with no `invalid` and no false `fail` would be the first
-result this project has produced with no harness noise at all.
+After restarting Claude Desktop, confirm the running server's `--model` reads
+`claude-opus-5`, then run `sar-analysis` once. First confirm the run used the new code: its
+critiques' `rubric_ref` must be `07140328e5a3cbdd4eec803717fa0c71e0b05c0c5394d4f73b72b1f581c8663e`,
+the v3 digest; `91f33b72…` means the old server ran it and nothing below counts. Then check
+three things. Did every critique answer the sixth criterion, and did any lower a grade on
+scope? Did any claim critiqued to D or `none` record observed trials before its documentary
+assessment, rather than zero? Is `invalid` still zero? It is finished when all three are
+recorded. If no claim happens to be critiqued to D, say so — the accept fix is then proven by
+its tests but not yet seen live.

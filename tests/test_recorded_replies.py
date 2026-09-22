@@ -17,7 +17,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import ClaudeCode, parse_events, refusal_category
-from sci_ai_verifier.common import Fault, canonical
+from sci_ai_verifier.common import Fault, canonical, digest
 from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC, RUBRIC, critique, parse_reply,
     validate_assessment, validate_critique)
 from sci_ai_verifier.local_candidates import SECRET_BYTES
@@ -34,6 +34,13 @@ CRITIC_RECORDINGS = {"critic-fenced-revision-list.jsonl": ("B", 5, True),
                      "critic-extra-finding.jsonl": ("A", 0, False)}
 # Streams that are not critic replies, exercised by their own tests.
 OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl"]
+# Every critic recording answered rubric v2, which had five criteria; v3 appended a sixth.
+# A reply is judged against the rubric it was answering -- judging it against a later one
+# would fail real replies for a question nobody had asked them. Criteria are append-only,
+# so v2 is v3's prefix, and the digest below is v2's CRITIQUE_REF taken before v3 existed:
+# it proves this reconstruction is the exact rubric those sessions saw, not an approximation.
+ANSWERED = {**CRITIQUE_RUBRIC, "id": "local-evidence-critique-v2", "criteria": CRITIQUE_RUBRIC["criteria"][:5]}
+ANSWERED_REF = "91f33b72c208817675e458838093f10c73d156067e64d10e299509fe8feacd36"
 
 
 def recorded(name):
@@ -66,9 +73,9 @@ class RecordedReplyTests(unittest.TestCase):
                 response = parse_events(raw, expected_session=session_of(raw))
                 self.assertFalse(response["tool_calls"], "a no-tool session must call no tools")
                 self.assertEqual(response["text"].strip().startswith("```"), fenced)
-                value = validate_critique(parse_reply(response["text"]))
+                value = validate_critique(parse_reply(response["text"]), ANSWERED)
                 self.assertEqual(value["supported_grade"], grade)
-                self.assertGreaterEqual(len(value["findings"]), len(CRITIQUE_RUBRIC["criteria"]))
+                self.assertGreaterEqual(len(value["findings"]), len(ANSWERED["criteria"]))
                 self.assertEqual(len(value["required_revisions"]), revisions)
                 self.assertIsInstance(value["required_revisions"], list)
 
@@ -96,21 +103,51 @@ class RecordedReplyTests(unittest.TestCase):
             return 0, raw.replace(recorded_session.encode(), command[command.index("--session-id") + 1].encode()), b""
 
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
-            value = critique(ClaudeCode(auth="subscription", process=replay), {"claim": "fixture packet"})
+            value = critique(ClaudeCode(auth="subscription", process=replay), {"claim": "fixture packet"},
+                             rubric=ANSWERED)
         self.assertEqual(value["supported_grade"], "B")
-        self.assertEqual(value["rubric_ref"], __import__("sci_ai_verifier.documentary",
-                                                         fromlist=["CRITIQUE_REF"]).CRITIQUE_REF)
+        # Recorded under the rubric it answered, so the audit trail names the right one.
+        self.assertEqual(value["rubric_ref"], ANSWERED_REF)
         self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
         self.assertTrue(value["ai_judgment"])
 
     def test_every_rubric_criterion_is_answered_and_an_extra_note_is_kept(self):
         """The criteria are a floor. A sixth finding is one more answer, not a broken reply."""
         raw = recorded("critic-extra-finding.jsonl")
-        value = validate_critique(parse_reply(parse_events(raw, expected_session=session_of(raw))["text"]))
-        self.assertEqual(len(value["findings"]), len(CRITIQUE_RUBRIC["criteria"]) + 1)
+        value = validate_critique(parse_reply(parse_events(raw, expected_session=session_of(raw))["text"]),
+                                  ANSWERED)
+        self.assertEqual(len(value["findings"]), len(ANSWERED["criteria"]) + 1)
         self.assertEqual(value["supported_grade"], "A")
         # The extra is retained verbatim, not folded into objections or dropped.
         self.assertIn("test facts the claim does not print", value["findings"][-1])
+
+    def test_the_rubric_the_recordings_answered_is_reconstructed_exactly(self):
+        """If this fails, a criterion was inserted or reordered rather than appended."""
+        self.assertEqual(digest(canonical(ANSWERED)), ANSWERED_REF)
+
+    def test_the_live_rubric_refuses_real_replies_that_never_judged_case_scope(self):
+        """The scope criterion is enforced, not advisory. These three real critiques answered
+        every question v2 asked and nothing about whether their cases stayed inside the claim;
+        under v3 that is an unanswered criterion, so each is an operational failure, not a
+        grade. Their rejection is the point of this test, not a regression."""
+        for name in ("critic-fenced-revision-list.jsonl", "critic-fenced-revision-list-2.jsonl",
+                     "critic-bare-empty-revisions.jsonl"):
+            with self.subTest(recording=name):
+                raw = recorded(name)
+                text = parse_events(raw, expected_session=session_of(raw))["text"]
+                with self.assertRaises(Fault) as caught:
+                    validate_critique(parse_reply(text))
+                self.assertEqual(caught.exception.code, "critic_response_invalid")
+
+    def test_the_one_critique_that_raised_scope_unprompted_answers_the_new_criterion(self):
+        """Run e035eef6's reviewer answered v2's five criteria, then added an observation no
+        criterion covered: that the cases "test facts the claim does not print". That is the
+        v3 scope criterion, found by a real reviewer before it existed. Findings map by
+        position, so under v3 its sixth finding is the answer to the sixth criterion."""
+        raw = recorded("critic-extra-finding.jsonl")
+        value = validate_critique(parse_reply(parse_events(raw, expected_session=session_of(raw))["text"]))
+        self.assertEqual(len(value["findings"]), len(CRITIQUE_RUBRIC["criteria"]))
+        self.assertIn("test facts the claim does not print", value["findings"][len(CRITIQUE_RUBRIC["criteria"]) - 1])
 
     def test_fewer_findings_than_criteria_is_still_refused(self):
         """Tolerating an extra answer must not tolerate an unanswered criterion."""

@@ -567,8 +567,9 @@ The Local profile matrix in workflow.md governs their legality.
   A `choice` needs at least four alternatives plus a reserved final
   `none of these`, which can never be the answer. It is scored wrong like any other
   rejected option, so it cannot be gamed, but a case whose trials all select it is
-  far more likely to have a broken option set than a wrong subject, and should be
-  read that way. Because the index is the planner's own ordering and appears in no
+  far more likely to be a broken case than a wrong subject, and should be read that
+  way: either its options omit the right answer, or it asks about something the claim
+  never asserts, so a subject applying the skill has nothing to choose from. Because the index is the planner's own ordering and appears in no
   reference, the option it selects carries the quotation requirement instead: the
   same provenance anchor, one level down. Controls probe every other option number,
   an out-of-range number and a non-numeric reply, which is `invalid` rather than a

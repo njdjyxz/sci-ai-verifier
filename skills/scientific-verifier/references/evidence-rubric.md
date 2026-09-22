@@ -42,7 +42,13 @@ grade before it reads accuracy.
 
 The examples are common matches rather than automatic assignments. The same claim may receive different grades depending on the available oracle, independence, scientific validity, coverage, uncertainty, and relationship between evidence and the exact claim.
 
-**A case must test what its claim asserts.** A claim about what a function *does* is not tested by a case asking what it is *named*, and such a case does not count toward the representative cases grade A requires. Naming and spelling cases are legitimate where the claim is itself about an API surface; they are recitation where the claim is about behaviour, meaning or a numeric relationship, and a design whose cases only recite for a behavioural claim does not support grade A. This is a fitness judgment rather than a computable property: once quoted from a source, a function name and a scientific value are the same shape, so Python counts cases and cannot weigh them. The critique makes the call, and lowering the grade is what returns the design to the planner for better cases.
+**A case must test what its claim asserts — no less, and no more.**
+
+*No less.* A claim about what a function *does* is not tested by a case asking what it is *named*. Naming and spelling cases are legitimate where the claim is itself about an API surface; they are recitation where the claim is about behaviour, meaning or a numeric relationship.
+
+*No more.* A case must not reach past the claim to a consequence or fact the claim never states. A claim that pIC50 is the negative base-10 logarithm of the molar IC50 is not tested by a case asking which direction of the scale means more potent. That is in neither the claim nor the skill, so a subject faithfully applying the skill has nothing to answer from: it either falls back on the base model's own knowledge, which credits the skill for something the model already knew, or it declines, which fails a correct skill. Either way the case measures something other than the claim. A case framed as "which statement does a reference make" invites exactly this, because a subject running the skill reads "a reference" as its own loaded material.
+
+A case that recites, or that reaches beyond the claim, does not count toward the representative cases grade A requires, and a design resting on such cases does not support grade A. This is a fitness judgment rather than a computable property: once quoted from a source, a function name, a scientific value and an unasserted consequence are all the same shape, so Python counts cases and cannot weigh them. The critique answers it as a named criterion of its rubric, and lowering the grade is what returns the design to the planner for better cases.
 
 ## Negotiating the grade
 
