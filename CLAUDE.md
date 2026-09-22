@@ -54,8 +54,11 @@ The authoritative documents, in dependency order:
 2. `skills/scientific-verifier/references/tool-contracts.md` — one section per approved tool.
 3. `skills/scientific-verifier/references/runtime-contract.md` — what the host process must do (tool array stability, refusals, parallel tool use).
 4. `skills/scientific-verifier/references/artifact-contracts.md`, `resource-policy.md`, `evidence-rubric.md`.
+5. `skills/scientific-verifier/references/local-contract.md` — the local profile's enforceable behavior. Authoritative, not a summary: when it disagrees with the code, one of them is a bug.
 
 If a change touches tool legality, edit the matrix in `workflow.md` and the tool's section in `tool-contracts.md` in the same commit. They are the two halves of one contract and drift between them is the most expensive error in this repo.
+
+That pair is the worst case of a general rule. **A fact stated in more than one place has one owner, and every other mention points at the owner instead of restating it.** When behavior changes, the owner moves in the same commit. Before adding a sentence that enumerates something — installed methods, grades, limits, tool names — find who already owns that list and link it. `tool-contracts.md` owns the installed comparison methods; `workflow.md` owns tool legality; `evidence-rubric.md` owns the grade standards. Restating any of them elsewhere creates drift the co-edit rule above will not catch, which is how three documents came to describe two comparison methods for a day after a third was added.
 
 ## Rules specific to this project
 

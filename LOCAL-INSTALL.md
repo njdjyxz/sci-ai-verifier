@@ -202,8 +202,8 @@ Each run gets its own ID. Open **`report-card.md`** for the readable report;
 and actual answers, references, outcomes, and limitations.
 
 Completion is not automatically a scientific pass. Scripts, binary inputs and
-generated files use the configured container; exact/numeric and generated Python
-evaluators compare the observations. The default is three trials per case.
+generated files use the configured container; the installed comparison methods and
+generated Python evaluators compare the observations. The default is three trials per case.
 Generated files have saved paths in the JSON report.
 
 The evidence grade in the report says how strong the evidence was, not whether

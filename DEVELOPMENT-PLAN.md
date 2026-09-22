@@ -185,6 +185,24 @@ produced a false failure — `any-atom queries`, `ACS 1996 guidelines` and `mola
 from a 257 baseline. The new rules were mutation-tested: disabling the surface-form check,
 the reserved-option rule or the options-in-prompt check each fails a test.
 
+**8. A general review of the repository** for conflicting directions, overlapping
+instructions, ambiguous references and dead content. The expensive class is clean: the
+local state x tool matrix in `workflow.md` was diffed mechanically against `CLAIM_LEGAL`
+and `OPERATIONS` in `local.py` and matches exactly, every documented constant matches its
+code constant, no relative link in any document is broken, no module-level definition of
+262 is unreferenced, and no fixture under `examples/`, `tests/recorded/` or `catalog/` is
+orphaned.
+
+Four small problems were fixed directly. `evidence-rubric.md` contradicted itself inside
+one sentence, opening with eligibility over "reference and test-bundle facts only" and
+closing with "a statement about the reference"; the closing clause now says evidence
+design, matching `POLICY["axes"]`. That drift is not academic -- it is what made a correct
+proposal look like a design violation during this session's discussion.
+`local-contract.md` and `LOCAL-INSTALL.md` still described two comparison methods after
+`choice` was added earlier the same day. And `evaluators/` was removed: it held nothing
+but `__pycache__` bytecode for the helper deleted on 2026-09-15, untracked and invisible
+to `git status`, while its name implied the helper still existed.
+
 ### Decisions taken 2026-09-22
 
 **1. Index the choices rather than loosen the comparison.** Operator's proposal. Turning
@@ -197,6 +215,74 @@ downgrade it, so the `choice` method is the default for everything else and not 
 
 **3. A reserved always-incorrect option.** Operator's proposal, adopted with the framing
 shifted from trap to diagnostic.
+
+**4. `local-contract.md` is authoritative, and the co-edit rule is now general.** The
+2026-09-22 review found CLAUDE.md contradicting itself: it listed six authoritative
+documents without `local-contract.md`, while stating elsewhere that the local profile's
+enforceable behavior is documented there. `agent.py:269` settles it — the local profile
+pins that file, in full, as a planner instruction, which is more direct than the
+section-only pinning some listed documents get. It is now item 5 on the list, and
+`SKILL.md` names it and `local-evaluator-spec.md` in its reference guide.
+
+The narrow co-edit rule was the second half of the bug. It protected exactly one pair by
+name, so adding the `choice` method left `local-contract.md` wrong twice and
+`LOCAL-INSTALL.md` wrong once for a day while the named pair stayed perfectly in sync.
+CLAUDE.md now states the general form: a fact stated in more than one place has one
+owner, every other mention links the owner rather than restating it, and the owner moves
+in the same commit. `tool-contracts.md` owns the installed comparison methods,
+`workflow.md` owns tool legality, `evidence-rubric.md` owns the grade standards. The
+duplicate method lists in `local-contract.md` and `LOCAL-INSTALL.md` were replaced with
+pointers, so the four copies of that list are now one.
+
+### Designed, flagged do-not-implement: a case-level contract
+
+**Nothing below is implemented, approved for implementation, or tested.** The operator
+considered it and declined it as unnecessary complexity for the project's current size.
+It is recorded because the design is finished and the trigger for revisiting it is
+specific.
+
+**The question it answers.** There is no general contract saying which kinds of test may
+support which grade. `evidence_ceiling()` computes from reference and test-bundle facts
+only — origin, scorer authorship, determinism, token-exactness, case count, trial count —
+and is blind to what a case asks. Exactly one type rule exists, added 2026-09-21: a
+behavioural claim whose cases only recite naming or spelling does not support grade A.
+That rule works; it demoted two claims from ceiling A to a settled B in run `fb64115f`.
+
+**The design.** Do not enumerate test types, which is a taxonomy that rots. Classify what
+the subject must *do* to answer, which is close to exhaustive in three levels: **generate**
+(produce a value present in nothing it was given — compute, execute, derive),
+**discriminate** (choose among plausible alternatives it is shown), and **recall**
+(reproduce a string from the material). The ceiling then follows from whether the case
+level meets what the claim demands:
+
+| Claim asserts | Recall case | Discriminate case | Generate case |
+| --- | --- | --- | --- |
+| a name or API surface | matches, A | A | A |
+| a behaviour or meaning | below, max B | matches, A | A |
+| a computed value | below, max B | below, max B | matches, A |
+
+Row two column one is the existing 2026-09-21 rule; the table only generalizes it. Row
+three column two is the case not yet met: a computation claim tested by multiple choice
+turns arithmetic into recognition and should not reach A either.
+
+**How it would bind.** The same division of labour as everywhere else. The planner
+declares the claim kind and each case's level as small enums; Python computes the ceiling
+from the table, which is arithmetic once declared and sits beside
+`insufficient_distinct_cases`; the critique audits the declaration rather than judging
+taste, because "this case is declared generate but its answer is printed in the prompt" is
+concrete and checkable. That is the unlock: Python cannot classify a case but can enforce a
+ceiling on a declared classification, which makes the demotion mechanical instead of
+depending on drawing a diligent critique session.
+
+**Why it was declined.** Cost is a schema change, `evidence_ceiling()` arithmetic, two
+contract files, report-card rendering and tests, against one known problem that a single
+sentence already solves. It also carries the coverage risk below: claim extraction fell
+from six to four after one restriction was added, and this would be the second.
+
+**Trigger to revisit.** Ad-hoc type restrictions accumulating in the rubric. One is a
+sentence; four or five are a taxonomy pretending not to be, and at that point the table
+above is cheaper and more consistent than the prose it replaces. A single new restriction
+is not a trigger.
 
 ### Open questions for the operator
 

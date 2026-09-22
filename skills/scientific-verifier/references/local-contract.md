@@ -145,10 +145,12 @@ or `sci-ai-verifier verify <path>`. Historical profiles remain readable.
 
 ## Scope and evidence
 
-The local implementation supports text and computational skills, pinned resources,
-exact/numeric comparisons and qualified generated Python evaluators.
+The local implementation supports text and computational skills, pinned resources, the
+installed comparison methods and qualified generated Python evaluators. Those methods
+and the answer form each one requires are enumerated in `tool-contracts.md` under
+`qualify_local_candidate`, which owns that list; do not restate it here.
 The planner extracts source-grounded claims, searches for independent primary
-references with WebSearch, and proposes exact or numeric known-answer cases.
+references with WebSearch, and proposes known-answer cases in one of those forms.
 Python retrieves public HTTPS reference bytes itself; agent-authored quotes or
 search summaries alone cannot qualify a candidate. Reference quotes and expected
 values must occur in retrieved material. At least three distinct cases, positive

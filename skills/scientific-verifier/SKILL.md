@@ -52,6 +52,7 @@ Never invent or simulate a successful tool result, registry entry, dataset, eval
 - Use the applicable [`references/artifact-contracts.md`](references/artifact-contracts.md) section before proposing an artifact write or revision.
 - Use [`references/evidence-rubric.md`](references/evidence-rubric.md) for planning, audit, grade, and scientific-conclusion decisions.
 - Use [`references/resource-policy.md`](references/resource-policy.md) for source snapshots, resource discovery, storage, reuse, promotion, retention, and cleanup.
+- In the local profile the runner pins [`references/local-contract.md`](references/local-contract.md) and [`references/local-evaluator-spec.md`](references/local-evaluator-spec.md) in full. They are authoritative for that profile, not summaries of it.
 - [`references/runtime-contract.md`](references/runtime-contract.md) binds the host process, not you. You never need it to choose a transition.
 
 The runner controls when stage-specific references enter the session. Do not assume unrestricted access to the repository or raw managed payloads.
