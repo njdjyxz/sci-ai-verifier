@@ -33,8 +33,9 @@ deterministic tools, bounded processes and saved evidence.
 | `fb64115f` (2026-09-22) | sar-analysis | 2 at A, 2 at B, no faults, 51 of 51 observed |
 | `7efbdd8c` (2026-09-22) | sar-analysis | 3 at A, 1 at B; 57 of 57 answered correctly, 5 misread |
 
-Every run above used Opus 5. The verifier's pin moved to `claude-opus-5-5` after run
-`7efbdd8c`, so later runs begin a new series and are not directly comparable with these.
+Every run above used Opus 5, and the verifier is still pinned to it. A move to
+`claude-opus-5-5` was made and reverted the same day: the installed Claude Code, 2.1.268,
+cannot serve that model, which needs 2.1.280, and WinGet does not yet offer 2.1.280.
 
 What that does and does not establish: the **A and B branches** both carry settled grades
 from live runs, and the planner has now used all three comparison methods, including an
@@ -277,19 +278,50 @@ to `exact`. The greedy one matters most, since it is the false-pass path. Replay
 the new code, the 57 saved observations went from 52 pass and 5 invalid to 57 pass, and no
 passing verdict changed. Suite 260 → 265.
 
-**11. The verifier's model pin moved to `claude-opus-5-5`.** Operator's request. The
-registration was changed by the documented remove-and-re-add procedure, with the previous
-registration backed up first and diffed after: exactly one argument changed, and the token
-field stayed a `${SCI_VERIFIER_OAUTH_TOKEN:-}` placeholder throughout. `LOCAL-INSTALL.md`
-was updated to match. The same paragraph had claimed that pinning makes "that whole class of
-lost run" disappear, which has been false since 2026-09-21, when the fault recurred with the
-pin in place; it now says so, and that switching models starts a new series.
+**11. The verifier's model pin moved to `claude-opus-5-5`, then back — superseded by
+item 12.** Operator's request. The registration was changed by the documented
+remove-and-re-add procedure, with the previous registration backed up first and diffed
+after: exactly one argument changed, and the token field stayed a
+`${SCI_VERIFIER_OAUTH_TOKEN:-}` placeholder throughout. What was not checked is whether
+the CLI could run the model at all, and it could not. The same paragraph of
+`LOCAL-INSTALL.md` had claimed that pinning makes "that whole class of lost run" disappear,
+false since 2026-09-21 when the fault recurred with the pin in place; that correction
+stands, as does the note that switching models starts a new series.
 
 `LOCAL-INSTALL.md` also stated that only one live run had ever completed and that grades
 B, C, D and U had "still never run live" — false four runs ago. Under the one-owner rule it
 now points at "Current state" here instead of restating status. That section had itself
 drifted, saying "Three runs" above a table of four; the prose count is gone, so the table is
 the only thing that states it.
+
+**12. The first Opus 5.5 run never started, and the pin went back to Opus 5.** Run
+`a8036722-914b-4981-acdc-cca8ed01e61a` ended `incomplete` after 2.7 seconds with zero steps,
+zero claims and no recorded model usage, so it cost nothing. The attempt log
+(`6d3c58ae-af02-40cc-ba09-a716fc742f45`) carries the cause in its `process_diagnostic`
+event: `[claude-code:unrecognized_model]`, then `API Error: 400 Claude Code 2.1.268 does not
+support this model; version 2.1.280 or newer is required`. The planner was refused before
+its first turn.
+
+The upgrade path was a deadlock. `claude update` reported 2.1.280 available but declined
+to install it, because WinGet manages this installation and it defers to WinGet; `winget
+upgrade Anthropic.ClaudeCode` then reported no newer version in the configured sources.
+WinGet's catalog lags Anthropic's releases.
+
+The pin was reverted by the same procedure, and the result is identical to the original
+Opus 5 registration rather than merely similar — compared against the backup taken before
+the first change. Before reverting, a direct CLI call confirmed the distinction that failed:
+`claude-opus-5-5` prints `unrecognized_model` before authentication is even attempted,
+while `claude-opus-5` does not. That call could not complete, since a plain shell has no
+verifier token, but the model check precedes sign-in, so it answers the question that
+mattered; the authenticated path was already established by run `7efbdd8c`, on the same CLI,
+hours earlier.
+
+`LOCAL-INSTALL.md` is reverted to Opus 5, which also removes a contradiction introduced
+with the switch: step 2 declared 2.1.248 sufficient while step 5 pinned a model needing
+2.1.280. The model-pin section now tells anyone changing the pin to run
+`claude.exe -p "Reply OK" --model <id>` first and look for `unrecognized_model`, and
+explains that `Not logged in` in a plain shell is expected and does not mean the check
+failed.
 
 ### Decisions taken 2026-09-22
 
@@ -327,8 +359,14 @@ formatting habits, and a prompt that already asked for a bare number. The reader
 presentation and never searches content; that line — strip wrapping, never search inside —
 is what keeps a lenient reader from producing false passes, and it is tested by mutation.
 
-**6. The verifier moves to Opus 5.5.** Operator's decision. Runs before `7efbdd8c` and
-after it are separate series.
+**6. The move to Opus 5.5 is deferred until the CLI can serve it.** Operator's decision.
+*This supersedes the same day's earlier decision 6, "The verifier moves to Opus 5.5".* The
+operator chose to revert rather than wait, and the timing turns out to help: the next run
+is meant to test the reply reader, and every previous sar-analysis run was on Opus 5, so
+staying on Opus 5 tests one change instead of two. Changing the model and the reader in the
+same run would have left a clean result unattributable, since Opus 5.5 might simply not
+write bold. The switch happens as its own step once WinGet ships 2.1.280, and that run
+starts the new series.
 
 ### Designed, flagged do-not-implement: a case-level contract
 
@@ -390,10 +428,11 @@ API-surface-flavoured of the six — exactly the kind the new rubric sentence sa
 legitimate. Claim extraction happens before qualification and varies between runs, so this
 cannot yet be attributed to the rubric edit. It is the narrowing regression the previous
 entry flagged, and it now has **two consecutive observations** behind it: `fb64115f` and
-`7efbdd8c` extracted the same four claims and dropped the same two. The next run changes
-model, so it cannot settle this either — if Opus 5.5 extracts six, the model and the rubric
-are confounded. Settling it needs either a run on the new model with the rubric sentence
-temporarily reverted, or a decision that four is acceptable.
+`7efbdd8c` extracted the same four claims and dropped the same two. With the Opus 5.5 move
+deferred, the next run stays on Opus 5 and its claim count is comparable with both — a
+third four strengthens the pattern, a six weakens it. Neither attributes it to the rubric
+edit, though: that needs a run with the rubric sentence temporarily reverted, or a decision
+that four is acceptable.
 
 **3. A narrow capitalization residue remains by choice.** `forced_surface_form()` accepts
 any token carrying both cases, so `Core`, `Threshold` and `Fuc` stay open answers. Their
@@ -402,33 +441,50 @@ subject could still lowercase one. Tightening to require an *internal* case chan
 (camelCase) would catch them at the cost of turning legitimate scientific symbols into
 menus. Not done; the looser rule is what was agreed.
 
-**4. Recognition is untouched.** A choice can be passed by recognising the
+**4. The runner blames the operator for a planner that never started.** Recorded rather
+than fixed, because it sits in the runtime's recovery path. When the planner process exits
+before its first step, the runner closes the run through `cancel_verifier_run`, whose fixed
+message is persisted into the operational outcome: run `a8036722` reads "The operator
+cancelled this run." Nobody cancelled it — the CLI refused the model. The true cause,
+`claude_code_version_too_old`, was in the event stream and did not reach the saved outcome.
+The top-level error, `planner_incomplete`, is honest; the persisted record is not, and it is
+the record a reader of the report sees. The fix is to carry the planner's observed failure
+into the outcome instead of routing every dead planner through the cancellation path. The
+preflight compounds it by recording `live_execution_tested: false`: it never asks the CLI
+whether it can serve the pinned model, which would have caught this in seconds and for free.
+
+**5. Recognition is untouched.** A choice can be passed by recognising the
 conventional-looking option. This run's critique said so directly: "Closed-choice recall
 with the correct wording present verbatim among the options tests discrimination, not
 generation." Indexing does nothing about that, and neither does raising the option count.
 
 ### Urgent next steps, if any
 
-**Restart Claude Desktop before the next run.** The MCP server reads its arguments at
-startup, so until it restarts it is still serving `claude-opus-5`, and a run started now
-would silently use the old model while the install guide says otherwise.
+**Restart Claude Desktop before the next run.** The registration on disk is Opus 5 again,
+but the MCP server reads its arguments only at startup, and the one running when this was
+written — pid 7052 — was still serving `claude-opus-5-5`. A run started before the restart
+would fail exactly as `a8036722` did.
 
 Everything else is committed, pushed and green.
 
 ### Suggested next move
 
-Run `sar-analysis` on Opus 5.5 and find out whether the reply reader closes the last of the
-harness noise on a live subject. The reply reader is already established by unit tests and
-by replaying every saved observation; a live run cannot establish it further, because Opus
-5.5 may simply not use bold. What a live run can show is whether any *new* surface form
-appears.
+Run `sar-analysis` on Opus 5 and find out whether the reply reader closes the last of the
+harness noise on a live subject. This is the clean version of that test: same model as the
+four previous runs, so the reader is the only thing that changed. The reader is already
+established by unit tests and by replaying every saved observation from `7efbdd8c`; what a
+live run adds is whether a *new* surface form appears.
+
+Separately, once WinGet offers Claude Code 2.1.280, run the check in `LOCAL-INSTALL.md`
+before moving the pin to Opus 5.5, and treat that run as the start of a new series.
 
 ### Recommended next action
 
-After restarting Claude Desktop, run `sar-analysis` once and check two things in the saved
-card. First, did every trial come back `pass` or `fail`, with no `invalid`? If any reply is
-still `invalid`, read its verbatim text: a new presentation form is a reader gap, whereas a
-number inside prose is the reader working as designed. Second, record the claim count
-without drawing a conclusion from it, since the model change confounds it. It is finished
+After restarting Claude Desktop, confirm the running server's `--model` argument reads
+`claude-opus-5`, then run `sar-analysis` once and check two things in the saved card.
+First, did every trial come back `pass` or `fail`, with no `invalid`? If any reply is still
+`invalid`, read its verbatim text: a new presentation form is a reader gap, whereas a number
+inside prose is the reader working as designed. Second, record the claim count; on the same
+model it is comparable with the last two runs, both of which extracted four. It is finished
 when both are recorded. A run with no `invalid` and no false `fail` would be the first
 result this project has produced with no harness noise at all.

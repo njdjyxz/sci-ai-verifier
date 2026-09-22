@@ -129,7 +129,7 @@ and its settings need changing, remove the old registration using the
 
 ```powershell
 $verifierClaude = (Get-Command claude.exe -ErrorAction Stop).Source
-claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5-5 --timeout 5400
+claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5 --timeout 5400
 ```
 
 Expect an **Added** message. The first line finds the installed Claude program;
@@ -137,7 +137,7 @@ the second registers a tool connection named `scientific-verifier-local` in your
 personal Claude Code configuration. It is available across projects. The saved
 configuration contains a credential placeholder, not the token itself.
 
-`--model claude-opus-5-5` pins an exact model rather than the `opus` alias. This
+`--model claude-opus-5` pins an exact model rather than the `opus` alias. This
 matters more than it looks. A verdict is evidence about *one* model running the
 skill, so the runner freezes the model identity at the first trial and refuses a
 trial set containing two. An alias is free to resolve to a different version
@@ -150,6 +150,22 @@ occasional `subject_model_changed` even when the pin is right.
 
 Changing the pinned model starts a new series. Runs on one model are not directly
 comparable with runs on another, so note the switch when reading results across it.
+
+**Before changing the pin, check that this CLI can run the new model.** A newer model
+can require a newer Claude Code than you have, and WinGet may not offer that version
+yet even when Anthropic has released it — `claude update` defers to WinGet for a
+WinGet-managed install. Run:
+
+```powershell
+claude.exe -p "Reply OK" --model <new-model-id>
+```
+
+If the output contains `unrecognized_model`, this CLI cannot serve that model; keep
+the current pin. `Not logged in` is expected from a plain PowerShell window, because
+the verifier's token is supplied only through the desktop app, and the model check
+happens before sign-in, so `unrecognized_model` is the line that matters. Skipping this
+costs a run: the verifier starts, the planner is refused within seconds, and the run
+ends incomplete with no evidence.
 
 `--timeout 5400` gives each verification 90 minutes. Without it the limit is 30
 minutes, which measurement shows is not enough: a five-claim skill took about 50
