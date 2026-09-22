@@ -15,6 +15,7 @@ from sci_ai_verifier.local_science import (GRADES,MAX_ROUNDS,POLICY_REF,audit,de
 from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC,RUBRIC,assess,validate_assessment,
                                          validate_critique)
 from sci_ai_verifier.local_evaluators import qualify,validate_spec
+from sci_ai_verifier.local_candidates import METHOD_VERSION
 
 RETRIEVED={"origin":"retrieved_public_https","url":"https://example.org/r","version":"1","license":"unknown"}
 
@@ -22,7 +23,7 @@ RETRIEVED={"origin":"retrieved_public_https","url":"https://example.org/r","vers
 class CeilingTests(unittest.TestCase):
     def setUp(self):
         self.references={"r"+str(index):dict(RETRIEVED) for index in range(3)}
-        self.candidate={"method":"numeric","method_version":"local-reference-comparison-1","name":"Fixture",
+        self.candidate={"method":"numeric","method_version":METHOD_VERSION,"name":"Fixture",
             "scope":"Fixture scope","limitations":"Fixture","absolute_tolerance":"0.000001",
             "cases":[{"case_id":str(index),"input":str(index),"expected":str(index)+".0",
                       "reference_ref":"r"+str(index),"source_quote":"row "+str(index)+" is "+str(index)+".0 exactly",
@@ -182,7 +183,7 @@ class DecisionTests(unittest.TestCase):
         self.assertIsNone(result["fault"])
 
     def test_audit_records_the_critique_that_settled_the_grade(self):
-        candidate={"method":"numeric","method_version":"local-reference-comparison-1","name":"Fixture",
+        candidate={"method":"numeric","method_version":METHOD_VERSION,"name":"Fixture",
                    "scope":"s","limitations":"l","absolute_tolerance":"0.000001",
                    "cases":[{"case_id":str(i),"reference_ref":"r","expected":"1.0","source_quote":"is 1.0 exactly"}
                             for i in range(3)]}

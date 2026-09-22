@@ -30,14 +30,20 @@ deterministic tools, bounded processes and saved evidence.
 | `76ce4af1` (2026-09-16) | glycoengineering | 4 claims at grade A, 1 operational limitation |
 | `1bb3f07a` (2026-09-18) | sar-analysis | 1 at A, 1 at D, 2 voided by faults |
 | `e13f50ee` (2026-09-21) | sar-analysis | 4 at A, 1 at B, 1 voided by a fault |
+| `fb64115f` (2026-09-22) | sar-analysis | 2 at A, 2 at B, no faults, 51 of 51 observed |
 
 What that does and does not establish: the **A and B branches** both now carry settled
-grades from live runs. **Grade C and `qualify_local_evaluator` have never been exercised.**
-The documentary path has run twice, once to completion and once rejected, and not at all in
-the most recent run. No run has yet exercised the evaluator-quality rules added on
-2026-09-21, so their effect on a live planner is unmeasured.
+grades from live runs, and run `fb64115f` is the first to grade every claim it extracted.
+**Grade C and `qualify_local_evaluator` have never been exercised.** The documentary path
+has run twice, once to completion and once rejected, and in neither of the last two runs.
+The indexed-choice rules committed on 2026-09-22 have not yet been seen by a live planner.
 
-Automated suite: **257 passed, 2 skipped**. Fixtures remain synthetic, reviewed registries
+No run has yet produced a scientific result free of false failures: `e13f50ee` reported two
+from answer wording and `fb64115f` one from capitalization. Each was fixed after the run
+that exposed it, which is why the next run reads the planner's behaviour rather than the
+grades.
+
+Automated suite: **260 passed, 2 skipped**. Fixtures remain synthetic, reviewed registries
 remain empty, and nothing in the automated suite establishes scientific acceptance.
 
 ## History
@@ -77,199 +83,159 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
 - **Claude 2026-09-21 (six-axis implemented)** — The redesign built, contracts first.
   `decide()` no longer welds grade to behaviour; a claim scoring 13 of 15 now reports
   grade A, status `fail`, consistency `split`. Suite 240 → 251.
+- **Claude 2026-09-21 (continued)** — Run `e13f50ee`: six claims, five graded, first
+  settled B. Its two `fail` verdicts were answer-wording artifacts, so an exact answer was
+  required to have one surface form, and a naming case was ruled out of the representative
+  cases grade A needs. Model pin confirmed live; `subject_model_changed` recurred on a
+  different claim from a single-session CLI fallback.
 
-## Claude: 2026-09-21 (continued: live rerun and two evaluator-quality fixes)
-
-This continues the same calendar day as the six-axis entry, which is now in the archive.
+## Claude: 2026-09-22 (third sar-analysis run; closed choices become indexed)
 
 ### Current stage and status
 
-The rerun that entry asked for happened and **completed end to end**. Run
-`e13f50ee-a390-4130-83e6-8641cfd28367` closed as `completed` with
-`completion_reason: local_report_complete`: six claims extracted, **five settled with a
-grade and a status**, one closed as an operational limitation, 69 scored trials of which 66
-passed, and a full report written. It ran against `main` at `536733d` plus the
-unused-import cleanup then in the working tree, started 2026-09-21T23:17:25Z, finished
-2026-09-22T00:14:08Z, about 57 minutes, recorded cost $15.32, 53 steps, 78 subject calls,
-observed planner model `claude-opus-5`.
+Run `fb64115f-c50f-42e6-8408-8ed4feacab43` **completed end to end** and is the cleanest run
+the project has produced: four claims, all four graded, **51 of 51 observations obtained and
+evaluated**, zero faults, zero invalid, zero split cases. 38 minutes, $9.73, 40 steps,
+observed model `claude-opus-5`. Grades A, B, B, A; three pass, one fail.
 
-Three things the previous two entries were waiting on all landed. The `rdFMCS threshold`
-claim reached **A with 12 of 12 executed trials** rather than the predicted B. The
-`makeDummiesQueries` claim produced **grade A, status `fail`, consistency `split`** instead
-of vanishing — the defect the six-axis card was built to fix, confirmed live. And
-`RGroupDecompose` settled at **B**, the first settled B grade in the project's history.
+**The 2026-09-21 fixes work.** Every multi-word answer became a closed choice, the wording
+lottery is gone, and — the part that had never happened before — the critique **objected and
+lowered the grade**, twice. Two claims whose mechanical ceiling was A settled at B after two
+critique rounds, on exactly the naming-versus-substance ground the rubric sentence added.
 
-The substance of this entry is not the grades. It is that **the run's two `fail` verdicts
-were artifacts of how the tests were written rather than findings about the skill**, and
-the two fixes that follow from that. Both are committed.
+Two defects were found and fixed in the process. One was in yesterday's own commit.
 
 ### What has been done
 
-**1. Claim by claim, against run `1bb3f07a`.**
+**1. `METHOD_VERSION` was not bumped when the qualification rules changed** (fixed, this
+session). The catalog import path re-qualifies a candidate against current rules, but the
+local lookup path in `candidates()` does not — it filters on `method_version` and trusts
+what it finds. All thirteen saved candidates still read `local-reference-comparison-1`, so
+the eight prose-answer candidates from run `e13f50ee` were still selectable and the planner
+could have reused them, skipping the new rule entirely and making the run worthless as a
+test of it. Caught before starting. That string is the only thing standing between a
+superseded rule set and a later run, and there is now a test that says so.
 
-Same submission, byte-identical snapshot (`SKILL.md`, 23,276 bytes). Trial count 3.
+**2. The run, claim by claim.** Docker Desktop was stopped again and was started first.
 
-| Claim | `1bb3f07a` | `e13f50ee` |
-| --- | --- | --- |
-| pIC50 definition | A / pass, 12 of 12 | **A / pass**, 15 of 15 |
-| `rdFMCS` threshold | no grade, `subject_model_changed`, 5 of 12 | **A / pass**, 12 of 12 |
-| `DrawMoleculeACS1996` | D / inconclusive (documentary) | **A / fail / split**, 18 of 18 |
-| `makeDummiesQueries` | no grade, `assessor_response_invalid`, 15 of 15 | **A / fail / split**, 12 of 12 |
-| `RGroupDecompose` | not extracted | **B / pass**, 12 of 12 |
-| `GenerateDepictionMatching2DStructure` | not extracted | no grade, `subject_model_changed`, 9 of 15 |
+| Claim | Grade | Status | Trials | Accuracy |
+| --- | --- | --- | --- | --- |
+| `rdFMCS` threshold | A | pass | 12 of 12 | 12/12 |
+| `RGroupDecompose` | B | pass | 15 of 15 | 15/15 |
+| `makeDummiesQueries` | B | pass | 12 of 12 | 12/12 |
+| pIC50 | A | **fail** | 12 of 12 | 9/12 |
 
-Every claim that carried a fault last time now carries a grade. `DrawMoleculeACS1996` moved
-off the documentary path entirely, which is why the malformed-assessor-reply fault stopped
-mattering on its own, as predicted. `overall_scientific_grade` is `None` only because the
-sixth claim is ungraded.
+**3. The naming rule fired, and the revision loop with it.** Two claims had
+`evidence_ceiling: A` and `settled_ceiling: B` after two rounds, so the critique did what
+the previous run's critique had declined to do. Its own words:
 
-**2. The model pin was necessary and not sufficient.**
+> "The claim is behavioural ..., but no case invokes RGroupDecompose on any molecule or
+> core; the behavioural half of the claim is entirely untested and only the vocabulary of
+> the output is probed."
 
-Open question 2 of the six-axis entry is closed: the MCP server is re-registered with
-`--model claude-opus-5`, and `subject_config.model_id` and the controller receipt both
-record it.
+> "Cases 3 and 4 do not test the claim ... both can be answered by name-level familiarity
+> with the struct while holding an incorrect belief about what makeDummiesQueries does."
 
-The `subject_model_changed` fault did not go away. **It moved.** The failing observation is
-`claim-002/009-response.json`, case `depiction-reference-needs-coords`: `model_id` is
-`claude-opus-5` as requested, but `observed_model_ids` is
-`["claude-opus-4-8", "claude-opus-5"]` — the CLI served part of **one session** from another
-model. That is upstream fallback inside a single session, not alias resolution differing
-between sessions, so pinning on this side cannot prevent it. The guard behaved correctly:
-`status_withheld_reason: unattributable_observations`, eight completed trials discarded.
+Eight candidate versions were written for four claims, so the planner revised rather than
+accepting. This is the pass condition the previous entry set, met.
 
-A navigation trap worth recording: `subject-runs/<run>/claim-00N` directories are numbered
-in processing order and **do not** match claim-id hash order in the card. The faulted claim
-was `claim-006` in the report and `claim-002` on disk. Map by `case_id`.
+**4. The same bug returned in a new costume.** The pIC50 failure is not a finding. Case
+`molar-unit-open` expected `"molar"` and observed `"Molar"` — capitalization — and failed
+3 of 3, so it is a deterministic false failure rather than a coin flip. The 2026-09-21 rule
+required a whitespace-free token, and `molar` is one; string equality is still case
+sensitive. The multi-word hole was closed and the single-token hole was left open.
 
-**3. Two `fail` verdicts that a chemist would not endorse.**
+Case-insensitive comparison is not the answer: in cheminformatics case is semantic, `c` and
+`C` in SMILES being aromatic and aliphatic carbon.
 
-Both came from documentation-phrasing recall under exact string comparison:
+**5. Closed choices are now indexed** (`choice`, a third installed comparison method). The
+subject replies with the **option number**, compared numerically, so no wording, casing,
+plural or whitespace of a right answer can score as a wrong one — the whole class is
+structurally impossible rather than patched. A reply that is not a number returns
+`invalid`, which reports a harness problem instead of a verdict about the skill; previously
+a surface slip was indistinguishable from a real defect.
 
-- `dummies-conversion-target`: expected `"any-atom queries"`, one trial answered
-  `"any-atom query"`. Singular against plural.
-- `acs1996-guideline-target`: expected `"ACS 1996 guidelines"`, two trials of three
-  answered `"ACS 1996 mode"`.
+Because the index is the planner's own ordering and appears in no reference, the
+**provenance anchor moved one level down**: the option the index selects must be the
+verbatim quote. Same guarantee, one indirection. `token_exact()` and `answer_text()` in
+`local_science.py` resolve the option behind the index so the grade still rests on quoted
+bytes.
 
-Under `unanimity` a single such trial fails the claim. The run's own critique on claim 1 had
-already named the general problem: the oracle "measures recitation fidelity as a proxy for a
-semantic claim," and a behavioural oracle was "available and unused."
+`exact` reverts to open answers only and no longer takes options. An open answer must have
+a forced surface form: a number, or a token fixed by a case change, digit or underscore.
+`molar`, `greater`, `true` and `three` are therefore no longer legal open answers.
 
-**4. Fix one: an exact answer must have one correct surface form** (`e5329de`).
+**6. Four alternatives minimum, plus a reserved `none of these`.** The previous floor was
+two, and this run's critique independently flagged that as the weakest item it saw:
+"combined with only two options it is the weakest of the four items." Arithmetic agrees —
+over three trials a coin flip carries a case 12.5% of the time at two options and 1.6% at
+four. Beyond four the return is negligible; the binding constraint is distractor
+plausibility, which Python cannot check and which stays a planner assertion, now stated in
+`QUALIFICATION_LIMITS`.
 
-Contracts first. `qualify()` already required every expected value to be a verbatim quote
-from a fetched reference, which keeps the answer key out of the model's hands and should not
-be relaxed. Its unstated side effect: the only askable questions are ones whose answer is a
-literal string in a document, so cases drift toward reciting prose, and
-`actual.strip() == expected.strip()` cannot tell a paraphrase of a right answer from a wrong
-one. Nothing constrained the *form* of the answer that rule produces.
+The reserved final option is never the answer, so scoring stays ungameable, but a case
+whose trials all select it is far more likely to have a broken option set than a wrong
+subject. That is a diagnostic to read, not a verdict: the claim still fails, but visibly
+for the right reason.
 
-`qualify_local_candidate` now requires two forms only: a whitespace-free token, or a closed
-choice, where the case lists `options` and its `input` presents every one of them verbatim
-so the subject selects rather than phrases. `options` is an optional schema field, so
-existing token cases are unchanged. Controls probe each rejected option as well as the near
-misses. Numeric answers take no options. Whether a distractor is genuinely wrong stays a
-planner assertion, recorded in `QUALIFICATION_LIMITS`.
+**7. Verification.** Replayed against **78 distinct expected values** from all four live
+runs: 53 stay open, 25 now require a choice. The 25 include every value that has ever
+produced a false failure — `any-atom queries`, `ACS 1996 guidelines` and `molar` — plus
+`true`, `false`, `larger`, `greater`, `enhanced`, `three`. Suite **260 passed, 2 skipped**
+from a 257 baseline. The new rules were mutation-tested: disabling the surface-form check,
+the reserved-option rule or the options-in-prompt check each fails a test.
 
-Replayed against the **64 real cases** from all live runs, the rule flags 8 and leaves 56
-untouched. The 8 are both verdicts above, the prose case belonging to the claim voided for
-the model swap, `"fraction of the dataset that must contain the MCS"` in both runs,
-`"SVG molecule drawer"`, and `"unsigned int"`. The last four passed on luck.
+### Decisions taken 2026-09-22
 
-Six tests added, mutation-tested: disabling the rule fails four of the six, the other two
-being the positive control and the probe-count assertion.
+**1. Index the choices rather than loosen the comparison.** Operator's proposal. Turning
+the answer into a number removes the surface-form question instead of managing it.
 
-**5. Fix two: a naming case does not test a behavioural claim.**
+**2. Keep open answers where the surface form is already forced.** Numbers especially. The
+pIC50 case that made the subject compute `-log10(1e-9)` and answer `9` was the strongest
+evidence in the run: generation, not recognition. Turning arithmetic into a menu would
+downgrade it, so the `choice` method is the default for everything else and not universal.
 
-Fix one removes the wording lottery. It does **not** remove recitation. "What is the flag
-called?" is a single token, passes the new rule cleanly, scores 3 of 3, and says nothing
-about whether the claim is true. Three such cases scored perfectly in this run.
-
-The structural cause is incentive, not laziness. The planner must propose the strongest
-grade its design supports, and a naming case satisfies every mechanical A requirement
-trivially — the name is in the docs, it is one clean token, exact match compares it
-perfectly. Naming cases were the cheapest route to an A.
-
-Python cannot separate them: once quoted, `51` (a glycosylation position, a real scientific
-fact) and `makeDummiesQueries` (pure vocabulary) are the same shape. So this is left where
-judgment already lives. `evidence-rubric.md` now states that a case testing what something
-is *named* does not count toward the representative cases grade A requires when the claim is
-about behaviour, meaning or a numeric relationship, and that naming cases remain legitimate
-where the claim is itself about an API surface. The critique packet note
-(`local.py`) points at that rule and says plainly that a finding which does not move the
-grade changes nothing. `coverage` in the planner's justification must now state which cases
-test what the claim asserts rather than what it is named.
-
-No new mechanism was needed. The revision loop already exists: the critique lowering the
-grade fires `local_grade_revision_required`, which returns `objections`,
-`required_revisions` and `rounds_remaining` to the planner, and the rubric already lists
-"cases that cover the stated scope" as a legal way to strengthen a design. It never fired in
-this run because the trigger is `settled_ceiling != target_grade`: the planner proposed A,
-the critique supported A, so the objection was recorded as a finding and changed nothing.
-
-### Decisions taken 2026-09-21 (continued)
-
-**1. Fault discards, bad accuracy keeps. Confirmed, not changed.** The operator restated the
-principle: a fault inside the verifier, such as a model switch, throws the evidence away,
-while poor accuracy or consistency is a finding about the skill or the world and keeps
-everything. That is what the code does, and this run demonstrates both halves — two claims
-with failing trials kept all their observations and were graded, and the faulted claim
-discarded its eight. A refinement to retry only the affected trial rather than discard the
-claim was raised and **not adopted**; it remains available if the 1-in-5 claim loss rate
-across two runs becomes annoying.
-
-**2. No machinery for computed ground truth. Decided: let the grade fall.** The question was
-how to support a behavioural oracle whose expected value no document states. The operator's
-answer: if nobody published it, the evidence genuinely is weaker, so it should earn a low
-grade and be left to the AI to propose and the critique to settle. Building a mechanism to
-manufacture an answer key is rejected. Note that behavioural tests **are** reachable today
-where the reference itself publishes a worked example with its output; that path is
-underused rather than blocked.
-
-**3. The grade covers the whole evidence design, not the reference alone.** The six-axis
-entry said the grade "answers one question, how good the reference was." That phrasing is
-narrower than the code, which already grades case count, token-exactness, comparison
-determinism and trial count alongside reference origin, and `POLICY["axes"]` says "reference
-and test bundle." The operator confirmed the broader reading: the grade should reflect the
-whole testing process, including how the tests were built, because a reader cannot be
-expected to audit cases one by one. The contrast the earlier entry was drawing — against
-*behavioural and operational* reasons — still holds exactly.
-
-**4. Relevance, not strictness.** A proposal to instruct the planner toward "the strictest
-kind of test" was considered and **rejected**. A naming case is already maximally strict:
-exact match, zero tolerance, no partial credit, and it still tests nothing. Strictness
-invites trick questions; the property wanted is whether the case tests what the claim
-asserts.
+**3. A reserved always-incorrect option.** Operator's proposal, adopted with the framing
+shifted from trap to diagnostic.
 
 ### Open questions for the operator
 
-**1. Should the aggregation rule become a plan field?** Carried forward unchanged from the
-six-axis entry. Still `unanimity`, still recorded on every card, still correct for every
-claim seen so far. Two triggers reopen it: a claim genuinely worded as typical behaviour, or
-a trial count raised far enough that unanimity fails sound skills on noise.
+**1. Should the aggregation rule become a plan field?** Carried forward unchanged.
 
-**2. Does the naming rule actually change what the planner writes?** This is the one real
-unknown. Both fixes are enforced at different strengths: fix one is mechanical and cannot be
-ignored, fix two is a rule the critique must choose to apply — and the last critique named
-the problem and waived it anyway. The check is cheap and exact, because the report card saves
-both the critique's findings and the settled grade.
+**2. Claim coverage fell from six to four.** The two that disappeared,
+`DrawMoleculeACS1996` and `GenerateDepictionMatching2DStructure`, are the most
+API-surface-flavoured of the six — exactly the kind the new rubric sentence says remains
+legitimate. Claim extraction happens before qualification and varies between runs, so one
+run cannot establish that the rubric edit caused this. It is the narrowing regression the
+previous entry flagged, and it now has one observation behind it rather than none.
+
+**3. A narrow capitalization residue remains by choice.** `forced_surface_form()` accepts
+any token carrying both cases, so `Core`, `Threshold` and `Fuc` stay open answers. Their
+case is genuinely semantic — a C++ string key, a property name, an SNFG symbol — but a
+subject could still lowercase one. Tightening to require an *internal* case change
+(camelCase) would catch them at the cost of turning legitimate scientific symbols into
+menus. Not done; the looser rule is what was agreed.
+
+**4. Recognition is untouched.** A choice can be passed by recognising the
+conventional-looking option. This run's critique said so directly: "Closed-choice recall
+with the correct wording present verbatim among the options tests discrimination, not
+generation." Indexing does nothing about that, and neither does raising the option count.
 
 ### Urgent next steps, if any
 
-None. Everything above is committed and pushed, the suite is green at 257 passed, 2 skipped,
-and nothing is half-applied.
+None. Everything is committed, pushed and green.
 
 ### Suggested next move
 
-Rerun `sar-analysis` against the current `main` and read the planner's behaviour rather than
-the grades. Four of the grades are established twice over and are not the point.
+Rerun `sar-analysis` and read the planner's behaviour rather than the grades, which are now
+established across three runs.
 
 ### Recommended next action
 
-Run `sar-analysis` once and answer two questions from the saved card. First: what did the
-planner write for the eight cases fix one now rejects — closed choices that still settle at a
-grade, or narrower claims that dodge the rule? Second: for any claim whose cases are mostly
-naming, did the critique object **and lower the grade**, or object and settle anyway? It is
-finished when both have a recorded answer. If the second answer is "objected and settled
-anyway," the cheap fix has failed and the next step is forcing the planner to declare
-per-case intent in the schema, which is a larger change and should not be paid for until
-this one is shown insufficient.
+Run `sar-analysis` once against this commit and answer three questions from the saved card.
+Did the planner adopt `choice` for the 25 values that now require it, and did any case come
+back `invalid` because a subject replied with option text instead of a number? Did claim
+coverage return to six, or stay at four? Did any case draw unanimous `none of these`, and
+if so was its option set genuinely broken? It is finished when all three have a recorded
+answer. A run with zero false failures and no `invalid` replies would be the first clean
+scientific result this project has produced.

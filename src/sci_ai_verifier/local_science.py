@@ -93,12 +93,25 @@ def token_exact(case):
     only indirect evidence. Numeric qualification already requires this; the check
     is repeated here because exact-match and generated evaluators do not.
     """
-    expected = case["expected"].strip()
+    expected = answer_text(case)
     if not expected:
         return False
     if expected == case["source_quote"].strip():
         return True
     return bool(re.search(r"(?<![\w.+-])" + re.escape(expected) + r"(?!\w|\.\d)", case["source_quote"]))
+
+
+def answer_text(case):
+    """The answer whose traceability matters: for a choice, the option its index selects.
+
+    A choice records the option number, which is the planner's own ordering and appears
+    in no reference. The quoted option behind it is what the grade rests on.
+    """
+    expected = case["expected"].strip()
+    options = [value.strip() for value in case.get("options") or []]
+    if not options:
+        return expected
+    return options[int(expected) - 1] if expected.isdigit() and 1 <= int(expected) <= len(options) else ""
 
 
 def evidence_ceiling(candidate, references, trials):
@@ -108,7 +121,7 @@ def evidence_ceiling(candidate, references, trials):
     # Names the *comparison*, not the subject. The subject of a local run is always a
     # fresh model session and is never deterministic; reading this as a statement about
     # the subject would wrongly make a single trial look sufficient.
-    comparison_deterministic = (candidate["method"] in {"exact", "numeric"}
+    comparison_deterministic = (candidate["method"] in {"exact", "numeric", "choice"}
                                 or all(item["passed"] for item in candidate.get("controls_receipts", [])))
     reasons = []
     if any(origin not in pinned for origin in origins):

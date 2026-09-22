@@ -16,14 +16,25 @@ from .ingest import SECRET_BYTES
 from .storage import atomic_write, no_links
 
 MAX_REFERENCE = 256 * 1024
-METHOD_VERSION = "local-reference-comparison-1"
+# Bumped when qualification rules change, because a locally saved candidate is reused by
+# lookup without being re-qualified: only this string keeps one that passed superseded
+# rules out of a later run. -2 added the answer-form rule; -3 replaced its string-matched
+# closed choice with the indexed `choice` method.
+METHOD_VERSION = "local-reference-comparison-3"
+# Reserved final option. Never the answer, so scoring stays ungameable, but a case whose
+# trials all select it is far more likely to have a broken option set than a wrong subject.
+NONE_OF_THESE = "none of these"
+# Four real alternatives plus the reserved one. Two options let a coin flip carry a case
+# 12.5% of the time across three trials; four drops that to 1.6%.
+MINIMUM_OPTIONS = 5
 TOLERANCE = Decimal("0.000001")
 QUALIFICATION_LIMITS = [
     "Mechanical qualification only; source authority and input/reference applicability are planner assertions.",
     "Cases are illustrative, not a representative scientific benchmark.",
     "Qualification alone carries no scientific verdict or evidence grade; the grade is settled separately.",
-    "Closed-choice options are checked for distinctness and for appearing in the prompt, "
-    "not for being genuinely wrong; that remains a planner assertion.",
+    "Choice options are checked for distinctness, count and presence in the prompt, not for "
+    "being genuinely wrong or plausible; a subject that recognises the conventional-looking "
+    "option can pass without knowing, and distractor quality remains a planner assertion.",
 ]
 
 
@@ -133,12 +144,38 @@ def number(text):
 def compare(method, actual, expected):
     if method == "exact":
         return "pass" if actual.strip() == expected.strip() else "fail"
+    if method == "choice":
+        # The reply is an option number, so no wording, casing or plural of a right
+        # answer can score as a wrong one. A reply that is not a number is `invalid`,
+        # which reports a harness problem rather than a verdict about the skill.
+        try:
+            return "pass" if number(actual) == number(expected) else "fail"
+        except ValueError:
+            return "invalid"
     if method != "numeric":
         raise ValueError("Unknown installed comparison method")
     try:
         return "pass" if abs(number(actual) - number(expected)) <= TOLERANCE else "fail"
     except ValueError:
         return "invalid"
+
+
+def forced_surface_form(text):
+    """True when an open answer has exactly one way to write it.
+
+    A number, or a token whose own casing is fixed by a case change, digit or
+    underscore. A plain single-case word like `molar` is not: a subject answering in
+    one word naturally capitalises it, and string equality then reports a correct
+    answer as wrong. Those belong in an indexed choice.
+    """
+    if not text or re.search(r"\s", text):
+        return False
+    try:
+        number(text)
+        return True
+    except ValueError:
+        pass
+    return bool(re.search(r"[0-9_]", text) or (re.search(r"[a-z]", text) and re.search(r"[A-Z]", text)))
 
 
 def qualify(proposal, references):
@@ -149,62 +186,78 @@ def qualify(proposal, references):
     safe_payload(proposal)
     problems, controls = [], []
     method = proposal["method"]
-    if method not in {"exact", "numeric"}:
-        problems.append("Only installed exact and numeric comparison methods are available.")
+    if method not in {"exact", "numeric", "choice"}:
+        problems.append("Only installed exact, numeric and choice comparison methods are available.")
     if len({case["input"] for case in proposal["cases"]}) != len(proposal["cases"]):
         problems.append("Case inputs must be distinct.")
     for case in proposal["cases"]:
         reference = references.get(case["reference_ref"])
-        if (not reference or case["source_quote"] not in reference["text"]
-                or case["expected"].strip() not in case["source_quote"]):
-            problems.append("Each expected value needs an exact quote from a fetched reference.")
-            continue
-        if not case["expected"].strip():
+        expected = case["expected"]
+        trimmed = expected.strip()
+        options = [value.strip() for value in case.get("options", [])]
+        if not trimmed:
             problems.append("Expected answers cannot be blank.")
             continue
-        if method not in {"exact", "numeric"}:
+        if method not in {"exact", "numeric", "choice"}:
             continue
-        expected = case["expected"]
-        if method == "numeric":
-            if case.get("options"):
-                problems.append("Numeric answers are already closed-form and take no options.")
+        if method != "choice" and options:
+            problems.append("Only the choice method takes options; an open answer is compared directly.")
+            continue
+        # The answer key must come from the retrieved bytes rather than the planner. For a
+        # choice the index is the planner's own ordering, so the option it selects carries
+        # that guarantee instead: same anchor, one level down.
+        answer = trimmed
+        if method == "choice":
+            # The option count is enforced by the schema this function validates against.
+            if len(set(options)) != len(options):
+                problems.append("Choice options must be distinct.")
                 continue
+            if options[-1] != NONE_OF_THESE:
+                problems.append("The last option must be the reserved " + repr(NONE_OF_THESE) + " and is never the answer.")
+                continue
+            try:
+                index = int(number(trimmed))
+            except ValueError:
+                index = 0
+            if str(index) != trimmed or not 1 <= index < len(options):
+                problems.append("A choice answer must be the 1-based number of an option, never the reserved last one.")
+                continue
+            absent = [value for value in options if value not in case["input"]]
+            if absent:
+                problems.append("Every option must appear verbatim in the case input.")
+                continue
+            answer = options[index - 1]
+        if (not reference or case["source_quote"] not in reference["text"]
+                or answer not in case["source_quote"]):
+            problems.append("Each expected value needs an exact quote from a fetched reference.")
+            continue
+        if method == "numeric":
             try:
                 center = number(expected)
             except ValueError:
                 problems.append("Numeric expected answers must be bounded plain decimal numbers.")
                 continue
-            if not re.search(r"(?<![\w.+-])" + re.escape(expected.strip()) + r"(?!\w|\.\d)", case["source_quote"]):
+            if not re.search(r"(?<![\w.+-])" + re.escape(trimmed) + r"(?!\w|\.\d)", case["source_quote"]):
                 problems.append("Expected numeric values must be complete tokens in the reference quote.")
                 continue
             probes = [(expected, "pass"), (str(center + TOLERANCE), "pass"),
                       (str(center - TOLERANCE), "pass"), (str(center + 2*TOLERANCE), "fail"),
                       (str(center - 2*TOLERANCE), "fail"), ("not-a-number", "invalid")]
+        elif method == "choice":
+            # Every other option number must be rejected, including the reserved one, so a
+            # case has to separate its own alternatives; a non-numeric reply is `invalid`.
+            probes = [(expected, "pass"), ("not-a-number", "invalid"), (str(len(options) + 1), "fail")]
+            probes += [(str(other), "fail") for other in range(1, len(options) + 1) if other != index]
         else:
-            trimmed = expected.strip()
-            options = [value.strip() for value in case.get("options", [])]
-            # Exact comparison is string equality, so a paraphrase of a right answer
-            # scores the same as a wrong one. An answer therefore needs exactly one
-            # correct surface form: a bare token, or one the prompt spells out.
-            if options:
-                if len(set(options)) != len(options) or trimmed not in options:
-                    problems.append("A closed choice must list distinct options including the expected answer.")
-                    continue
-                absent = [value for value in options if value not in case["input"]]
-                if absent:
-                    problems.append("Every option must appear verbatim in the case input.")
-                    continue
-            elif re.search(r"\s", trimmed):
-                problems.append("A multi-word expected answer needs a closed choice; exact "
-                                "comparison scores a paraphrase of the right answer as wrong.")
+            if not forced_surface_form(trimmed):
+                problems.append("An open answer must have one possible surface form -- a number, or a "
+                                "token fixed by a case change, digit or underscore. Use an indexed choice.")
                 continue
             # A single appended-suffix probe only tests that `==` works. Probe a
-            # prefix, a suffix and a truncation so a near miss has to be rejected,
-            # then every rejected option so a case must separate its own alternatives.
+            # prefix, a suffix and a truncation so a near miss has to be rejected.
             probes = [(expected, "pass"), (expected + " __incorrect_control__", "fail"),
                       ("__incorrect_control__ " + expected, "fail"),
                       (trimmed[:-1] or "__empty_control__", "fail")]
-            probes += [(value, "fail") for value in options if value != trimmed]
         passed = all(compare(method, actual, expected) == wanted for actual, wanted in probes)
         controls.append({"case_id": case["case_id"], "passed": passed,
                          "positive_negative_boundary_checks": len(probes)})

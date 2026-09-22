@@ -553,17 +553,28 @@ The Local profile matrix in workflow.md governs their legality.
 - `qualify_local_candidate`: in local_discovery, propose a name, scope, method,
   limitations and at least three source-backed cases. Python checks provenance,
   answer form, controls and fixed comparison rules. Save qualified_local or
-  rejected evidence. Because the installed `exact` comparison is string equality,
-  an expected answer must have exactly one correct surface form, or the case
-  measures recall of wording rather than the claim it was written for. Two forms
-  qualify: a single whitespace-free token, or a closed choice, where the case
-  lists `options` and its `input` presents every one of them verbatim so the
-  subject selects rather than phrases. A multi-word `expected` offered without
-  `options` is rejected. `numeric` answers are already closed-form and take no
-  `options`. Controls probe every rejected option as well as the near misses, so
-  a candidate that cannot separate its own alternatives fails qualification.
-  Whether a distractor is genuinely wrong remains a planner assertion, like the
-  rest of case applicability.
+  rejected evidence. An expected answer must have exactly one correct surface
+  form, or the case scores a paraphrase of a right answer as a wrong one and
+  measures wording rather than the claim. Three installed methods provide that:
+  `numeric` for an open number within the installed tolerance; `exact` for an open
+  token whose own casing is fixed by a case change, digit or underscore; and
+  `choice`, where the case lists `options`, its `input` presents every one of them
+  verbatim, and `expected` is the 1-based number of one. A plain single-case word
+  such as `molar` is not a legal `exact` answer, because a subject answering in one
+  word naturally capitalises it; it belongs in a `choice`. Only `choice` takes
+  `options`.
+
+  A `choice` needs at least four alternatives plus a reserved final
+  `none of these`, which can never be the answer. It is scored wrong like any other
+  rejected option, so it cannot be gamed, but a case whose trials all select it is
+  far more likely to have a broken option set than a wrong subject, and should be
+  read that way. Because the index is the planner's own ordering and appears in no
+  reference, the option it selects carries the quotation requirement instead: the
+  same provenance anchor, one level down. Controls probe every other option number,
+  an out-of-range number and a non-numeric reply, which is `invalid` rather than a
+  verdict. Whether a distractor is genuinely wrong or merely implausible remains a
+  planner assertion, like the rest of case applicability; a subject that recognises
+  the conventional-looking option can pass a `choice` without knowing.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and

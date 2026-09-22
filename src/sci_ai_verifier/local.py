@@ -41,16 +41,17 @@ def legal(state):
 
 def schemas(base, obj, string):
     from .local_science import PLANNER_JUSTIFICATION
+    from .local_candidates import MINIMUM_OPTIONS
 
     def choice(values, maximum=100):
         return {"type": "string", "minLength": 1, "maxLength": maximum, "enum": list(values)}
 
     claim = {**base, "claim_id": string(80)}
-    # `options` is the closed-choice form: present it in `input` and the subject
-    # selects an answer instead of phrasing one. Optional, so token cases are unchanged.
+    # `options` belongs to the choice method: present them in `input`, and `expected` is
+    # the 1-based number of one. Optional, so open numeric and token cases are unchanged.
     fields = {"case_id": string(80), "input": string(8000), "expected": string(4000),
               "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000),
-              "options": {"type": "array", "minItems": 2, "maxItems": 8, "items": string(4000)}}
+              "options": {"type": "array", "minItems": MINIMUM_OPTIONS, "maxItems": 9, "items": string(4000)}}
     case = obj(fields, required=[key for key in fields if key != "options"])
     return {
         "list_local_candidates": obj(claim),
