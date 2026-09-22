@@ -19,8 +19,9 @@ MAX_REFERENCE = 256 * 1024
 # Bumped when qualification rules change, because a locally saved candidate is reused by
 # lookup without being re-qualified: only this string keeps one that passed superseded
 # rules out of a later run. -2 added the answer-form rule; -3 replaced its string-matched
-# closed choice with the indexed `choice` method.
-METHOD_VERSION = "local-reference-comparison-3"
+# closed choice with the indexed `choice` method; -4 reads numeric replies through
+# reply_number() and adds the controls that prove it.
+METHOD_VERSION = "local-reference-comparison-4"
 # Reserved final option. Never the answer, so scoring stays ungameable, but a case whose
 # trials all select it is far more likely to have a broken option set than a wrong subject.
 NONE_OF_THESE = "none of these"
@@ -141,21 +142,44 @@ def number(text):
         raise ValueError("Not a decimal") from None
 
 
+def reply_number(text):
+    """The number a subject's reply gives: presentation removed, content never searched.
+
+    Live run 7efbdd8c answered 57 of 57 cases correctly and still scored five invalid,
+    because the subject wrote `**1**` and sometimes explained itself below. So the first
+    non-empty line is read, with whitespace and markdown emphasis stripped from its
+    ends. Nothing is extracted from inside it: `The answer is 1` stays invalid, since
+    pulling a number out of prose is how a wrong reply becomes a false pass. A number
+    cannot contain these characters, so stripping them cannot change its meaning.
+    """
+    lines = [line for line in text.strip().split("\n") if line.strip()]
+    return number(lines[0].strip().strip("*_`").strip() if lines else "")
+
+
+def presentation_probes(answer):
+    """Controls proving reply_number(): a formatted right answer reads as right, and a
+    sentence containing the right answer does not -- the guard against greedy parsing."""
+    return [("**%s**" % answer, "pass"),
+            ("**%s**\n\nThe reference states this value." % answer, "pass"),
+            ("The answer is %s" % answer, "invalid")]
+
+
 def compare(method, actual, expected):
     if method == "exact":
+        # Never normalized: `_` and `*` are content here -- `rgroup_label`, SMARTS `[*]`.
         return "pass" if actual.strip() == expected.strip() else "fail"
     if method == "choice":
         # The reply is an option number, so no wording, casing or plural of a right
         # answer can score as a wrong one. A reply that is not a number is `invalid`,
         # which reports a harness problem rather than a verdict about the skill.
         try:
-            return "pass" if number(actual) == number(expected) else "fail"
+            return "pass" if reply_number(actual) == number(expected) else "fail"
         except ValueError:
             return "invalid"
     if method != "numeric":
         raise ValueError("Unknown installed comparison method")
     try:
-        return "pass" if abs(number(actual) - number(expected)) <= TOLERANCE else "fail"
+        return "pass" if abs(reply_number(actual) - number(expected)) <= TOLERANCE else "fail"
     except ValueError:
         return "invalid"
 
@@ -243,11 +267,13 @@ def qualify(proposal, references):
             probes = [(expected, "pass"), (str(center + TOLERANCE), "pass"),
                       (str(center - TOLERANCE), "pass"), (str(center + 2*TOLERANCE), "fail"),
                       (str(center - 2*TOLERANCE), "fail"), ("not-a-number", "invalid")]
+            probes += presentation_probes(trimmed)
         elif method == "choice":
             # Every other option number must be rejected, including the reserved one, so a
             # case has to separate its own alternatives; a non-numeric reply is `invalid`.
             probes = [(expected, "pass"), ("not-a-number", "invalid"), (str(len(options) + 1), "fail")]
             probes += [(str(other), "fail") for other in range(1, len(options) + 1) if other != index]
+            probes += presentation_probes(trimmed)
         else:
             if not forced_surface_form(trimmed):
                 problems.append("An open answer must have one possible surface form -- a number, or a "

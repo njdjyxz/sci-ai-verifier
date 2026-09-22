@@ -269,10 +269,11 @@ class LocalTests(unittest.TestCase):
         self.candidate(lookup=False, method="choice",
                        cases=self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))
         self.assertEqual(self.data["outcome"], "qualified_local")
-        # Correct index, a non-numeric reply, an out-of-range number, and each other option.
+        # Correct index, a non-numeric reply, an out-of-range number, each other option,
+        # and the three presentation probes that prove how a reply is read.
         for control in self.data["candidate"]["controls"]:
             self.assertTrue(control["passed"])
-            self.assertEqual(control["positive_negative_boundary_checks"], 7)
+            self.assertEqual(control["positive_negative_boundary_checks"], 10)
 
     def test_a_choice_answer_indexes_the_option_that_is_quoted(self):
         """The index is the planner's ordering; the option behind it carries provenance."""
@@ -550,6 +551,45 @@ class TruncatedRunTests(unittest.TestCase):
         self.assertEqual(self.record("sandbox_image_unavailable", [])["status_withheld_reason"],
                          "not_executed")
         self.assertEqual(self.record("sandbox_image_unavailable", [])["fault"], "sandbox_image_unavailable")
+
+
+class ReplyReadingTests(unittest.TestCase):
+    """How a subject's reply is read. Live run 7efbdd8c answered 57 of 57 cases right and
+    scored five invalid, all of them a correct number the subject had put in bold."""
+
+    def compare(self, method, actual, expected):
+        from sci_ai_verifier.local_candidates import compare
+        return compare(method, actual, expected)
+
+    def test_the_replies_that_scored_invalid_in_run_7efbdd8c_now_read_correctly(self):
+        # Verbatim from the saved observations, including the explanation below the answer.
+        observed = [("**1**", "1"),
+                    ("**1**\n\nThe Boost.Python signature declares `threshold=1.0` (require the "
+                     "substructure in all molecules).", "1"),
+                    ("**2**", "2")]
+        for reply, expected in observed:
+            self.assertEqual(self.compare("choice", reply, expected), "pass", reply)
+
+    def test_emphasis_and_whitespace_are_presentation_for_every_numeric_method(self):
+        for method, expected in (("choice", "3"), ("numeric", "7.60")):
+            for reply in ("**%s**", "__%s__", "`%s`", "  %s  ", "***%s***"):
+                self.assertEqual(self.compare(method, reply % expected, expected), "pass", reply)
+
+    def test_a_number_inside_prose_is_never_extracted(self):
+        """Searching the reply for a number is how a wrong answer becomes a false pass."""
+        self.assertEqual(self.compare("choice", "The answer is 1", "1"), "invalid")
+        self.assertEqual(self.compare("choice", "Not 2, the answer is 1", "1"), "invalid")
+        self.assertEqual(self.compare("numeric", "It comes to 7.60", "7.60"), "invalid")
+
+    def test_a_wrong_number_still_fails_however_it_is_formatted(self):
+        self.assertEqual(self.compare("choice", "**2**", "1"), "fail")
+        self.assertEqual(self.compare("numeric", "**7.61**", "7.60"), "fail")
+
+    def test_exact_replies_are_never_normalized(self):
+        # There the same characters are content: an identifier's underscore, SMARTS `[*]`.
+        self.assertEqual(self.compare("exact", "rgroup_label", "rgroup_label"), "pass")
+        self.assertEqual(self.compare("exact", "**rgroup_label**", "rgroup_label"), "fail")
+        self.assertEqual(self.compare("exact", "[*]", "[*]"), "pass")
 
 
 if __name__ == "__main__":

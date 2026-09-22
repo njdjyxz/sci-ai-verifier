@@ -23,18 +23,11 @@ locations. Python must be 3.11 or newer; no extra Python packages are needed.
 “Local” means the program and reports live on your PC. Skill text and test inputs
 still go to Claude's hosted models and use your available Claude usage.
 
-**What is verified so far:** the automated checks pass, and one live run has completed
-the whole local path. On 2026-09-16, run `76ce4af1` extracted five claims from a
-glycoengineering skill, retrieved its own reference sources, built 22 test cases,
-settled four evidence grades at A through independent critique sessions, obtained 66
-subject observations in containers and wrote a full report, in about 48 minutes. The
-fifth claim ended as an operational limitation with no grade, because no readable
-source could be obtained.
-
-That run exercised the A-grade path only. Grades B, C, D and U, generated evaluators,
-the documentary assessor and the revise-after-critique loop have **still never run
-live**. One skill is not acceptance. Setup checks alone do not establish live
-acceptance, and neither does a single run that completes.
+**What is verified so far** is recorded in one place: the "Current state" section of
+the [development plan](DEVELOPMENT-PLAN.md), which lists every live run and which grade
+branches each has exercised. It is not repeated here, because a copy drifts. Setup
+checks alone do not establish live acceptance, and neither does a single run that
+completes.
 
 ## One-time setup
 
@@ -136,7 +129,7 @@ and its settings need changing, remove the old registration using the
 
 ```powershell
 $verifierClaude = (Get-Command claude.exe -ErrorAction Stop).Source
-claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5 --timeout 5400
+claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5-5 --timeout 5400
 ```
 
 Expect an **Added** message. The first line finds the installed Claude program;
@@ -144,13 +137,19 @@ the second registers a tool connection named `scientific-verifier-local` in your
 personal Claude Code configuration. It is available across projects. The saved
 configuration contains a credential placeholder, not the token itself.
 
-`--model claude-opus-5` pins an exact model rather than the `opus` alias. This
+`--model claude-opus-5-5` pins an exact model rather than the `opus` alias. This
 matters more than it looks. A verdict is evidence about *one* model running the
 skill, so the runner freezes the model identity at the first trial and refuses a
 trial set containing two. An alias is free to resolve to a different version
 partway through a run, and when that happened on 2026-09-18 it voided a claim that
-had already settled at grade B with the critique's support. Pin it and that whole
-class of lost run disappears.
+had already settled at grade B with the critique's support. Pinning removes that
+cause, but not every cause: on 2026-09-21, with the pin in place, the CLI served
+part of one subject session from a different model, and the runner voided that
+claim too. It is correct to — a grade cannot describe two models — but expect an
+occasional `subject_model_changed` even when the pin is right.
+
+Changing the pinned model starts a new series. Runs on one model are not directly
+comparable with runs on another, so note the switch when reading results across it.
 
 `--timeout 5400` gives each verification 90 minutes. Without it the limit is 30
 minutes, which measurement shows is not enough: a five-claim skill took about 50

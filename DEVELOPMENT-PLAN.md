@@ -23,7 +23,7 @@ Version 0.7.0 implements the local workflow. `verify` and `serve-local` provide 
 action; Claude Code owns the planner loop and fresh subject sessions; Python owns
 deterministic tools, bounded processes and saved evidence.
 
-**Live acceptance is partial.** Three runs have completed end to end:
+**Live acceptance is partial.** These runs have completed end to end:
 
 | Run | Skill | Result |
 | --- | --- | --- |
@@ -31,19 +31,27 @@ deterministic tools, bounded processes and saved evidence.
 | `1bb3f07a` (2026-09-18) | sar-analysis | 1 at A, 1 at D, 2 voided by faults |
 | `e13f50ee` (2026-09-21) | sar-analysis | 4 at A, 1 at B, 1 voided by a fault |
 | `fb64115f` (2026-09-22) | sar-analysis | 2 at A, 2 at B, no faults, 51 of 51 observed |
+| `7efbdd8c` (2026-09-22) | sar-analysis | 3 at A, 1 at B; 57 of 57 answered correctly, 5 misread |
 
-What that does and does not establish: the **A and B branches** both now carry settled
-grades from live runs, and run `fb64115f` is the first to grade every claim it extracted.
-**Grade C and `qualify_local_evaluator` have never been exercised.** The documentary path
-has run twice, once to completion and once rejected, and in neither of the last two runs.
-The indexed-choice rules committed on 2026-09-22 have not yet been seen by a live planner.
+Every run above used Opus 5. The verifier's pin moved to `claude-opus-5-5` after run
+`7efbdd8c`, so later runs begin a new series and are not directly comparable with these.
 
-No run has yet produced a scientific result free of false failures: `e13f50ee` reported two
-from answer wording and `fb64115f` one from capitalization. Each was fixed after the run
-that exposed it, which is why the next run reads the planner's behaviour rather than the
-grades.
+What that does and does not establish: the **A and B branches** both carry settled grades
+from live runs, and the planner has now used all three comparison methods, including an
+open `exact` case written specifically to make the subject generate an answer rather than
+recognise one. **Grade C and `qualify_local_evaluator` have never been exercised.** The
+documentary path has run twice, once to completion and once rejected, and in none of the
+last three runs.
 
-Automated suite: **260 passed, 2 skipped**. Fixtures remain synthetic, reviewed registries
+No run has yet produced a scientific result free of harness noise. The same fault has
+appeared three times in different forms — a plural in `e13f50ee`, a capital letter in
+`fb64115f`, markdown bold in `7efbdd8c` — each time a correct answer the scorer could not
+read. The first two were reported as `fail`, falsely accusing the skill; the third was
+reported as `invalid`, which is honest but still left three of four claims inconclusive.
+All three are now fixed, and the reply reader was replayed against every saved
+observation from `7efbdd8c` without changing a single passing verdict.
+
+Automated suite: **265 passed, 2 skipped**. Fixtures remain synthetic, reviewed registries
 remain empty, and nothing in the automated suite establishes scientific acceptance.
 
 ## History
@@ -89,7 +97,7 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
   cases grade A needs. Model pin confirmed live; `subject_model_changed` recurred on a
   different claim from a single-session CLI fallback.
 
-## Claude: 2026-09-22 (third sar-analysis run; closed choices become indexed)
+## Claude: 2026-09-22 (third and fourth sar-analysis runs; indexed choices; replies read by first line)
 
 ### Current stage and status
 
@@ -203,6 +211,86 @@ proposal look like a design violation during this session's discussion.
 but `__pycache__` bytecode for the helper deleted on 2026-09-15, untracked and invisible
 to `git status`, while its name implied the helper still existed.
 
+**9. The fourth run answered the three questions the third left open.** Run
+`7efbdd8c-80e6-4545-a641-82826316833e`: four claims, 57 of 57 observations obtained, zero
+faults, zero missing, 45 minutes, $12.01, model `claude-opus-5`. Grades A, B, A, A.
+
+| Claim | Grade | Status | Accuracy | Invalid |
+| --- | --- | --- | --- | --- |
+| `rdFMCS` threshold | A | invalid | 9/12 | 3 |
+| `makeDummiesQueries` | B | invalid | 17/18 | 1 |
+| pIC50 | A | pass | 15/15 | 0 |
+| `RGroupDecompose` | A | invalid | 11/12 | 1 |
+
+*Did the planner adopt `choice`?* Yes, and used all three methods deliberately: five
+candidates were `choice`, one was `numeric` for the pIC50 arithmetic, and one was `exact`,
+titled "remedy named from scratch". That last one was the planner's own response to a
+critique objecting that choices test recognition — it switched a case to make the subject
+generate the answer. The critique in turn lowered `makeDummiesQueries` from A to B after
+three rounds, attacking recognition directly: "all six cases supply that identifier or its
+documented description among the options, so the instrument tests recognition of the
+answer."
+
+*Did any case come back `invalid`?* Five did — but not for the predicted reason. The
+question anticipated a subject replying with option text instead of a number. **Every one
+of the five was the correct number, in markdown bold**: `**1**`, sometimes followed by a
+paragraph of explanation. Counting those, the subject answered **57 of 57 correctly**. No
+case produced a genuinely wrong answer.
+
+*Did coverage return to six?* No. Four again, missing the same two API-surface claims.
+
+*Did any case draw unanimous `none of these`?* No trial selected it, so no option set was
+broken.
+
+**10. Replies are read from their first line, with emphasis removed** (fixed this session,
+contracts first). This is the same fault a third time, in a third form:
+
+| Run | Correct answer | Scored as | Cause |
+| --- | --- | --- | --- |
+| `e13f50ee` | any-atom queries | fail | plural |
+| `fb64115f` | molar | fail | capitalization |
+| `7efbdd8c` | 1 | invalid | markdown bold |
+
+Indexing turned the third into an honest `invalid` rather than a false `fail`, which is
+exactly what it promised and is why the subject's 57 of 57 was visible at all. The fix is
+in the reader, not the prompt: the subject has now broken formatting three different ways
+in three runs, the planner's prompt already asked for "the number of the single best
+option", and the verifier's model is changing, so a prompt tuned to one model's habits
+would not transfer.
+
+`reply_number()` in `local_candidates.py` takes the first non-empty line, strips whitespace
+and markdown emphasis (`*`, `_`, a backtick) from its ends, and parses what remains. It
+**never searches inside the line**: `The answer is 1` stays `invalid`, because extracting a
+number from prose is how a wrong reply becomes a false pass. It applies to `choice` and
+`numeric` only. A number cannot contain those characters, so stripping them cannot change
+its meaning; in `exact` answers they are content — `rgroup_label`, and `[*]` is a dummy
+atom in SMARTS — so `exact` is never normalized. A trailing `.` is deliberately not
+stripped either, because that would turn `.5` into `5`.
+
+Every `choice` and `numeric` candidate now proves the rule during its own qualification:
+three new controls check that a bold reply and a bold reply with an explanation both pass,
+and that a sentence containing the right number stays `invalid`. `METHOD_VERSION` moved to
+`-4` accordingly, so the seven candidates this run qualified without those controls are not
+reused. Five tests were added, including one built from the verbatim observations, and
+three mutations were each caught: removing normalization, making it greedy, and applying it
+to `exact`. The greedy one matters most, since it is the false-pass path. Replayed through
+the new code, the 57 saved observations went from 52 pass and 5 invalid to 57 pass, and no
+passing verdict changed. Suite 260 → 265.
+
+**11. The verifier's model pin moved to `claude-opus-5-5`.** Operator's request. The
+registration was changed by the documented remove-and-re-add procedure, with the previous
+registration backed up first and diffed after: exactly one argument changed, and the token
+field stayed a `${SCI_VERIFIER_OAUTH_TOKEN:-}` placeholder throughout. `LOCAL-INSTALL.md`
+was updated to match. The same paragraph had claimed that pinning makes "that whole class of
+lost run" disappear, which has been false since 2026-09-21, when the fault recurred with the
+pin in place; it now says so, and that switching models starts a new series.
+
+`LOCAL-INSTALL.md` also stated that only one live run had ever completed and that grades
+B, C, D and U had "still never run live" — false four runs ago. Under the one-owner rule it
+now points at "Current state" here instead of restating status. That section had itself
+drifted, saying "Three runs" above a table of four; the prose count is gone, so the table is
+the only thing that states it.
+
 ### Decisions taken 2026-09-22
 
 **1. Index the choices rather than loosen the comparison.** Operator's proposal. Turning
@@ -233,6 +321,14 @@ in the same commit. `tool-contracts.md` owns the installed comparison methods,
 `workflow.md` owns tool legality, `evidence-rubric.md` owns the grade standards. The
 duplicate method lists in `local-contract.md` and `LOCAL-INSTALL.md` were replaced with
 pointers, so the four copies of that list are now one.
+
+**5. Fix reply formatting in the reader, never the prompt.** Three runs, three different
+formatting habits, and a prompt that already asked for a bare number. The reader strips
+presentation and never searches content; that line — strip wrapping, never search inside —
+is what keeps a lenient reader from producing false passes, and it is tested by mutation.
+
+**6. The verifier moves to Opus 5.5.** Operator's decision. Runs before `7efbdd8c` and
+after it are separate series.
 
 ### Designed, flagged do-not-implement: a case-level contract
 
@@ -291,9 +387,13 @@ is not a trigger.
 **2. Claim coverage fell from six to four.** The two that disappeared,
 `DrawMoleculeACS1996` and `GenerateDepictionMatching2DStructure`, are the most
 API-surface-flavoured of the six — exactly the kind the new rubric sentence says remains
-legitimate. Claim extraction happens before qualification and varies between runs, so one
-run cannot establish that the rubric edit caused this. It is the narrowing regression the
-previous entry flagged, and it now has one observation behind it rather than none.
+legitimate. Claim extraction happens before qualification and varies between runs, so this
+cannot yet be attributed to the rubric edit. It is the narrowing regression the previous
+entry flagged, and it now has **two consecutive observations** behind it: `fb64115f` and
+`7efbdd8c` extracted the same four claims and dropped the same two. The next run changes
+model, so it cannot settle this either — if Opus 5.5 extracts six, the model and the rubric
+are confounded. Settling it needs either a run on the new model with the rubric sentence
+temporarily reverted, or a decision that four is acceptable.
 
 **3. A narrow capitalization residue remains by choice.** `forced_surface_form()` accepts
 any token carrying both cases, so `Core`, `Threshold` and `Fuc` stay open answers. Their
@@ -309,19 +409,26 @@ generation." Indexing does nothing about that, and neither does raising the opti
 
 ### Urgent next steps, if any
 
-None. Everything is committed, pushed and green.
+**Restart Claude Desktop before the next run.** The MCP server reads its arguments at
+startup, so until it restarts it is still serving `claude-opus-5`, and a run started now
+would silently use the old model while the install guide says otherwise.
+
+Everything else is committed, pushed and green.
 
 ### Suggested next move
 
-Rerun `sar-analysis` and read the planner's behaviour rather than the grades, which are now
-established across three runs.
+Run `sar-analysis` on Opus 5.5 and find out whether the reply reader closes the last of the
+harness noise on a live subject. The reply reader is already established by unit tests and
+by replaying every saved observation; a live run cannot establish it further, because Opus
+5.5 may simply not use bold. What a live run can show is whether any *new* surface form
+appears.
 
 ### Recommended next action
 
-Run `sar-analysis` once against this commit and answer three questions from the saved card.
-Did the planner adopt `choice` for the 25 values that now require it, and did any case come
-back `invalid` because a subject replied with option text instead of a number? Did claim
-coverage return to six, or stay at four? Did any case draw unanimous `none of these`, and
-if so was its option set genuinely broken? It is finished when all three have a recorded
-answer. A run with zero false failures and no `invalid` replies would be the first clean
-scientific result this project has produced.
+After restarting Claude Desktop, run `sar-analysis` once and check two things in the saved
+card. First, did every trial come back `pass` or `fail`, with no `invalid`? If any reply is
+still `invalid`, read its verbatim text: a new presentation form is a reader gap, whereas a
+number inside prose is the reader working as designed. Second, record the claim count
+without drawing a conclusion from it, since the model change confounds it. It is finished
+when both are recorded. A run with no `invalid` and no false `fail` would be the first
+result this project has produced with no harness noise at all.

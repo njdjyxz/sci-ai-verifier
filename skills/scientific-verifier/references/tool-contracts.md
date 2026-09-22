@@ -575,6 +575,18 @@ The Local profile matrix in workflow.md governs their legality.
   verdict. Whether a distractor is genuinely wrong or merely implausible remains a
   planner assertion, like the rest of case applicability; a subject that recognises
   the conventional-looking option can pass a `choice` without knowing.
+
+  A `choice` or `numeric` reply is read from its **first non-empty line, with
+  surrounding whitespace and markdown emphasis (`*`, `_`, a backtick) removed from
+  both ends**, and is then parsed as a number. So `**1**`, and `**1**` followed by a
+  paragraph of explanation, both read as `1`. Nothing is ever searched for inside the
+  line: `The answer is 1` is `invalid`, because extracting a number from prose is how
+  a wrong reply becomes a false pass. A number cannot legitimately contain those
+  characters, so removing them cannot change its meaning. `exact` replies are never
+  normalized, because there the same characters are content — `rgroup_label` carries
+  an underscore and `[*]` is a dummy atom in SMARTS. Controls for both methods probe
+  a bold reply, a bold reply with an explanation, and a sentence containing the right
+  number, which must stay `invalid`.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
