@@ -567,7 +567,9 @@ The Local profile matrix in workflow.md governs their legality.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
-  `stronger_grade_considered`. Python computes the strongest grade its own recorded
+  `stronger_grade_considered`. `coverage` states which cases test what the claim
+  asserts rather than what it is named; a behavioural claim tested only by naming
+  cases lacks the representative cases grade A requires, per `evidence-rubric.md`. Python computes the strongest grade its own recorded
   facts support for that design. Exactly two proposals are legal: that ceiling, or
   the grade the last critique of that same design supported. `local_grade_proposal_refused`
   names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling` or

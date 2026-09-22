@@ -280,7 +280,14 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
             "python_checked": {"evidence_ceiling": ceiling, "evidence_limits": limits,
                                "note": "Python already verified that every expected answer is quoted exactly "
                                        "from the pinned reference bytes. Judge whether that evidence is "
-                                       "fit for this claim at the proposed grade."}}
+                                       "fit for this claim at the proposed grade. Python counts cases and "
+                                       "cannot weigh them: a function name and a scientific value are the "
+                                       "same shape once quoted, so whether each case tests what the claim "
+                                       "asserts or only what it is named is decided here. A behavioural "
+                                       "claim whose cases only recite naming or spelling lacks the "
+                                       "representative cases grade A requires. Lowering the grade is what "
+                                       "returns the design to the planner for better cases, so a finding "
+                                       "that does not move the grade changes nothing."}}
 
 
 def select(store, state, claim_id, work, args, subject):
