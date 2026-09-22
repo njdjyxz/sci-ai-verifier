@@ -22,6 +22,8 @@ QUALIFICATION_LIMITS = [
     "Mechanical qualification only; source authority and input/reference applicability are planner assertions.",
     "Cases are illustrative, not a representative scientific benchmark.",
     "Qualification alone carries no scientific verdict or evidence grade; the grade is settled separately.",
+    "Closed-choice options are checked for distinctness and for appearing in the prompt, "
+    "not for being genuinely wrong; that remains a planner assertion.",
 ]
 
 
@@ -164,6 +166,9 @@ def qualify(proposal, references):
             continue
         expected = case["expected"]
         if method == "numeric":
+            if case.get("options"):
+                problems.append("Numeric answers are already closed-form and take no options.")
+                continue
             try:
                 center = number(expected)
             except ValueError:
@@ -176,12 +181,30 @@ def qualify(proposal, references):
                       (str(center - TOLERANCE), "pass"), (str(center + 2*TOLERANCE), "fail"),
                       (str(center - 2*TOLERANCE), "fail"), ("not-a-number", "invalid")]
         else:
-            # A single appended-suffix probe only tests that `==` works. Probe a
-            # prefix, a suffix and a truncation so a near miss has to be rejected.
             trimmed = expected.strip()
+            options = [value.strip() for value in case.get("options", [])]
+            # Exact comparison is string equality, so a paraphrase of a right answer
+            # scores the same as a wrong one. An answer therefore needs exactly one
+            # correct surface form: a bare token, or one the prompt spells out.
+            if options:
+                if len(set(options)) != len(options) or trimmed not in options:
+                    problems.append("A closed choice must list distinct options including the expected answer.")
+                    continue
+                absent = [value for value in options if value not in case["input"]]
+                if absent:
+                    problems.append("Every option must appear verbatim in the case input.")
+                    continue
+            elif re.search(r"\s", trimmed):
+                problems.append("A multi-word expected answer needs a closed choice; exact "
+                                "comparison scores a paraphrase of the right answer as wrong.")
+                continue
+            # A single appended-suffix probe only tests that `==` works. Probe a
+            # prefix, a suffix and a truncation so a near miss has to be rejected,
+            # then every rejected option so a case must separate its own alternatives.
             probes = [(expected, "pass"), (expected + " __incorrect_control__", "fail"),
                       ("__incorrect_control__ " + expected, "fail"),
                       (trimmed[:-1] or "__empty_control__", "fail")]
+            probes += [(value, "fail") for value in options if value != trimmed]
         passed = all(compare(method, actual, expected) == wanted for actual, wanted in probes)
         controls.append({"case_id": case["case_id"], "passed": passed,
                          "positive_negative_boundary_checks": len(probes)})

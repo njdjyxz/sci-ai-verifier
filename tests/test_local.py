@@ -220,6 +220,86 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(self.data["outcome"], "rejected")
         self.assertTrue(self.data["candidate"]["qualification_problems"])
 
+    def reference(self):
+        """Retrieve the fixture reference so a later qualification can cite it."""
+        self.extract()
+        self.call("list_local_candidates", claim_id=self.claim_id)
+        with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(REFERENCE.encode(), REFERENCE)):
+            self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/reference",
+                      version="fixture-v1", license="Unknown; private analysis only")
+        self.reference_ref = self.data["reference_ref"]
+
+    def exact_cases(self, expected, *, options=None, prompt=None, count=3):
+        # Inputs must stay distinct, so the index varies the prompt rather than the answer.
+        rows = []
+        for index in range(count):
+            text = prompt(index) if prompt else "Fixture prompt %d" % index
+            case = {"case_id": "case-%d" % index, "input": text, "expected": expected,
+                    "reference_ref": self.reference_ref, "source_quote": REFERENCE,
+                    "applicability": "Fixture table row"}
+            if options is not None:
+                case["options"] = options
+            rows.append(case)
+        return rows
+
+    def menu(self, options):
+        return lambda index: "Row %d? Reply with exactly one of: %s" % (index, ", ".join(options))
+
+    def test_a_multi_word_exact_answer_without_a_closed_choice_is_rejected(self):
+        # The live sar-analysis run failed two claims on "any-atom query" versus
+        # "any-atom queries". Exact comparison cannot tell a paraphrase of the right
+        # answer from a wrong one, so the wording lottery is refused at qualification.
+        self.reference()
+        self.candidate(lookup=False, method="exact", cases=self.exact_cases("alpha is 1.0"))
+        self.assertEqual(self.data["outcome"], "rejected")
+        self.assertTrue(any("closed choice" in problem
+                            for problem in self.data["candidate"]["qualification_problems"]))
+
+    def test_a_single_token_exact_answer_still_qualifies(self):
+        # Every answer the two live runs scored reliably was whitespace-free.
+        self.reference()
+        self.candidate(lookup=False, method="exact", cases=self.exact_cases("alpha"))
+        self.assertEqual(self.data["outcome"], "qualified_local")
+
+    def test_a_closed_choice_admits_a_multi_word_answer_and_probes_its_alternatives(self):
+        self.reference()
+        options = ["alpha is 1.0", "beta is 2.0"]
+        self.candidate(lookup=False, method="exact",
+                       cases=self.exact_cases("alpha is 1.0", options=options, prompt=self.menu(options)))
+        self.assertEqual(self.data["outcome"], "qualified_local")
+        # Four near-miss probes plus one probe per rejected option.
+        for control in self.data["candidate"]["controls"]:
+            self.assertTrue(control["passed"])
+            self.assertEqual(control["positive_negative_boundary_checks"], 5)
+
+    def test_a_closed_choice_option_missing_from_the_prompt_is_rejected(self):
+        # An option the subject was never shown leaves the case open-ended.
+        self.reference()
+        self.candidate(lookup=False, method="exact",
+                       cases=self.exact_cases("alpha is 1.0", options=["alpha is 1.0", "beta is 2.0"],
+                                              prompt=lambda index: "Row %d? Answer: alpha is 1.0" % index))
+        self.assertEqual(self.data["outcome"], "rejected")
+        self.assertTrue(any("verbatim in the case input" in problem
+                            for problem in self.data["candidate"]["qualification_problems"]))
+
+    def test_a_closed_choice_must_offer_its_own_expected_answer(self):
+        self.reference()
+        options = ["beta is 2.0", "gamma is 3.0"]
+        self.candidate(lookup=False, method="exact",
+                       cases=self.exact_cases("alpha is 1.0", options=options, prompt=self.menu(options)))
+        self.assertEqual(self.data["outcome"], "rejected")
+        self.assertTrue(any("distinct options" in problem
+                            for problem in self.data["candidate"]["qualification_problems"]))
+
+    def test_numeric_answers_take_no_options(self):
+        # A number already has one surface form; a menu would only narrow the tolerance.
+        self.reference()
+        cases = self.exact_cases("1.0", options=["1.0", "2.0"], prompt=self.menu(["1.0", "2.0"]))
+        self.candidate(lookup=False, method="numeric", cases=cases)
+        self.assertEqual(self.data["outcome"], "rejected")
+        self.assertTrue(any("take no options" in problem
+                            for problem in self.data["candidate"]["qualification_problems"]))
+
     def test_unfetched_or_invented_reference_fails_qualification(self):
         self.extract()
         cases = [{"case_id": str(i), "input": str(i), "expected": str(i), "reference_ref": "0"*64,

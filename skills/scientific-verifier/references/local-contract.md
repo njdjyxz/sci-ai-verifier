@@ -128,9 +128,9 @@ reply, or a missing assessment, is an operational failure.
 A completed assessment against the installed rubric is grade D with the assessor's
 status. Grade D is documentary consistency only; execution accuracy remains
 unverified, and AI judgment is primary and disclosed. U/inconclusive is a separate
-no-evidence path. Both require the claim's catalog lookup, evidence Python actually
-retrieved for this claim, and no qualified candidate left unexecuted. Runtime
-failures never establish U. Synthetic fixture runs stay ungraded.
+no-evidence path; runtime failures never establish it. Both paths carry the evidence
+preconditions stated for `assess_local_documentary` and `record_local_unverified` in
+tool-contracts.md.
 
 This contract defines version 0.7's implemented local mechanisms and enforceable
 boundaries. The repository's DEVELOPMENT-PLAN.md retains the full project goal
@@ -174,16 +174,6 @@ existing run ID, state token, step/repair budgets and journal. The planner must
 lookup before discovering. References and candidates are immutable objects;
 selection pins the exact candidate before any subject observation. A local
 candidate can be reused offline by digest, including its reference evidence.
-
-## Planner context delivery
-
-The pinned contracts reach the planner in its instruction turn, together with the
-authorized source path and the current state token, because a tool reply large enough
-for the host to spill to a file is unreadable to a session that has no file-read tool.
-`get_verifier_context` therefore returns only a bounded header and serves each pinned
-document or committed artifact as a separately requested section. The header is
-checked against an inline budget and the run fails closed if it ever exceeds it,
-rather than emitting a reply the planner might never see.
 
 ## Subject boundary
 

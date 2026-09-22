@@ -1,6 +1,5 @@
 """Operator configuration; models cannot expand permissions or select host code."""
 
-import json
 import re
 from copy import deepcopy
 from pathlib import Path

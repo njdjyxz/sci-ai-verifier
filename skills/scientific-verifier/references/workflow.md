@@ -526,7 +526,9 @@ values it cannot work without -- the token and the authorized path -- must never
 share a reply with tens of kilobytes of contracts. In `created`, a `source_path` that
 does not match the pinned path is repairable in this profile rather than fatal: the
 argument only confirms a path the operator already authorized, the refusal names the
-correct one, and the repair budget bounds the retries.
+correct one, and the repair budget bounds the retries. The header is checked against
+that inline budget and the run fails closed if it ever exceeds it, rather than emitting
+a reply the planner might never see.
 
 Three transitions inside `local_discovery` and `local_ready` are deliberately
 narrow, because each one ends a claim and a wide gate would let the planner

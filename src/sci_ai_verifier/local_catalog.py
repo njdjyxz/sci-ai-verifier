@@ -1,7 +1,6 @@
 """Portable candidate bundles: exact pins, offline reuse and explicit exports."""
 
 import base64
-from pathlib import Path
 
 from .common import Fault,canonical,digest,utc_now
 from .ingest import SECRET_BYTES

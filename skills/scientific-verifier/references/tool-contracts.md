@@ -12,8 +12,7 @@ This file names the complete intended Python tool surface. Stage 2 implements th
 | `src/sci_ai_verifier/ingest.py` | Snapshot submitted skills under the reviewed exclusion policy and load their top-level instructions as untrusted UTF-8 data. |
 | `src/sci_ai_verifier/claims.py` | Validate and commit claim manifests and assign claim IDs. |
 | `src/sci_ai_verifier/routing.py` | Manage claim types and perform exact evaluator-registry lookup. |
-| `src/sci_ai_verifier/planning.py` | Validate and persist registered and target evaluation plans. |
-| `src/sci_ai_verifier/resources.py` | Search, inspect, materialize, validate, register, and lock scientific resources. |
+| `src/sci_ai_verifier/planning.py` | Validate and persist registered and target evaluation plans; search, inspect, materialize, validate, and lock scientific resources against the exact plan revision. |
 | `src/sci_ai_verifier/evaluation.py` | Resolve approved generic harnesses, build and validate cases and bundles, and register reusable evaluator configurations without accepting arbitrary code. |
 | `src/sci_ai_verifier/audit.py` | Validate plan prerequisites, persist bounded plan audits, and atomically promote passing provisional evaluator and bundle versions. |
 | `src/sci_ai_verifier/execution.py` | Resolve approved subject runners, run the submitted skill for the audited trial count, score each trial with the isolated audited evaluator, then aggregate scores/verdicts; capture raw outputs, trial scores, agreement, and metrics. For grade D, prepare the audited packet and obtain a completed independent assessment through the runner's bounded assessor adapter. |
@@ -553,7 +552,18 @@ The Local profile matrix in workflow.md governs their legality.
   Redirects, private addresses, credentials and secret content are rejected.
 - `qualify_local_candidate`: in local_discovery, propose a name, scope, method,
   limitations and at least three source-backed cases. Python checks provenance,
-  controls and fixed comparison rules. Save qualified_local or rejected evidence.
+  answer form, controls and fixed comparison rules. Save qualified_local or
+  rejected evidence. Because the installed `exact` comparison is string equality,
+  an expected answer must have exactly one correct surface form, or the case
+  measures recall of wording rather than the claim it was written for. Two forms
+  qualify: a single whitespace-free token, or a closed choice, where the case
+  lists `options` and its `input` presents every one of them verbatim so the
+  subject selects rather than phrases. A multi-word `expected` offered without
+  `options` is rejected. `numeric` answers are already closed-form and take no
+  `options`. Controls probe every rejected option as well as the near misses, so
+  a candidate that cannot separate its own alternatives fails qualification.
+  Whether a distractor is genuinely wrong remains a planner assertion, like the
+  rest of case applicability.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and

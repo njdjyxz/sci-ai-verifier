@@ -3,7 +3,6 @@
 import os
 import re
 import tempfile
-from pathlib import Path
 
 from .claude_runner import run_process
 from .common import Fault,canonical,digest

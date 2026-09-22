@@ -4,11 +4,9 @@ import csv
 import io
 import stat
 import zipfile
-from pathlib import PurePosixPath
 
 from .common import Fault,digest
 from .ingest import SECRET_BYTES,valid_relative
-from .local_candidates import fetch_bytes
 from .mcp import parse_json
 from .storage import no_links
 

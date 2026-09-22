@@ -5,7 +5,6 @@ import json
 import re
 import sys
 import time
-import shlex
 import base64
 from urllib.parse import urlsplit
 from pathlib import Path

@@ -3,7 +3,6 @@
 from copy import deepcopy
 
 from .common import Fault, canonical, digest
-from .routing import identity
 
 FIELDS = ("plan_ref", "search_ref", "lock_ref", "bundle_ref", "validation_ref",
           "registration_ref", "audit_ref", "execution_ref", "result_ref")

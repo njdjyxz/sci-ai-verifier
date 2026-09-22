@@ -34,7 +34,6 @@ PINNED_CONTEXT = (
                                           "Operational outcome")),
     ("references/resource-policy.md", ("Storage layers",)),
 )
-REQUIRED_INSTRUCTIONS = tuple(relative for relative, _ in PINNED_CONTEXT)
 # A single tool reply must stay well inside any host's inline display limit. A host
 # that spills a larger reply to a file blocks the local planner, whose session has no
 # file-read tool by design. Chosen far below the smallest limit observed in practice.

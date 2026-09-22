@@ -1,6 +1,6 @@
 """Build and validate a bounded bundle without caller-authored transformations."""
 
-from .common import Fault, canonical, digest
+from .common import Fault, digest
 from .planning import artifact, keep, parent
 from .scientific import mass
 

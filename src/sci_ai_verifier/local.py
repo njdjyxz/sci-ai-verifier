@@ -46,8 +46,12 @@ def schemas(base, obj, string):
         return {"type": "string", "minLength": 1, "maxLength": maximum, "enum": list(values)}
 
     claim = {**base, "claim_id": string(80)}
-    case = obj({"case_id": string(80), "input": string(8000), "expected": string(4000),
-                "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000)})
+    # `options` is the closed-choice form: present it in `input` and the subject
+    # selects an answer instead of phrasing one. Optional, so token cases are unchanged.
+    fields = {"case_id": string(80), "input": string(8000), "expected": string(4000),
+              "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000),
+              "options": {"type": "array", "minItems": 2, "maxItems": 8, "items": string(4000)}}
+    case = obj(fields, required=[key for key in fields if key != "options"])
     return {
         "list_local_candidates": obj(claim),
         "fetch_local_reference": obj({**claim, "url": string(4096), "version": string(200), "license": string(2000)}),
