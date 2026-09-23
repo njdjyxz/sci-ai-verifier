@@ -344,7 +344,9 @@ class IndependentSessionTests(unittest.TestCase):
         calls=[]
         def replies(*texts):
             texts=iter(texts)
-            def isolated(adapter,packet,*,role,system_prompt,limit):
+            def isolated(adapter,packet,*,role,system_prompt,limit,timeout):
+                # A critique gets five minutes; two killed one in run 74eadedd.
+                self.assertEqual(timeout,300)
                 calls.append(role)
                 return ({"text":next(texts),"observed_model_ids":[],"usage":{},"total_cost_usd":0.0},str(uuid4()))
             return isolated

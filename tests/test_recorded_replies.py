@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import ClaudeCode, parse_events, refusal_category
 from sci_ai_verifier.common import Fault, canonical, digest
-from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC, RUBRIC, critique, parse_reply,
-    validate_assessment, validate_critique)
+from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, CRITIQUE_RUBRIC, RUBRIC, critique,
+    parse_reply, validate_assessment, validate_critique)
 from sci_ai_verifier.local_candidates import SECRET_BYTES
 from sci_ai_verifier.local_config import load_configuration
 
@@ -32,6 +32,10 @@ CRITIC_RECORDINGS = {"critic-fenced-revision-list.jsonl": ("B", 5, True),
                      # Answered all five criteria, then added a sixth observation that fitted
                      # none of them. Refusing this cost run e035eef6 a grade A and 27 trials.
                      "critic-extra-finding.jsonl": ("A", 0, False)}
+# Run 0a243b7e: two complete v5 replies, both supporting B, each with one extra empty key
+# inside a case verdict. Refusing both lost claim 1. Mapped to the key each one added.
+CASE_VERDICT_RECORDINGS = {"critic-case-verdict-extra-key.jsonl": "verdict_note",
+                           "critic-case-verdict-extra-key-2.jsonl": "case_id_note"}
 # Streams that are not critic replies, exercised by their own tests.
 OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl"]
 # Every critic recording answered rubric v2, which had five criteria; v3 appended a sixth,
@@ -71,7 +75,7 @@ def session_of(raw):
 class RecordedReplyTests(unittest.TestCase):
     def test_recordings_are_present_and_carry_no_credential_bytes(self):
         names = sorted(path.name for path in RECORDED.glob("*.jsonl"))
-        self.assertEqual(names, sorted([*CRITIC_RECORDINGS, *OTHER_RECORDINGS]))
+        self.assertEqual(names, sorted([*CRITIC_RECORDINGS, *CASE_VERDICT_RECORDINGS, *OTHER_RECORDINGS]))
         for path in RECORDED.iterdir():
             if path.suffix in {".jsonl", ".json"}:
                 with self.subTest(recording=path.name):
@@ -92,6 +96,25 @@ class RecordedReplyTests(unittest.TestCase):
                 self.assertEqual(len(value["required_revisions"]), revisions)
                 self.assertIsInstance(value["required_revisions"], list)
 
+    def test_recorded_case_verdicts_with_an_extra_key_are_complete_answers(self):
+        """Both replies answered every question the live rubric asks and added one empty
+        key inside a verdict. They are judged against the packet they were given, whose
+        rubric is the live one, and the extra key is kept, not read."""
+        packet = json.loads((RECORDED / "critic-case-verdict-packet.json").read_bytes())
+        self.assertEqual(digest(canonical(packet["rubric"])), digest(canonical(CRITIQUE_RUBRIC)))
+        case_ids = [case["case_id"] for case in packet["evidence"]["cases"]]
+        for name, extra in CASE_VERDICT_RECORDINGS.items():
+            with self.subTest(recording=name):
+                raw = recorded(name)
+                response = parse_events(raw, expected_session=session_of(raw))
+                self.assertFalse(response["tool_calls"])
+                value = validate_critique(parse_reply(response["text"]), CRITIQUE_RUBRIC, case_ids)
+                self.assertEqual(value["supported_grade"], "B")
+                self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
+                carrying = [item for item in value["case_verdicts"] if extra in item]
+                self.assertTrue(carrying)
+                self.assertTrue(all(item[extra] == "" for item in carrying))
+
     def test_recorded_assessment_cites_its_own_real_packet(self):
         raw = recorded("assessor-bare.jsonl")
         packet = json.loads((RECORDED / "assessor-packet.json").read_bytes())
@@ -110,6 +133,8 @@ class RecordedReplyTests(unittest.TestCase):
         raw = recorded("critic-fenced-revision-list.jsonl")
 
         def replay(command, **kwargs):
+            # The critique's own deadline reaches the process, not the assessor's two minutes.
+            self.assertEqual(kwargs["timeout"], CRITIC_TIMEOUT_SECONDS)
             # Rewrite the recorded session id to the one this call generated, so the
             # identity check in parse_events is exercised rather than bypassed.
             recorded_session = session_of(raw)
@@ -297,13 +322,26 @@ class ReplyShapeTests(unittest.TestCase):
                              ("rejected without replacement", [self.verdict("c1"), self.verdict("c2", "naming")]),
                              ("counted with replacement", [self.verdict("c1", replacement="x"), rejected]),
                              ("empty reason", [{**self.verdict("c1"), "reason": " "}, rejected]),
-                             ("extra key", [{**self.verdict("c1"), "grade": "A"}, rejected]),
+                             ("extra key that is not a string", [{**self.verdict("c1"), "note": {"a": 1}}, rejected]),
+                             ("too many extra keys", [{**self.verdict("c1"), **{"n%d" % i: "" for i in range(5)}},
+                                                      rejected]),
+                             ("missing required key", [{k: v for k, v in self.verdict("c1").items() if k != "reason"},
+                                                       rejected]),
                              ("not a list", "all count")):
             with self.subTest(label), self.assertRaises(Fault) as caught:
                 validate_critique(self.base(case_verdicts=given), case_ids=["c1", "c2"])
             self.assertEqual(caught.exception.code, "critic_response_invalid")
         with self.assertRaises(Fault):
             validate_critique({key: value for key, value in self.base().items() if key != "case_verdicts"})
+
+    def test_a_few_extra_string_or_null_keys_in_a_verdict_are_kept_and_never_read(self):
+        given = [{**self.verdict("c1"), "verdict_note": "", "note": None, "grade": "A"},
+                 self.verdict("c2", "leaked", "Ask it without naming the key.")]
+        value = validate_critique(self.base(case_verdicts=given), case_ids=["c1", "c2"])
+        self.assertEqual(value["case_verdicts"][0]["verdict_note"], "")
+        self.assertIsNone(value["case_verdicts"][0]["note"])
+        # Only `verdict` decides whether a case counts; an extra "grade" changes nothing.
+        self.assertEqual([item["verdict"] for item in value["case_verdicts"]], ["counts", "leaked"])
 
 
 if __name__ == "__main__":

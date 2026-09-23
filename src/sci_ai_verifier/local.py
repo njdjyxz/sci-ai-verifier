@@ -385,9 +385,10 @@ def select(store, state, claim_id, work, args, subject):
             from .documentary import critique as run_critique
             critique = run_critique(subject, packet)
         except (Fault, OSError, AttributeError) as error:
+            detail = " " + str(error) if isinstance(error, Fault) else ""
             return limitation(store, state, claim_id, getattr(error, "code", "critic_unavailable"),
-                              "The independent grade critique did not complete. This is an operational "
-                              "failure, not an absence of scientific evidence.", asserted_by="runtime")
+                              "The independent grade critique did not complete." + detail + " This is an "
+                              "operational failure, not an absence of scientific evidence.", asserted_by="runtime")
         work["critique_ref"] = keep(store, state, critique)
     work["candidate_ref"] = key
     selection = {"candidate_ref": key, "applicability": args["applicability"],

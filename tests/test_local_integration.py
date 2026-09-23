@@ -486,7 +486,8 @@ class GradeNegotiationTests(unittest.TestCase):
         cases=[{"case_id":name,"input":name,"expected":str(index)+".0","reference_ref":h.reference_ref,
                 "source_quote":fixture.REFERENCE,"applicability":"Fixture table row","method":"numeric"}
                for index,name in enumerate(("alpha","beta"),1)]
-        cases+=[{"case_id":"choice-"+str(index),"method":"choice","expected":"1","options":options,
+        # Answers may not all sit at one position, so the middle case answers option 2.
+        cases+=[{"case_id":"choice-"+str(index),"method":"choice","expected":"2" if index==1 else "1","options":options,
                  "input":"Row %d? %s"%(index,"; ".join(options)),"reference_ref":h.reference_ref,
                  "source_quote":fixture.REFERENCE,"applicability":"Fixture table row"} for index in range(3)]
         # Without its two open cases the design is recognised-only and stops at C. A refused

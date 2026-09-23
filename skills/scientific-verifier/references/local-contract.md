@@ -104,6 +104,9 @@ to the documentary path. An unavailable critique is an operational limitation.
 A critique reply whose *shape* is unusable is retried once in a second fresh session
 against the identical packet, under the same rule as the documentary assessor below. A
 reply that parses and judges the design is never re-rolled, whatever grade it gives.
+The critique session has five minutes; the documentary assessor keeps two. Judging
+every case and describing replacements takes a critique 60 to 120 seconds, and the
+two-minute deadline it used to share with the assessor killed one in run 74eadedd.
 
 The installed policy then requires every planned trial and case to be scored. Missing
 observations are operational. Invalid observations remain counted and prevent an

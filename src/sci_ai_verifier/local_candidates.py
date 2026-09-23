@@ -20,8 +20,9 @@ MAX_REFERENCE = 256 * 1024
 # lookup without being re-qualified: only this string keeps one that passed superseded
 # rules out of a later run. -2 added the answer-form rule; -3 replaced its string-matched
 # closed choice with the indexed `choice` method; -4 reads numeric replies through
-# reply_number() and adds the controls that prove it.
-METHOD_VERSION = "local-reference-comparison-4"
+# reply_number() and adds the controls that prove it; -5 reads exact replies from their
+# first line and requires a design's choice answers to vary in position.
+METHOD_VERSION = "local-reference-comparison-5"
 # Reserved final option. Never the answer, so scoring stays ungameable, but a case whose
 # trials all select it is far more likely to have a broken option set than a wrong subject.
 NONE_OF_THESE = "none of these"
@@ -33,9 +34,10 @@ QUALIFICATION_LIMITS = [
     "Mechanical qualification only; source authority and input/reference applicability are planner assertions.",
     "Cases are illustrative, not a representative scientific benchmark.",
     "Qualification alone carries no scientific verdict or evidence grade; the grade is settled separately.",
-    "Choice options are checked for distinctness, count and presence in the prompt, not for "
-    "being genuinely wrong or plausible; a subject that recognises the conventional-looking "
-    "option can pass without knowing, and distractor quality remains a planner assertion.",
+    "Choice options are checked for distinctness, count, presence in the prompt and a varied "
+    "answer position across the design, not for being genuinely wrong or plausible; a subject "
+    "that recognises the conventional-looking option can pass without knowing, and distractor "
+    "quality remains a planner assertion.",
 ]
 
 
@@ -152,8 +154,13 @@ def reply_number(text):
     pulling a number out of prose is how a wrong reply becomes a false pass. A number
     cannot contain these characters, so stripping them cannot change its meaning.
     """
+    return number(first_line(text).strip("*_`").strip())
+
+
+def first_line(text):
+    """The first non-empty line of a reply, with surrounding whitespace removed."""
     lines = [line for line in text.strip().split("\n") if line.strip()]
-    return number(lines[0].strip().strip("*_`").strip() if lines else "")
+    return lines[0].strip() if lines else ""
 
 
 def presentation_probes(answer):
@@ -176,8 +183,11 @@ def case_method(candidate, case):
 
 def compare(method, actual, expected):
     if method == "exact":
-        # Never normalized: `_` and `*` are content here -- `rgroup_label`, SMARTS `[*]`.
-        return "pass" if actual.strip() == expected.strip() else "fail"
+        # Read from the first line like the numeric methods, so an explanation below the
+        # answer cannot fail it: run 0a243b7e scored six correct `R1`-style answers as
+        # fails. Characters are never removed: `_` and `*` are content here --
+        # `rgroup_label`, SMARTS `[*]` -- so `**R1**` still fails.
+        return "pass" if first_line(actual) == expected.strip() else "fail"
     if method == "choice":
         # The reply is an option number, so no wording, casing or plural of a right
         # answer can score as a wrong one. A reply that is not a number is `invalid`,
@@ -218,7 +228,7 @@ def qualify(proposal, references):
     from .tools import obj,string
     validate({**proposal,"claim_id":"candidate"},schemas({},obj,string)["qualify_local_candidate"])
     safe_payload(proposal)
-    problems, controls = [], []
+    problems, controls, positions = [], [], []
     design = proposal["method"]
     if design not in {*INSTALLED_METHODS, "mixed"}:
         problems.append("Only installed exact, numeric and choice comparison methods, or a mixed design of them, are available.")
@@ -246,6 +256,12 @@ def qualify(proposal, references):
         # that guarantee instead: same anchor, one level down.
         answer = trimmed
         if method == "choice":
+            # A case marked choice with no options used to crash on options[-1] and reached the
+            # planner of run 74eadedd twice as a bare internal error; now it is told what is missing.
+            if not options:
+                problems.append("A choice case lists its options in `options`, the last being the reserved "
+                                + repr(NONE_OF_THESE) + ".")
+                continue
             # The option count is enforced by the schema this function validates against.
             if len(set(options)) != len(options):
                 problems.append("Choice options must be distinct.")
@@ -283,6 +299,7 @@ def qualify(proposal, references):
                       (str(center - 2*TOLERANCE), "fail"), ("not-a-number", "invalid")]
             probes += presentation_probes(trimmed)
         elif method == "choice":
+            positions.append(index)
             # Every other option number must be rejected, including the reserved one, so a
             # case has to separate its own alternatives; a non-numeric reply is `invalid`.
             probes = [(expected, "pass"), ("not-a-number", "invalid"), (str(len(options) + 1), "fail")]
@@ -297,7 +314,11 @@ def qualify(proposal, references):
             # prefix, a suffix and a truncation so a near miss has to be rejected.
             probes = [(expected, "pass"), (expected + " __incorrect_control__", "fail"),
                       ("__incorrect_control__ " + expected, "fail"),
-                      (trimmed[:-1] or "__empty_control__", "fail")]
+                      (trimmed[:-1] or "__empty_control__", "fail"),
+                      # The answer on its own line with an explanation below it passes; the
+                      # answer inside a sentence does not, since nothing is searched for.
+                      (trimmed + "\n\nThe reference spells it this way.", "pass"),
+                      ("The answer is " + trimmed, "fail")]
         passed = all(compare(method, actual, expected) == wanted for actual, wanted in probes)
         controls.append({"case_id": case["case_id"], "passed": passed,
                          "positive_negative_boundary_checks": len(probes)})
@@ -305,6 +326,12 @@ def qualify(proposal, references):
             problems.append("A comparison control failed.")
     if len({case["case_id"] for case in proposal["cases"]}) != len(proposal["cases"]):
         problems.append("Case IDs must be unique.")
+    # All eleven choice cases of run 0a243b7e answered option 1, so a subject that always
+    # picks the first option would have passed every one of them.
+    if len(positions) > 1 and len(set(positions)) == 1:
+        problems.append("Vary which option position holds the correct answer across the design's choice "
+                        "cases: with every answer at position " + str(positions[0]) + ", a subject that "
+                        "always picks that position passes every case.")
     return {"schema_version": 1, "method_version": METHOD_VERSION, **proposal,
             "status": "rejected" if problems else "qualified_local",
             "scientific_approval": "provisional", "qualification_problems": sorted(set(problems)),

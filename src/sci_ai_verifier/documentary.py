@@ -72,6 +72,10 @@ CRITIC_SHAPE_ATTEMPTS = 2
 # Every case of a twelve-case design, with its full options, plus the justification and
 # carried concerns, fits under this with room to spare.
 CRITIC_PACKET_LIMIT = 160000
+# Judging every case and describing replacements takes a critique 60 to 120 seconds; the
+# two-minute deadline it shared with the assessor killed one in run 74eadedd.
+CRITIC_TIMEOUT_SECONDS = 300
+ASSESSOR_TIMEOUT_SECONDS = 120
 
 
 FENCE=re.compile(r"\A```[A-Za-z0-9_+-]*\n(.*)\n```\Z",re.DOTALL)
@@ -107,15 +111,30 @@ def validate_assessment(value,packet):
     return value
 
 
+CASE_VERDICT_KEYS={"case_id","verdict","reason","replacement"}
+CASE_VERDICT_EXTRAS=4
+
+
 def validate_case_verdicts(value, rubric, case_ids):
-    """One verdict per packet case, returned in the packet's order; anything else is refused."""
-    invalid=Fault("critic_response_invalid","The critique must give every case in the packet exactly one verdict.")
+    """One verdict per packet case, returned in the packet's order; anything else is refused.
+
+    A verdict may carry a few further keys holding a string or null. They are kept and
+    never read: run 0a243b7e's reviewer added an empty `verdict_note` to two complete
+    replies, and refusing both over it lost the claim. The required keys are still exact.
+    """
+    def invalid(detail):
+        return Fault("critic_response_invalid","The critique's case_verdicts "+detail)
     if not isinstance(value,list) or len(value)>16:
-        raise invalid
+        raise invalid("must be a list of at most 16 verdicts.")
     verdicts={}
     for item in value:
-        if not isinstance(item,dict) or set(item)!={"case_id","verdict","reason","replacement"}:
-            raise invalid
+        if not isinstance(item,dict) or not CASE_VERDICT_KEYS<=set(item):
+            raise invalid("need case_id, verdict, reason and replacement in every verdict.")
+        extras=set(item)-CASE_VERDICT_KEYS
+        if len(extras)>CASE_VERDICT_EXTRAS or any(
+                len(key)>80 or not (item[key] is None or isinstance(item[key],str) and len(item[key])<=4000)
+                for key in extras):
+            raise invalid("may carry at most four further keys, each a string or null.")
         # A counting case has no replacement; `null` is the empty description it meant.
         replacement="" if item["replacement"] is None else item["replacement"]
         if (not isinstance(item["case_id"],str) or item["case_id"] in verdicts
@@ -123,10 +142,11 @@ def validate_case_verdicts(value, rubric, case_ids):
                 or not isinstance(item["reason"],str) or not 1<=len(item["reason"].strip())<=4000
                 or not isinstance(replacement,str) or len(replacement)>4000
                 or (item["verdict"]=="counts")!=(not replacement.strip())):
-            raise invalid
+            raise invalid("hold a duplicate, unknown or malformed verdict, or a replacement that does "
+                          "not match it (empty exactly when the verdict is counts).")
         verdicts[item["case_id"]]={**item,"replacement":replacement.strip()}
     if case_ids is not None and set(verdicts)!=set(case_ids):
-        raise invalid
+        raise invalid("must give every case in the packet exactly one verdict.")
     return [verdicts[key] for key in case_ids] if case_ids is not None else list(verdicts.values())
 
 
@@ -162,7 +182,7 @@ def validate_critique(value, rubric=CRITIQUE_RUBRIC, case_ids=None):
     return {**value,"supported_grade":None if value["supported_grade"]=="none" else value["supported_grade"]}
 
 
-def isolated_answer(adapter,packet,*,role,system_prompt,limit=64000):
+def isolated_answer(adapter,packet,*,role,system_prompt,limit=64000,timeout=ASSESSOR_TIMEOUT_SECONDS):
     """One fresh no-tool session over an immutable packet; returns its parsed events."""
     if len(canonical(packet))>limit:
         raise Fault(role+"_packet_limit","The independent "+role+" packet exceeds its byte limit.")
@@ -174,7 +194,7 @@ def isolated_answer(adapter,packet,*,role,system_prompt,limit=64000):
         for flag,value in (("--tools",""),("--allowedTools",""),("--max-turns","2"),("--system-prompt",system_prompt)):
             command[command.index(flag)+1]=value
         code,raw,_=adapter.run(command,role=role,cwd=directory,env=isolated_environment(Path(temporary)/"config",adapter.auth),
-                               prompt=canonical(packet).decode(),timeout=120,max_bytes=262144)
+                               prompt=canonical(packet).decode(),timeout=timeout,max_bytes=262144)
         if code:
             raise Fault(role+"_unavailable","The independent "+role+" did not complete.")
         response=parse_events(raw,expected_session=session)
@@ -250,7 +270,8 @@ def critique(adapter,packet,rubric=CRITIQUE_RUBRIC):
         +"Raise an objection only if you can name the defect. Do not use tools.")
     attempts=[]
     for attempt in range(1,CRITIC_SHAPE_ATTEMPTS+1):
-        response,session=isolated_answer(adapter,packet,role="critic",system_prompt=system_prompt,limit=CRITIC_PACKET_LIMIT)
+        response,session=isolated_answer(adapter,packet,role="critic",system_prompt=system_prompt,
+                                         limit=CRITIC_PACKET_LIMIT,timeout=CRITIC_TIMEOUT_SECONDS)
         attempts.append({"attempt":attempt,"session_id":session})
         try:
             value=validate_critique(parse_reply(response["text"]),rubric,case_ids)
@@ -259,12 +280,14 @@ def critique(adapter,packet,rubric=CRITIQUE_RUBRIC):
         except Fault as error:
             if error.code!="critic_response_invalid":
                 raise
-            attempts[-1]["rejected"]=error.code
+            attempts[-1].update(rejected=error.code,detail=str(error))
         else:
             return {**value,"session_id":session,"observed_model_ids":response["observed_model_ids"],
                     "packet_ref":digest(canonical(packet)),"rubric_ref":digest(canonical(rubric)),"usage":response["usage"],
                     "total_cost_usd":response["total_cost_usd"],
                     "independence":"fresh host-selected no-tool session; no planner conversation","ai_judgment":True,
                     "attempts":attempts}
+    # Say what was wrong, so a lost claim can be diagnosed from its record alone.
     raise Fault("critic_response_invalid",
-                f"The critique returned an unusable shape in {CRITIC_SHAPE_ATTEMPTS} fresh sessions.")
+                f"The critique returned an unusable shape in {CRITIC_SHAPE_ATTEMPTS} fresh sessions; "
+                "the last: "+attempts[-1].get("detail",attempts[-1]["rejected"]))

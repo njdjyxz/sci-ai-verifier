@@ -266,11 +266,28 @@ class LocalTests(unittest.TestCase):
         self.reference()
         self.candidate(lookup=False, method="exact", cases=self.rows("1.0"))
         self.assertEqual(self.data["outcome"], "qualified_local")
+        # Prefix, suffix and truncation near misses, plus the answer-then-explanation reply
+        # that must pass and the answer-inside-a-sentence reply that must not.
+        self.assertEqual({control["positive_negative_boundary_checks"]
+                          for control in self.data["candidate"]["controls"]}, {6})
+
+    def test_an_exact_answer_is_read_from_its_first_line_with_every_character_kept(self):
+        """Run 0a243b7e: `R1` then an explanation, which the prompt invited, scored fail."""
+        from sci_ai_verifier.local_candidates import compare
+        self.assertEqual(compare("exact", "R1\n\nThe fragment is stored under R1.", "R1"), "pass")
+        self.assertEqual(compare("exact", "\n  R1  \n", "R1"), "pass")
+        for reply in ("**R1**", "`R1`", "The key is R1", "R1.", "R2\n\nR1", ""):
+            with self.subTest(reply=reply):
+                self.assertEqual(compare("exact", reply, "R1"), "fail")
+        # Characters that look like markdown are content in an exact token.
+        self.assertEqual(compare("exact", "rgroup_label\n\nexplained", "rgroup_label"), "pass")
+        self.assertEqual(compare("exact", "[*]", "[*]"), "pass")
 
     def test_an_indexed_choice_probes_every_other_option(self):
         self.reference()
-        self.candidate(lookup=False, method="choice",
-                       cases=self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))
+        cases = self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS))
+        cases[1]["expected"] = "2"  # answers may not all sit at one position
+        self.candidate(lookup=False, method="choice", cases=cases)
         self.assertEqual(self.data["outcome"], "qualified_local")
         # Correct index, a non-numeric reply, an out-of-range number, each other option,
         # and the three presentation probes that prove how a reply is read.
@@ -331,7 +348,35 @@ class LocalTests(unittest.TestCase):
         open_rows = [{**case, "method": "numeric"} for case in self.rows("1.0", count=2)]
         closed = [{**case, "case_id": "closed-%d" % index, "method": "choice"}
                   for index, case in enumerate(self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))]
+        closed[1]["expected"] = "2"  # answers may not all sit at one position
         return open_rows + closed
+
+    def test_a_choice_case_without_options_is_rejected_rather_than_crashing(self):
+        """Run 74eadedd: a mixed design marked a case choice with no options, and qualification
+        raised IndexError, which reached the planner twice as a bare internal error."""
+        self.reference()
+        cases = self.mixed_cases()
+        del cases[2]["options"]
+        for method, design in (("mixed", cases), ("choice", [{key: value for key, value in case.items() if key != "options"}
+                                                             for case in self.rows("1", prompt=self.menu(self.OPTIONS))])):
+            with self.subTest(method=method):
+                self.candidate(lookup=False, method=method, cases=design)
+                self.assertEqual(self.data["outcome"], "rejected")
+                self.assertTrue(any("A choice case lists its options" in problem
+                                    for problem in self.data["candidate"]["qualification_problems"]))
+
+    def test_choice_answers_may_not_all_sit_at_one_position(self):
+        """All eleven choice cases of run 0a243b7e answered option 1, so a subject that
+        always picked the first option would have passed every one."""
+        self.reference()
+        self.candidate(lookup=False, method="choice",
+                       cases=self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))
+        self.assertEqual(self.data["outcome"], "rejected")
+        self.assertTrue(any("Vary which option position" in problem
+                            for problem in self.data["candidate"]["qualification_problems"]))
+        # A single choice case among open ones has nothing to vary.
+        self.candidate(lookup=False, method="mixed", cases=self.mixed_cases()[:3])
+        self.assertEqual(self.data["outcome"], "qualified_local")
 
     def test_a_mixed_design_names_a_method_on_every_case_and_only_there(self):
         self.reference()

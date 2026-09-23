@@ -579,7 +579,11 @@ The Local profile matrix in workflow.md governs their legality.
   an out-of-range number and a non-numeric reply, which is `invalid` rather than a
   verdict. Whether a distractor is genuinely wrong or merely implausible remains a
   planner assertion, like the rest of case applicability; a subject that recognises
-  the conventional-looking option can pass a `choice` without knowing.
+  the conventional-looking option can pass a `choice` without knowing. Across a
+  design's `choice` cases the correct answers may not all sit at the same option
+  position, or a subject that always picks that position passes every one of them:
+  all eleven `choice` cases of run 0a243b7e answered option 1. A design with a single
+  `choice` case has nothing to vary.
 
   A `choice` or `numeric` reply is read from its **first non-empty line, with
   surrounding whitespace and markdown emphasis (`*`, `_`, a backtick) removed from
@@ -587,11 +591,19 @@ The Local profile matrix in workflow.md governs their legality.
   paragraph of explanation, both read as `1`. Nothing is ever searched for inside the
   line: `The answer is 1` is `invalid`, because extracting a number from prose is how
   a wrong reply becomes a false pass. A number cannot legitimately contain those
-  characters, so removing them cannot change its meaning. `exact` replies are never
-  normalized, because there the same characters are content — `rgroup_label` carries
-  an underscore and `[*]` is a dummy atom in SMARTS. Controls for both methods probe
-  a bold reply, a bold reply with an explanation, and a sentence containing the right
-  number, which must stay `invalid`.
+  characters, so removing them cannot change its meaning. Controls for both methods
+  probe a bold reply, a bold reply with an explanation, and a sentence containing the
+  right number, which must stay `invalid`.
+
+  An `exact` reply is read from its **first non-empty line, with surrounding
+  whitespace removed**, and that line must equal the expected token character for
+  character. Nothing else is removed, because here those characters are content —
+  `rgroup_label` carries an underscore and `[*]` is a dummy atom in SMARTS — so
+  `**R1**` fails. `R1` followed by a paragraph of explanation passes; it used to be
+  compared whole and failed, which in run 0a243b7e turned six correct answers into two
+  false `fail` verdicts. `The key is R1` fails, because the token is never searched
+  for inside the line. Controls probe the token followed by an explanation, which
+  must pass, and a sentence containing it, which must fail.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
@@ -631,7 +643,10 @@ The Local profile matrix in workflow.md governs their legality.
   none), and `case_verdicts`: exactly one object per case in the packet, each holding
   that `case_id`, a `verdict` (one of those defined in `evidence-rubric.md`), a
   non-empty `reason`, and a `replacement` that is empty for `counts` and otherwise
-  describes a case that would test the claim instead. A replay of a reply recorded
+  describes a case that would test the claim instead. A verdict may carry up to four
+  further keys, each a string of at most 4000 characters or `null`; they are kept and
+  never read. Run 0a243b7e's reviewer added an empty `verdict_note` to two complete
+  replies and the claim was lost when both were refused. A replay of a reply recorded
   under an earlier rubric, which had no case verdicts, is judged without them. An
   assessment returns `status`, `findings`, `citations` and `limitations`,
   where `limitations` is a single string. Python accepts a Markdown code fence around
