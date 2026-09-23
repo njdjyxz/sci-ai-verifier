@@ -535,10 +535,12 @@ narrow, because each one ends a claim and a wide gate would let the planner
 finish without doing the work:
 
 - `select_local_candidate` stays in `local_discovery` and returns
-  `local_grade_revision_required` whenever the independent critique supports a
-  weaker grade than the proposal. Repeating the call with a strengthened design or
-  a lower proposal is the negotiation. After the installed round limit the
-  critique's grade is settled and the claim reaches `local_ready`.
+  `local_grade_revision_required` whenever the settled grade — the weakest of the
+  proposal, the ceiling over the critique's counting cases and the critique's own
+  grade — is below the proposal. Repeating the call with a strengthened design or
+  the settled grade is the negotiation. After the installed round limit, or once the
+  replacement rounds in `evidence-rubric.md` are spent and a critique still rejects
+  cases, the settled grade is fixed and the claim reaches `local_ready`.
 - `assess_local_documentary` and `record_local_unverified` require the claim's
   catalog lookup plus at least one reference Python retrieved or one recorded
   qualification attempt, and are refused while the claim still holds a candidate it

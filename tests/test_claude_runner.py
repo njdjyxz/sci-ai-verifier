@@ -12,7 +12,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import (ClaudeCode, SUBJECT_SKILL, isolated_environment,
-    parse_events, prepare_workspace, refusal_category, run_process, stage_skill)
+    parse_events, prepare_workspace, refusal_category, run_process, session_directory, stage_skill,
+    sweep_stale_directories)
 from sci_ai_verifier.common import Fault, canonical
 
 
@@ -178,6 +179,73 @@ class RunnerTests(unittest.TestCase):
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "private-opaque-token"}), self.assertRaises(Fault):
             subject.observe(source=[{"path": "SKILL.md", "content": "Return text."}], case_input={"input": "test"}, config=subject.identity, timeout_seconds=1)
         self.assertTrue(all(not path.exists() for path in dirs))
+
+
+class StaleSweepTests(unittest.TestCase):
+    def test_only_this_verifiers_directories_older_than_a_day_are_removed(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            now = time.time()
+            old, young, foreign = root / "sci-verifier-controller-old", root / "sci-verifier-subject-new", root / "other-old"
+            for path in (old, young, foreign):
+                (path / "config").mkdir(parents=True)
+                (path / "config" / "file").write_bytes(b"x")
+            for path in (old, foreign):
+                os.utime(path, (now - 2 * 86400, now - 2 * 86400))
+            events = []
+
+            class Log:
+                def emit(self, event, **data):
+                    events.append((event, data))
+
+            self.assertEqual(sweep_stale_directories(Log(), root=root, now=now), (1, 0))
+            self.assertFalse(old.exists())
+            self.assertTrue(young.exists())   # a run in progress is never swept
+            self.assertTrue(foreign.exists())  # nothing without this verifier's prefix
+            self.assertEqual(events, [("stale_temporary_swept", {"removed": 1, "still_held": 0})])
+            # Nothing to do logs nothing.
+            events.clear()
+            self.assertEqual(sweep_stale_directories(Log(), root=root, now=now), (0, 0))
+            self.assertEqual(events, [])
+
+class SessionDirectoryTests(unittest.TestCase):
+    """A child still holding a file must not turn a finished session into a failure."""
+
+    class Log:
+        def __init__(self):
+            self.events = []
+
+        def emit(self, event, **data):
+            self.events.append((event, data))
+
+    def test_removal_is_retried_until_the_directory_is_gone(self):
+        import shutil
+        real, calls = shutil.rmtree, []
+
+        def held_twice(path, ignore_errors=False):
+            calls.append(path)
+            if len(calls) > 2:
+                real(path, ignore_errors=ignore_errors)
+
+        log = self.Log()
+        with patch("sci_ai_verifier.claude_runner.CLEANUP_PAUSE", 0),                 patch("sci_ai_verifier.claude_runner.shutil.rmtree", side_effect=held_twice):
+            with session_directory("sci-verifier-test-", log) as temporary:
+                (Path(temporary) / "file").write_bytes(b"x")
+        self.assertFalse(Path(temporary).exists())
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(log.events, [])
+
+    def test_a_directory_that_stays_held_is_logged_and_never_raised(self):
+        log = self.Log()
+        with patch("sci_ai_verifier.claude_runner.CLEANUP_PAUSE", 0),                 patch("sci_ai_verifier.claude_runner.shutil.rmtree"):
+            with session_directory("sci-verifier-test-", log) as temporary:
+                pass
+        try:
+            self.assertEqual([event for event, _ in log.events], ["temporary_cleanup_incomplete"])
+            self.assertEqual(log.events[0][1]["path"], temporary)
+        finally:
+            import shutil
+            shutil.rmtree(temporary, ignore_errors=True)
 
 
 if __name__ == "__main__":

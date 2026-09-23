@@ -42,13 +42,46 @@ grade before it reads accuracy.
 
 The examples are common matches rather than automatic assignments. The same claim may receive different grades depending on the available oracle, independence, scientific validity, coverage, uncertainty, and relationship between evidence and the exact claim.
 
+## Cases each grade requires
+
+This section owns the number and kind of cases each execution grade needs. Other documents point here rather than restating it. The reference requirements of each grade are separate and are set by the profile; for the local profile, `local-contract.md` owns them.
+
 **A case must test what its claim asserts — no less, and no more.**
 
 *No less.* A claim about what a function *does* is not tested by a case asking what it is *named*. Naming and spelling cases are legitimate where the claim is itself about an API surface; they are recitation where the claim is about behaviour, meaning or a numeric relationship.
 
 *No more.* A case must not reach past the claim to a consequence or fact the claim never states. A claim that pIC50 is the negative base-10 logarithm of the molar IC50 is not tested by a case asking which direction of the scale means more potent. That is in neither the claim nor the skill, so a subject faithfully applying the skill has nothing to answer from: it either falls back on the base model's own knowledge, which credits the skill for something the model already knew, or it declines, which fails a correct skill. Either way the case measures something other than the claim. A case framed as "which statement does a reference make" invites exactly this, because a subject running the skill reads "a reference" as its own loaded material.
 
-A case that recites, or that reaches beyond the claim, does not count toward the representative cases grade A requires, and a design resting on such cases does not support grade A. This is a fitness judgment rather than a computable property: once quoted from a source, a function name, a scientific value and an unasserted consequence are all the same shape, so Python counts cases and cannot weigh them. The critique answers it as a named criterion of its rubric, and lowering the grade is what returns the design to the planner for better cases.
+*Not given away.* A case whose question already contains its answer — the function name in the stem, or an option that repeats the stem's own words — measures reading, not the claim.
+
+**Answer form.** A case is *generated* when the subject must produce the answer itself: an open `exact` token, an open `numeric` value, or free output scored by a generated evaluator. It is *recognised* when the subject picks the answer from listed options (`choice`). A recognised case can be passed by spotting the conventional-looking option or by matching words between the question and an option, so it is weaker evidence of the same fact. The answer form is a property of each case's comparison method, and Python reads it from the design. A design may mix both forms, so a claim whose natural questions are closed can still reach A with two open cases among its five.
+
+**Case verdicts.** The independent critique gives every case exactly one verdict:
+
+| Verdict | Meaning | Counts? |
+|---|---|---|
+| `counts` | Tests what the claim asserts, no less and no more, without giving the answer away | Yes |
+| `naming` | Only recites what something is called, for a claim about what it does | No |
+| `beyond_scope` | Asks a consequence or fact the claim never states | No |
+| `leaked` | The answer can be read from the question itself | No |
+| `duplicate` | Turns on the same fact or rule as an earlier case in the design, so a subject that answers one will answer the other and it adds no independent evidence. This covers near-copies — the same convention asked at another position, the same value from the other side — not only exact repeats. The reason names that case, which keeps its own verdict | No |
+
+Whether a case counts is a fitness judgment rather than a computable property: once quoted from a source, a function name, a scientific value and an unasserted consequence are all the same shape. So the critique judges each case, and Python counts the verdicts and enforces the table below. Neither does the other's job: a critique that finds too few cases counting cannot settle a grade the count does not allow, because Python applies the count itself.
+
+**Requirements.** Only cases with the verdict `counts` enter these numbers:
+
+| Grade | Counting cases | Of which generated |
+|---|---|---|
+| A | at least 5 | at least 2 |
+| B | at least 3 | at least 1 |
+| C | at least 3 | any, including none |
+| fewer than 3 counting cases | no execution grade | — |
+
+Before a critique runs, Python assumes every case counts, and that sets the ceiling the planner proposes. After the critique, Python recomputes the ceiling over the counting cases only. The settled grade is the weakest of the proposal, that recomputed ceiling, and the critique's own supported grade. The critique reconsiders the whole design, not only the case count, so its supported grade can be lower still. A rejected case is never a fixed one-step penalty. The grade's limiting reasons are recorded over the counting cases, so a grade lowered by rejections says so.
+
+**Replacement.** Every case that does not count must be named with the verdict, the reason, and a description of a case that would test the claim in its place. The critique describes the replacement; it never writes one, because it has no tools to retrieve the reference that every expected answer must be quoted from, and a case it wrote would never be independently reviewed. The planner builds the replacement as a revised design, and a fresh critique reviews it. That critique is told which cases earlier reviewers did not count, with the verdict, reason and suggested replacement, so it can check that the new cases answer what was wrong with the old ones; it is never told an earlier grade. A claim gets at most **two replacement rounds**. A third critique that still rejects cases settles the grade the counting cases support, without another revision. This budget is separate from the negotiation's overall round limit, which still bounds every other kind of revision.
+
+**Execution.** Cases that do not count still execute and are reported with their verdicts, so nothing observed is hidden. They do not enter accuracy, consistency or status. A rejected case measures something other than the claim, so its failure would be a false `fail`, and its pass would be credit the claim did not earn. The status rule's "usable cases" are the counting cases.
 
 ## Negotiating the grade
 
@@ -56,9 +89,9 @@ Grading is a loop, not a label chosen at the end:
 
 1. **Seek strong evidence.** Start from the A-grade question: can the skill's output be compared with an independently obtained expected answer using deterministic code? Find and retrieve the sources that would make that possible before settling for anything weaker.
 2. **Propose the ceiling.** Every proposal must be the strongest grade the runner's own recorded facts support for that design. There is exactly one exception, in step 4. Aiming below the ceiling is refused, because understating the evidence misreports it just as badly as overclaiming; and "no suitable oracle exists for a stronger grade" is not a reason to aim low — it is already what the ceiling computes. Justify the proposal: where the oracle came from and how independent it is, what the cases cover and which of them test what the claim asserts rather than what it is named, what the tolerance rests on, what is uncertain, and what would be needed to go higher.
-3. **Critique its suitability.** A fresh session that never saw the planning judges whether that evidence is fit for this exact claim at that grade. It receives the concerns earlier reviewers raised about earlier versions of the design, so it can check whether they are now answered, but never their grades: a reviewer shown a previous verdict has an easy answer available, which is the anchoring the fresh session exists to avoid.
-4. **Revise, or accept.** When the critique supports less, there are two legal moves. Strengthen the evidence — a more authoritative source, cases that cover the stated scope, a tighter comparison — and propose the new ceiling; that earns another round. Or accept the grade this exact design was critiqued at, which settles immediately and spends no further session. Re-proposing a grade on an unchanged design is refused without spending a round, so the loop cannot spin.
-5. **Settle at the highest justified grade.** The settled grade is the weakest of the proposal, the runner's ceiling and the critique's verdict. On the last permitted round the critique's grade is settled rather than offered for revision, and the grade always describes the plan that will actually execute, not a stronger design that was discarded.
+3. **Critique its suitability.** A fresh session that never saw the planning judges whether that evidence is fit for this exact claim at that grade, and gives every case a verdict under "Cases each grade requires". It receives the concerns earlier reviewers raised about earlier versions of the design, so it can check whether they are now answered, but never their grades: a reviewer shown a previous verdict has an easy answer available, which is the anchoring the fresh session exists to avoid.
+4. **Revise, or accept.** When the settled grade is below the proposal, there are two legal moves. Strengthen the evidence — a more authoritative source, replacement cases for those that did not count, a tighter comparison — and propose the new ceiling; that earns another round. Or accept the grade this exact design settled at, which settles immediately and spends no further session. Re-proposing a grade on an unchanged design is refused without spending a round, so the loop cannot spin.
+5. **Settle at the highest justified grade.** The settled grade is the weakest of the proposal, the runner's ceiling over the counting cases and the critique's verdict. On the last permitted round, or once the replacement rounds are spent and a critique still rejects cases, that grade is settled rather than offered for revision, and the grade always describes the plan that will actually execute, not a stronger design that was discarded.
 
 Proposing again is the normal path, not a failure. What is not permitted is arguing the critique into agreement, restating a design without changing it, or treating a lowered grade as a reason to abandon the claim. A critique concluding that the design supports no grade is accepted the same way: the plan still executes and produces ungraded comparison evidence, and the claim continues to the documentary path.
 

@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 import sys
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
@@ -157,6 +157,71 @@ def prepare_workspace(directory):
     (directory / ".git/refs/heads").mkdir(parents=True)
     atomic_write(directory / ".git/HEAD", b"ref: refs/heads/main\n")
     atomic_write(directory / ".git/config", b"[core]\nrepositoryformatversion = 0\nbare = false\n")
+
+
+CLEANUP_ATTEMPTS = 10
+CLEANUP_PAUSE = 0.5
+
+
+@contextmanager
+def session_directory(prefix, log=None):
+    """A temporary directory for one Claude process, removed with bounded retries.
+
+    On Windows a child the CLI started, such as its MCP server, can still hold a file
+    for a moment after the CLI exits, and `TemporaryDirectory` then raises from its
+    cleanup. Every controller run hit that: the planner had finished and the report was
+    written, but the OSError sent the run through recovery and left the directory behind.
+    Removal is retried; what still cannot be removed is logged and left, never raised.
+    """
+    path = Path(tempfile.mkdtemp(prefix=prefix))
+    try:
+        yield str(path)
+    finally:
+        for _ in range(CLEANUP_ATTEMPTS):
+            shutil.rmtree(path, ignore_errors=True)
+            if not path.exists():
+                break
+            time.sleep(CLEANUP_PAUSE)
+        else:
+            if log:
+                try:
+                    log.emit("temporary_cleanup_incomplete", path=str(path), attempts=CLEANUP_ATTEMPTS)
+                except Fault:
+                    pass  # A diagnostic that cannot be written must not fail a finished run.
+
+
+STALE_PREFIX = "sci-verifier-"
+STALE_AGE_SECONDS = 24 * 60 * 60
+
+
+def sweep_stale_directories(log=None, root=None, now=None):
+    """Remove this verifier's own temporary directories left by earlier runs.
+
+    Retrying at exit is not enough: whatever holds a controller file on Windows can keep
+    it for longer than any bounded wait, and run 28d19f8a still left its directory after
+    ten attempts. A day later nothing holds it. Only directories carrying this verifier's
+    prefix and older than a day are touched, so a run in progress is never swept.
+    """
+    root = Path(root or tempfile.gettempdir())
+    now = time.time() if now is None else now
+    removed, kept = 0, 0
+    for path in root.glob(STALE_PREFIX + "*"):
+        try:
+            if not path.is_dir() or path.is_symlink() or now - path.stat().st_mtime < STALE_AGE_SECONDS:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        if path.exists():
+            kept += 1
+        else:
+            removed += 1
+    if log and (removed or kept):
+        try:
+            log.emit("stale_temporary_swept", removed=removed, still_held=kept)
+        except Fault:
+            pass  # A diagnostic that cannot be written must not stop a run.
+    return removed, kept
 
 
 def source_bytes(item):
@@ -350,7 +415,8 @@ class ClaudeCode:
 
     def observe(self, *, source, case_input, config, timeout_seconds):
         session = str(uuid4())
-        with tempfile.TemporaryDirectory(prefix="sci-verifier-subject-") as temporary:
+        # A cleanup race after a complete answer must not void the claim as subject_unavailable.
+        with session_directory("sci-verifier-subject-", self.log) as temporary:
             directory = no_links(Path(temporary) / "workspace")
             prepare_workspace(directory)
             computational=bool(self.settings.get("sandbox_image"))

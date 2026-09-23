@@ -99,13 +99,13 @@ more is refused, and so is aiming lower to look cautious. "There was no good eno
 source for a higher grade" is not a reason to aim low, because that is already what the
 ceiling reflects.
 
-| Grade | What the runner has to be able to see |
-| --- | --- |
-| A | Every expected answer quoted token-exactly from reference bytes the runner itself downloaded over public HTTPS, scored by an installed comparison method, at least three distinct cases, at least three trials per case |
-| B | The same, but the expected answers came from a dataset you pinned in `resources`, or the scoring used a generated Python evaluator whose controls all passed |
-| C | Any reproducible comparison with at least three cases, including one trial per case, a substring rather than token-exact quote, or a candidate reused offline whose reference origin was never recorded |
-| D | No execution: an independent session assessed cited sources against the installed rubric |
-| U | No acceptable evidence was found at all |
+Each grade has two requirements, and the ceiling is the weaker of the two. The
+reference requirements (where the expected answers came from and how they are scored)
+are in [`local-contract.md`](skills/scientific-verifier/references/local-contract.md)
+under "Negotiated evidence grade". The number and kind of cases each grade needs are in
+[`evidence-rubric.md`](skills/scientific-verifier/references/evidence-rubric.md) under
+"Cases each grade requires". D means no execution: an independent session assessed
+cited sources. U means no acceptable evidence was found at all.
 
 A generated Python evaluator cannot reach A, because direct validation excludes AI
 judgment from scoring. One trial against a model subject cannot reach A or B,
@@ -114,8 +114,9 @@ right. Set `trial_count` to at least 3 if you want those grades to be reachable.
 
 The runner then starts a fresh Claude session that never saw the planning, gives it
 only the claim, the evidence design, the source provenance and a fixed critique rubric,
-and asks what grade the evidence actually supports. That session can only lower the
-grade.
+and asks what grade the evidence actually supports, and whether each case counts.
+That session can only lower the grade, and the runner re-derives the ceiling from the
+cases it counted.
 
 If it supports less, the verifier has two moves: improve the evidence and propose the
 new ceiling, which costs a round, or accept the grade this design was critiqued at,

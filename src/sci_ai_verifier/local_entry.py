@@ -2,13 +2,12 @@
 
 import os
 import sys
-import tempfile
 import time
 from pathlib import Path
 from uuid import uuid4
 
 from .agent import ConfigurationError, Runtime
-from .claude_runner import ClaudeCode, prepare_workspace, isolated_environment, parse_events
+from .claude_runner import ClaudeCode, prepare_workspace, isolated_environment, parse_events, session_directory, sweep_stale_directories
 from .common import Fault, canonical
 from .local import OPERATIONS
 from .local_candidates import safe_payload
@@ -111,6 +110,7 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
     from .execution_control import checkpoint
     checkpoint()
     log.emit("setup_started")
+    sweep_stale_directories(log)
     source = no_links(source_path)
     if not source.exists():
         raise Fault("source_missing", "Select an existing skill directory or SKILL.md file.")
@@ -136,7 +136,7 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
     atomic_write(runtime.store.run_dir(run_id)/"workflow-log.json", canonical(log.paths))
     session = str(uuid4())
     try:
-        with tempfile.TemporaryDirectory(prefix="sci-verifier-controller-") as temporary:
+        with session_directory("sci-verifier-controller-", log) as temporary:
             directory = no_links(Path(temporary) / "workspace")
             prepare_workspace(directory)
             env = isolated_environment(Path(temporary) / "config", auth)

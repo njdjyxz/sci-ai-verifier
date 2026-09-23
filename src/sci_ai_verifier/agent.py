@@ -270,7 +270,10 @@ class Runtime:
                         ("references/local-evaluator-spec.md",None),
                         ("references/workflow.md", ("Local profile",)),
                         ("references/tool-contracts.md", ("Local profile tools","Additional local resource and evaluator tools")),
-                        ("references/artifact-contracts.md", ("Local profile artifacts",)))
+                        ("references/artifact-contracts.md", ("Local profile artifacts",)),
+                        # The planner cannot read files, so the case rules it must design to are
+                        # delivered here. Without them it met criterion 6 only through refusals.
+                        ("references/evidence-rubric.md", ("Cases each grade requires", "Negotiating the grade")))
         if self.profile == "demo":
             contexts = (
                 ("SKILL.md", None), ("references/demo-contract.md", None),

@@ -18,6 +18,14 @@ ORDER = ("A", "B", "C", "D")
 GRADES = ("A", "B", "C", "D", "U")
 MINIMUM_CASES = 3
 STRONG_TRIALS = 3
+# "Cases each grade requires" in evidence-rubric.md owns these numbers.
+DIRECT_CASES = 5
+DIRECT_GENERATED = 2
+EXTERNAL_GENERATED = 1
+# The subject produces the answer for these methods; `choice` only asks it to recognise one.
+GENERATED_METHODS = {"exact", "numeric", "python"}
+# Revisions a claim may spend replacing cases the critique did not count.
+REPLACEMENT_ROUNDS = 2
 # The installed aggregation rule. It is recorded on every card because `fail` cannot be
 # read without it: thirteen passes in fifteen trials is a failure under unanimity and a
 # pass under a majority rule. Making this planner-selectable per claim is deliberately
@@ -28,12 +36,19 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v2",
+    "id": "evidence-strength-v4",
     "minimum_cases": MINIMUM_CASES,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
+    "replacement_rounds": REPLACEMENT_ROUNDS,
+    "cases": {"A": {"counting": DIRECT_CASES, "generated": DIRECT_GENERATED},
+              "B": {"counting": MINIMUM_CASES, "generated": EXTERNAL_GENERATED},
+              "C": {"counting": MINIMUM_CASES, "generated": 0},
+              "counted": "cases the independent critique gave the verdict counts; before a critique, every case",
+              "generated": "methods " + ", ".join(sorted(GENERATED_METHODS)) + "; choice is recognised"},
     "proposal": "each round proposes the current evidence ceiling, or accepts the grade the "
-                "last critique of this exact design supported",
+                "last critique of this exact design settled at",
+    "grade_limits": "recorded over the cases the critique counted",
     "revision": "a further round requires a changed design; repeating one spends no session",
     "coverage": "every planned trial of every planned case is scored",
     "invalid": "retained in the denominator; status inconclusive; the grade is unaffected",
@@ -48,10 +63,11 @@ POLICY = {
     "ceiling": "strongest grade supported by recorded evidence facts, lowered by the independent critique",
     "grades": {
         "A": "expected answers independently retrieved by Python, scored by an installed comparison "
-             "method, token-exact traceability, at least three cases and three trials",
+             "method, token-exact traceability, three trials; five counting cases, two generated",
         "B": "expected answers from a pinned retrieved or operator-imported dataset, or scored by a "
-             "control-tested generated evaluator; at least three cases and three trials",
-        "C": "reproducible indirect comparison; traceability, independence or trial count is weaker",
+             "control-tested generated evaluator; three trials; three counting cases, one generated",
+        "C": "reproducible indirect comparison; traceability, independence or trial count is weaker; "
+             "three counting cases",
         "D": "documentary assessment of cited sources against the fixed rubric; no execution accuracy",
     },
 }
@@ -114,14 +130,49 @@ def answer_text(case):
     return options[int(expected) - 1] if expected.isdigit() and 1 <= int(expected) <= len(options) else ""
 
 
-def evidence_ceiling(candidate, references, trials):
-    """The strongest grade Python's own recorded facts support, with the reasons it stops there."""
+def answer_form(candidate, case):
+    """`generated` when the subject must produce the answer, `recognised` when it picks one."""
+    from .local_candidates import case_method
+    return "generated" if case_method(candidate, case) in GENERATED_METHODS else "recognised"
+
+
+def case_grade(candidate, counted=None):
+    """The strongest grade the counting cases allow, with the reasons it stops there.
+
+    `counted` is the case IDs the critique gave the verdict `counts`; `None` means no
+    critique has judged the design yet, so every case is assumed to count. A single-method
+    `choice` design has no generated case and cannot pass C; a `mixed` design reaches A
+    with two open cases among its five.
+    """
+    cases = [case for case in candidate["cases"] if counted is None or case["case_id"] in counted]
+    generated = sum(answer_form(candidate, case) == "generated" for case in cases)
+    reasons = []
+    if len(cases) < MINIMUM_CASES:
+        reasons.append("insufficient_distinct_cases")
+    if len(cases) < DIRECT_CASES:
+        reasons.append("fewer_than_five_counting_cases")
+    if generated < EXTERNAL_GENERATED:
+        reasons.append("no_generated_case")
+    elif generated < DIRECT_GENERATED:
+        reasons.append("fewer_than_two_generated_cases")
+    if len(cases) >= DIRECT_CASES and generated >= DIRECT_GENERATED:
+        return "A", reasons
+    if len(cases) >= MINIMUM_CASES and generated >= EXTERNAL_GENERATED:
+        return "B", reasons
+    return ("C" if len(cases) >= MINIMUM_CASES else None), reasons
+
+
+def evidence_ceiling(candidate, references, trials, counted=None):
+    """The strongest grade Python's own recorded facts support, with the reasons it stops there.
+
+    The weaker of what the reference supports and what the counting cases allow.
+    """
     origins = [references.get(case["reference_ref"], {}).get("origin") for case in candidate["cases"]]
     pinned = {"retrieved_public_https", "operator_local_resource"}
     # Names the *comparison*, not the subject. The subject of a local run is always a
     # fresh model session and is never deterministic; reading this as a statement about
     # the subject would wrongly make a single trial look sufficient.
-    comparison_deterministic = (candidate["method"] in {"exact", "numeric", "choice"}
+    comparison_deterministic = (candidate["method"] in {"exact", "numeric", "choice", "mixed"}
                                 or all(item["passed"] for item in candidate.get("controls_receipts", [])))
     reasons = []
     if any(origin not in pinned for origin in origins):
@@ -136,22 +187,21 @@ def evidence_ceiling(candidate, references, trials):
         reasons.append("comparison_not_deterministic")
     if not all(token_exact(case) for case in candidate["cases"]):
         reasons.append("expected_value_not_token_exact_in_source")
-    if len(candidate["cases"]) < MINIMUM_CASES:
-        reasons.append("insufficient_distinct_cases")
     if trials < STRONG_TRIALS:
         reasons.append("model_subject_trial_count_below_three")
     blocking = set(reasons)
     if not blocking:
-        ceiling = "A"
+        reference = "A"
     elif blocking <= {"expected_answers_not_independently_retrieved", "scoring_code_authored_by_planner"}:
-        ceiling = "B"
-    elif comparison_deterministic and len(candidate["cases"]) >= MINIMUM_CASES:
+        reference = "B"
+    elif comparison_deterministic:
         # A previously qualified candidate reused offline keeps a reproducible
         # comparison against its pinned quote even when its origin is unrecorded.
-        ceiling = "C"
+        reference = "C"
     else:
-        ceiling = None
-    return ceiling, sorted(blocking)
+        reference = None
+    cases, case_reasons = case_grade(candidate, counted)
+    return weaker(reference, cases), sorted(blocking | set(case_reasons))
 
 
 def proposal_problem(target, ceiling, accepted=None):
@@ -175,6 +225,18 @@ def proposal_problem(target, ceiling, accepted=None):
     return None
 
 
+def counted_cases(critique):
+    """Case IDs the critique counted, or `None` when no critique judged individual cases."""
+    if not critique or critique.get("case_verdicts") is None:
+        return None
+    return [item["case_id"] for item in critique["case_verdicts"] if item["verdict"] == "counts"]
+
+
+def rejected_cases(critique):
+    """Each case the critique did not count, with its verdict, reason and described replacement."""
+    return [item for item in (critique or {}).get("case_verdicts") or [] if item["verdict"] != "counts"]
+
+
 def audit(candidate, claim, settings, selection, references, *, critique=None, rounds=1):
     """Freeze the plan, its evidence ceiling and the critique that settled the grade."""
     problems = []
@@ -187,7 +249,11 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
     # A critique answering D says this execution design supports no execution grade.
     # D is established by the documentary path, never by a comparison record.
     supported = critique["supported_grade"] if critique else None
-    settled = weaker(proposed, supported if supported in ("A", "B", "C") else None)
+    # Python applies the case count itself, so a critique that rejected cases cannot
+    # still settle a grade those rejections leave unsupported.
+    counted = counted_cases(critique)
+    case_ceiling, case_limits = evidence_ceiling(candidate, references, selection["trials_per_case"], counted)
+    settled = weaker(weaker(proposed, supported if supported in ("A", "B", "C") else None), case_ceiling)
     return {
         "kind": "local-plan-audit", "candidate_fingerprint": fingerprint(candidate),
         "selection_digest": digest(canonical(selection)),
@@ -196,6 +262,8 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
         "policy": POLICY, "policy_ref": POLICY_REF,
         "proposed_grade": proposed, "evidence_ceiling": ceiling, "evidence_limits": limits,
         "critique": critique, "critique_rounds": rounds, "settled_ceiling": settled,
+        "counted_cases": counted if counted is not None else [case["case_id"] for case in candidate["cases"]],
+        "case_ceiling": case_ceiling, "case_limits": case_limits,
         "justification": {key: selection[key] for key in PLANNER_JUSTIFICATION},
         "mechanically_accepted": not problems, "problems": problems,
     }
@@ -257,7 +325,9 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
                                    per_case=per_case, counts=counts, trials=trials)
     # Two lists, never merged: a reader must be able to tell a weak reference from a
     # wobbling skill without reading the raw trials.
-    grade_reasons = list(audit_record["evidence_limits"])
+    # The limits over the cases the critique counted, so a grade lowered by rejected cases
+    # says why. An audit written before case verdicts existed has only the proposal's.
+    grade_reasons = list(audit_record.get("case_limits", audit_record["evidence_limits"]))
     if ceiling is None:
         grade_reasons.append("no_supported_execution_grade")
     if synthetic:
@@ -282,7 +352,9 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
         "execution_limit_reasons": sorted(set(execution_reasons)),
         "accuracy": {"matched": counts["pass"], "evaluated": evaluated,
                      "ratio": round(counts["pass"] / evaluated, 4) if evaluated else None},
-        "consistency": {"label": "unanimous" if unanimous == len(per_case) else "split",
+        # With no counted case there is no agreement to report; `unanimous` would claim one.
+        "consistency": {"label": "no_counted_cases" if not per_case
+                        else "unanimous" if unanimous == len(per_case) else "split",
                         "overall_agreement": round(sum(row["agreement"] for row in per_case) / len(per_case), 4)
                         if per_case else None,
                         "unanimous_cases": unanimous, "split_cases": len(per_case) - unanimous},

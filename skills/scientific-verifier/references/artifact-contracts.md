@@ -397,12 +397,14 @@ by the CLI, and distinguish local comparison status from scientific grades.
 
 Version 0.7 adds `local_settings_ref`, `local_catalog_ref`, frozen plan audits and
 source/environment/model pins. A plan audit records the proposed grade, the evidence
-ceiling Python computed with its limiting reasons, the independent critique, the
+ceiling Python computed with its limiting reasons, the independent critique with its
+per-case verdicts, the `counted_cases` and the `case_ceiling` recomputed over them, the
 round number and the settled ceiling; `negotiation_refs` retains every round's audit,
 so the negotiation is readable after the fact. Each trial has request, response and
 score receipts; new or changed files are immutable objects with readable copies in
 that trial's artifact directory. Reports include attempted/obtained/evaluated/
-invalid/missing counts, the settled grade negotiation, required-grade satisfaction
+invalid/missing counts, whether each tested case was counted, the settled grade
+negotiation, required-grade satisfaction
 and independent critique and documentary packet/assessment references. Limitation
 records carry `asserted_by`, distinguishing a planner-ended claim from an observed
 failure. A diagnostic workflow-log pointer

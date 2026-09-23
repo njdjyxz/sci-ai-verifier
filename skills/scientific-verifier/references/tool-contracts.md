@@ -562,7 +562,11 @@ The Local profile matrix in workflow.md governs their legality.
   verbatim, and `expected` is the 1-based number of one. A plain single-case word
   such as `molar` is not a legal `exact` answer, because a subject answering in one
   word naturally capitalises it; it belongs in a `choice`. Only `choice` takes
-  `options`.
+  `options`. A design's `method` is one of those three, applied to every case, or
+  `mixed`, in which every case names its own `method` and is qualified and scored by
+  it. Outside a `mixed` design no case names a method, so each case's method has one
+  source. Mixing lets a design combine open and closed cases, which matters because
+  the case requirements count each case's answer form.
 
   A `choice` needs at least four alternatives plus a reserved final
   `none of these`, which can never be the answer. It is scored wrong like any other
@@ -592,23 +596,31 @@ The Local profile matrix in workflow.md governs their legality.
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
   `stronger_grade_considered`. `coverage` states which cases test what the claim
-  asserts rather than what it is named; a behavioural claim tested only by naming
-  cases lacks the representative cases grade A requires, per `evidence-rubric.md`. Python computes the strongest grade its own recorded
-  facts support for that design. Exactly two proposals are legal: that ceiling, or
-  the grade the last critique of that same design supported. `local_grade_proposal_refused`
+  asserts rather than what it is named. The number and kind of cases each grade
+  needs are owned by "Cases each grade requires" in `evidence-rubric.md`. Python
+  computes the strongest grade its own recorded facts support for that design,
+  counting every case. Exactly two proposals are legal: that ceiling, or the grade
+  the last critique of that same design settled at. `local_grade_proposal_refused`
   names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling` or
   `no_supported_execution_grade` — and spends no session. A permitted proposal starts a
-  fresh independent critique session, which receives earlier reviewers' objections but
-  never their grades, and may only lower the grade.
+  fresh independent critique session, which sees every case with its `case_id` and
+  answer form, receives earlier reviewers' objections and the cases they did not count
+  (verdict, reason, suggested replacement) but never their grades, and may only lower
+  the grade. Python then recomputes the ceiling over the cases the critique
+  counted; the audit records `counted_cases`, that `case_ceiling`, and a settled
+  ceiling that is the weakest of the proposal, the case ceiling and the critique's grade.
   `local_plan_fixed` freezes the plan, its settled ceiling and that critique, and
-  enters local_ready; accepting the grade an unchanged design was already critiqued at
-  settles there directly without a new session, including when that critique supported
-  no grade. `local_grade_revision_required` keeps the claim in local_discovery with the
-  critique's supported grade, objections, required revisions and remaining rounds.
+  enters local_ready; accepting the grade an unchanged design already settled at
+  settles there directly without a new session, including when it settled at no
+  grade. `local_grade_revision_required` keeps the claim in local_discovery with the
+  critique's supported grade, the settled grade, objections, required revisions,
+  `case_replacements` (each rejected case with its verdict, reason and described
+  replacement), remaining rounds and `replacement_rounds_remaining`.
   `local_design_unchanged` refuses a repeated proposal on a design already critiqued,
   spending neither a session nor a round, so only real revisions consume the budget.
-  `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round the
-  critique's grade is settled rather than offered. An unavailable critique is an
+  `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round,
+  or when a critique rejects cases after both replacement rounds are spent, the
+  settled grade is fixed rather than offered. An unavailable critique is an
   operational limitation, never a grade.
 
   The critique and documentary assessment are free-form model replies, so Python
@@ -616,18 +628,27 @@ The Local profile matrix in workflow.md governs their legality.
   holding `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (one string per
   rubric criterion, in that order, and at most eight in total), `objections` and
   `required_revisions` (each a list of at most eight strings, empty when there are
-  none). An assessment returns `status`, `findings`, `citations` and `limitations`,
+  none), and `case_verdicts`: exactly one object per case in the packet, each holding
+  that `case_id`, a `verdict` (one of those defined in `evidence-rubric.md`), a
+  non-empty `reason`, and a `replacement` that is empty for `counts` and otherwise
+  describes a case that would test the claim instead. A replay of a reply recorded
+  under an earlier rubric, which had no case verdicts, is judged without them. An
+  assessment returns `status`, `findings`, `citations` and `limitations`,
   where `limitations` is a single string. Python accepts a Markdown code fence around
   the whole reply, a lone string in place of a one-item `required_revisions` list, and
   findings beyond the rubric's criteria, because none of those changes what the session
   said: the criteria are a floor, so every question is still answered in order and a
   further observation is kept rather than costing the review. Fewer findings than
-  criteria is refused, and so is anything else. A reply outside that shape is
-  `critic_response_invalid` or `assessor_response_invalid` — an operational failure,
-  never a grade and never a scientific finding.
+  criteria is refused, and so is anything else, including a case verdict for a case
+  the packet does not contain or a missing one. Both sessions retry an unusable shape
+  once against the identical packet, per `local-contract.md`. A second reply outside
+  that shape is `critic_response_invalid` or `assessor_response_invalid` — an
+  operational failure, never a grade and never a scientific finding.
 - `execute_local_claim`: in local_ready, run every fixed case for its audited trial count in fresh
   answer-blind subject session, save requests before invocation, and score returned
-  observations. No uncertain trial retries. Produce a result or operational record.
+  observations. Accuracy, consistency, comparison status and scientific status are
+  computed over the audit's `counted_cases`; the result lists the others under
+  `uncounted_cases` with their verdicts, and their observations stay in the receipts. No uncertain trial retries. Produce a result or operational record.
   A provider safety refusal is recorded as `subject_refused`, naming the refusal
   category, and is never retried: the case input is frozen, so the identical request
   refuses again. A refusal reports that the provider would not answer, never that the

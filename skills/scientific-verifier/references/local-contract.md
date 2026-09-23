@@ -61,39 +61,54 @@ both overclaiming and aiming low are refused before any session is spent:
 
 - **A** needs every expected answer quoted token-exactly from reference bytes Python
   itself retrieved over public HTTPS, scored by an installed comparison method, with
-  at least three distinct cases and at least three trials of this model subject.
+  at least three trials of this model subject.
 - **B** allows an operator-imported pinned dataset, or a generated Python evaluator
-  whose controls all pass, under the same case and trial minimums. A planner-authored
-  scorer cannot reach A, because direct validation excludes AI judgment in scoring.
-- **C** covers any reproducible comparison meeting the case minimum, including a
-  single trial, a substring rather than token-exact quote, and a candidate reused
-  offline whose reference origin was never recorded.
-- Failed controls or fewer than three cases support no execution grade.
+  whose controls all pass, with the same trial minimum. A planner-authored scorer
+  cannot reach A, because direct validation excludes AI judgment in scoring.
+- **C** covers any reproducible comparison, including a single trial, a substring
+  rather than token-exact quote, and a candidate reused offline whose reference origin
+  was never recorded.
+- Failed controls support no execution grade.
+
+Those are the reference and trial requirements. Each grade also needs a number and
+kind of counting cases, owned by "Cases each grade requires" in `evidence-rubric.md`.
+The ceiling is the weaker of the two. The local planner receives that section and
+"Negotiating the grade" pinned with its other instructions, since its session cannot
+read files.
 
 A fresh no-tool session then receives the claim, the evidence design, the reference
 provenance, the justification, Python's ceiling, the concerns earlier reviewers raised
-about earlier versions of this design, and the fixed critique rubric. It never sees the
+about earlier versions of this design (their objections and every case they did not
+count, with its verdict, reason and suggested replacement), and the fixed critique rubric. It never sees the
 planning conversation, any subject answer, or any earlier reviewer's grade: objections
 carry forward so a revision can be checked, grades do not, because a reviewer shown a
 previous verdict would anchor on it. That separation is imperfect and is not claimed to
 be complete: an objection such as "three cases cannot support direct validation" implies
 a grade it does not state. Withholding the letter reduces anchoring; it does not remove
-the signal. It returns the strongest grade the evidence
-actually supports. The settled ceiling is the weakest of the proposal, Python's ceiling
-and that critique.
+the signal. It sees every case, each with its ID and answer form, and returns the
+strongest grade the evidence actually supports plus one verdict per case. The settled
+ceiling is the weakest of the proposal, Python's ceiling recomputed over the cases the
+critique counted, and that critique's grade.
 
-When the critique supports less, the planner may strengthen the design and propose the
-new ceiling, which earns another round, or accept the grade that design was critiqued
-at, which settles immediately without another session. Repeating a proposal on a design
-already critiqued is refused and consumes neither a session nor a round, so the budget
-of one round per rubric grade bounds real revisions rather than repetition. Accepting a
-critique that supported no grade settles the plan ungraded: it still executes and
-produces comparison evidence, and the claim continues to the documentary path. An
-unavailable critique is an operational limitation.
+When the settled grade is below the proposal, the planner may strengthen the design and
+propose the new ceiling, which earns another round, or accept the grade that design
+settled at, which settles immediately without another session. Repeating a proposal on
+a design already critiqued is refused and consumes neither a session nor a round, so
+the budget of one round per rubric grade bounds real revisions rather than repetition.
+Rounds whose critique rejected cases are also counted against the two replacement
+rounds in `evidence-rubric.md`; once those are spent, a critique that still rejects
+cases settles the plan. Accepting a design that settled at no grade leaves the plan
+ungraded: it still executes and produces comparison evidence, and the claim continues
+to the documentary path. An unavailable critique is an operational limitation.
+
+A critique reply whose *shape* is unusable is retried once in a second fresh session
+against the identical packet, under the same rule as the documentary assessor below. A
+reply that parses and judges the design is never re-rolled, whatever grade it gives.
 
 The installed policy then requires every planned trial and case to be scored. Missing
 observations are operational. Invalid observations remain counted and prevent an
-A/B/C grade. Scored-status agreement must be unanimous within each case for a grade;
+A/B/C grade. Only counting cases enter accuracy, consistency and status; the others
+still run and are reported with their verdicts. Scored-status agreement must be unanimous within each case for a grade;
 unanimous failure is as eligible as unanimous success. The achieved grade is the
 settled ceiling, or none when any of those conditions fails. The verdict is pass only
 if all scored trials pass, fail if at least one fails and none is invalid, and
@@ -217,7 +232,13 @@ Authentication requires user setup; the verifier does not extract saved secrets.
 
 `.verifier/candidates/` holds immutable qualified configurations and private
 reference evidence. `.verifier/subject-runs/` holds sanitized execution receipts;
-temporary executable workspaces are removed after each process.
+temporary executable workspaces are removed after each process. On Windows a child
+process can hold a file briefly after its parent exits, so removal is retried for a
+bounded time; a directory that still cannot be removed is logged as
+`temporary_cleanup_incomplete` with its path, and never turns a completed run into a
+failed one. Each verification then starts by removing this verifier's own
+`sci-verifier-*` temporary directories older than a day, logged as
+`stale_temporary_swept`; nothing younger is touched, so a run in progress is never swept.
 Configured candidate bundles are fetched by exact digest, requalified and cached
 under `.verifier/catalog-cache/` for offline reuse. They contain candidates and
 their referenced objects only. Imported review assertions never confer scientific

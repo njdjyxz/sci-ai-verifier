@@ -34,13 +34,26 @@ CRITIC_RECORDINGS = {"critic-fenced-revision-list.jsonl": ("B", 5, True),
                      "critic-extra-finding.jsonl": ("A", 0, False)}
 # Streams that are not critic replies, exercised by their own tests.
 OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl"]
-# Every critic recording answered rubric v2, which had five criteria; v3 appended a sixth.
-# A reply is judged against the rubric it was answering -- judging it against a later one
-# would fail real replies for a question nobody had asked them. Criteria are append-only,
-# so v2 is v3's prefix, and the digest below is v2's CRITIQUE_REF taken before v3 existed:
-# it proves this reconstruction is the exact rubric those sessions saw, not an approximation.
-ANSWERED = {**CRITIQUE_RUBRIC, "id": "local-evidence-critique-v2", "criteria": CRITIQUE_RUBRIC["criteria"][:5]}
+# Every critic recording answered rubric v2, which had five criteria; v3 appended a sixth,
+# and v4 added the per-case verdict keys. A reply is judged against the rubric it was
+# answering -- judging it against a later one would fail real replies for a question nobody
+# had asked them. Criteria are append-only and v4 only added keys, so each earlier rubric is
+# reconstructed from the live one, and the digests below were taken before the later
+# versions existed: they prove each reconstruction is the exact rubric those sessions saw.
+V4_KEYS = ("case_verdicts", "case_requirements", "case_replacement")
+BEFORE_V4 = {key: value for key, value in CRITIQUE_RUBRIC.items() if key not in V4_KEYS}
+ANSWERED = {**BEFORE_V4, "id": "local-evidence-critique-v2", "criteria": CRITIQUE_RUBRIC["criteria"][:5]}
 ANSWERED_REF = "91f33b72c208817675e458838093f10c73d156067e64d10e299509fe8feacd36"
+# v3 as run d87a6d5c recorded it on all five of its critiques.
+V3 = {**BEFORE_V4, "id": "local-evidence-critique-v3"}
+V3_REF = "07140328e5a3cbdd4eec803717fa0c71e0b05c0c5394d4f73b72b1f581c8663e"
+# v4 as run 28d19f8a recorded it on all five of its critiques. v5 changed only the wording
+# of the `duplicate` verdict, so restoring that one definition must give v4's exact digest.
+V4 = {**CRITIQUE_RUBRIC, "id": "local-evidence-critique-v4",
+      "case_verdicts": {**CRITIQUE_RUBRIC["case_verdicts"],
+                        "duplicate": "Tests the same fact as an earlier case in this design, so it adds no "
+                                     "independent evidence; the reason names that earlier case, which keeps its own verdict"}}
+V4_REF = "be80e6974bde1cb6c02de6145b1cffe87ef0505a16b45a4f0fb736eee8956a14"
 
 
 def recorded(name):
@@ -124,12 +137,22 @@ class RecordedReplyTests(unittest.TestCase):
     def test_the_rubric_the_recordings_answered_is_reconstructed_exactly(self):
         """If this fails, a criterion was inserted or reordered rather than appended."""
         self.assertEqual(digest(canonical(ANSWERED)), ANSWERED_REF)
+        self.assertEqual(digest(canonical(V3)), V3_REF)
+        self.assertEqual(digest(canonical(V4)), V4_REF)
 
     def test_the_live_rubric_refuses_real_replies_that_never_judged_case_scope(self):
         """The scope criterion is enforced, not advisory. These three real critiques answered
         every question v2 asked and nothing about whether their cases stayed inside the claim;
         under v3 that is an unanswered criterion, so each is an operational failure, not a
         grade. Their rejection is the point of this test, not a regression."""
+        for name in ("critic-fenced-revision-list.jsonl", "critic-fenced-revision-list-2.jsonl",
+                     "critic-bare-empty-revisions.jsonl"):
+            with self.subTest(recording=name, rubric="v3"):
+                raw = recorded(name)
+                text = parse_events(raw, expected_session=session_of(raw))["text"]
+                with self.assertRaises(Fault) as caught:
+                    validate_critique(parse_reply(text), V3)
+                self.assertEqual(caught.exception.code, "critic_response_invalid")
         for name in ("critic-fenced-revision-list.jsonl", "critic-fenced-revision-list-2.jsonl",
                      "critic-bare-empty-revisions.jsonl"):
             with self.subTest(recording=name):
@@ -145,13 +168,13 @@ class RecordedReplyTests(unittest.TestCase):
         v3 scope criterion, found by a real reviewer before it existed. Findings map by
         position, so under v3 its sixth finding is the answer to the sixth criterion."""
         raw = recorded("critic-extra-finding.jsonl")
-        value = validate_critique(parse_reply(parse_events(raw, expected_session=session_of(raw))["text"]))
+        value = validate_critique(parse_reply(parse_events(raw, expected_session=session_of(raw))["text"]), V3)
         self.assertEqual(len(value["findings"]), len(CRITIQUE_RUBRIC["criteria"]))
         self.assertIn("test facts the claim does not print", value["findings"][len(CRITIQUE_RUBRIC["criteria"]) - 1])
 
     def test_fewer_findings_than_criteria_is_still_refused(self):
         """Tolerating an extra answer must not tolerate an unanswered criterion."""
-        short = {"supported_grade": "A", "objections": [], "required_revisions": [],
+        short = {"supported_grade": "A", "objections": [], "required_revisions": [], "case_verdicts": [],
                  "findings": ["f"] * (len(CRITIQUE_RUBRIC["criteria"]) - 1)}
         with self.assertRaises(Fault) as caught:
             validate_critique(short)
@@ -214,7 +237,9 @@ class ReplyShapeTests(unittest.TestCase):
 
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(CRITIQUE_RUBRIC["criteria"]),
-                "objections": [], "required_revisions": [], **changes}
+                "objections": [], "required_revisions": [],
+                "case_verdicts": [{"case_id": "c1", "verdict": "counts", "reason": "in scope", "replacement": ""}],
+                **changes}
 
     def test_fence_around_a_whole_reply_is_the_same_answer(self):
         for text in ('{"a": 1}', '```json\n{"a": 1}\n```', '```\n{"a": 1}\n```',
@@ -250,6 +275,35 @@ class ReplyShapeTests(unittest.TestCase):
 
     def test_none_becomes_an_absent_grade_not_the_string_none(self):
         self.assertIsNone(validate_critique(self.base(supported_grade="none"))["supported_grade"])
+
+    def verdict(self, case_id, verdict="counts", replacement=""):
+        return {"case_id": case_id, "verdict": verdict, "reason": "because", "replacement": replacement}
+
+    def test_every_packet_case_gets_one_verdict_returned_in_packet_order(self):
+        given = [self.verdict("c2", "leaked", "Ask it without naming the function."), self.verdict("c1")]
+        value = validate_critique(self.base(case_verdicts=given), case_ids=["c1", "c2"])
+        self.assertEqual([item["case_id"] for item in value["case_verdicts"]], ["c1", "c2"])
+        # `null` for a counting case's replacement is the empty description it meant.
+        value = validate_critique(self.base(case_verdicts=[{**self.verdict("c1"), "replacement": None}]),
+                                  case_ids=["c1"])
+        self.assertEqual(value["case_verdicts"][0]["replacement"], "")
+
+    def test_case_verdicts_that_do_not_match_the_packet_are_refused(self):
+        rejected = self.verdict("c2", "beyond_scope", "Ask what the claim states.")
+        for label, given in (("missing case", [self.verdict("c1")]),
+                             ("unknown case", [self.verdict("c1"), self.verdict("c9")]),
+                             ("duplicate", [self.verdict("c1"), self.verdict("c1"), rejected]),
+                             ("unknown verdict", [self.verdict("c1"), self.verdict("c2", "fine")]),
+                             ("rejected without replacement", [self.verdict("c1"), self.verdict("c2", "naming")]),
+                             ("counted with replacement", [self.verdict("c1", replacement="x"), rejected]),
+                             ("empty reason", [{**self.verdict("c1"), "reason": " "}, rejected]),
+                             ("extra key", [{**self.verdict("c1"), "grade": "A"}, rejected]),
+                             ("not a list", "all count")):
+            with self.subTest(label), self.assertRaises(Fault) as caught:
+                validate_critique(self.base(case_verdicts=given), case_ids=["c1", "c2"])
+            self.assertEqual(caught.exception.code, "critic_response_invalid")
+        with self.assertRaises(Fault):
+            validate_critique({key: value for key, value in self.base().items() if key != "case_verdicts"})
 
 
 if __name__ == "__main__":

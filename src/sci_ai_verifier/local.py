@@ -51,8 +51,10 @@ def schemas(base, obj, string):
     # the 1-based number of one. Optional, so open numeric and token cases are unchanged.
     fields = {"case_id": string(80), "input": string(8000), "expected": string(4000),
               "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000),
-              "options": {"type": "array", "minItems": MINIMUM_OPTIONS, "maxItems": 9, "items": string(4000)}}
-    case = obj(fields, required=[key for key in fields if key != "options"])
+              "options": {"type": "array", "minItems": MINIMUM_OPTIONS, "maxItems": 9, "items": string(4000)},
+              # Only in a `mixed` design, where each case names its own installed method.
+              "method": choice(("exact", "numeric", "choice"), 20)}
+    case = obj(fields, required=[key for key in fields if key not in ("options", "method")])
     return {
         "list_local_candidates": obj(claim),
         "fetch_local_reference": obj({**claim, "url": string(4096), "version": string(200), "license": string(2000)}),
@@ -240,21 +242,30 @@ def prior_objections(history):
 
     Grades are withheld deliberately. A new reviewer told that the last one said C has
     an easy answer available, which is the anchoring the fresh session exists to avoid.
-    The concerns themselves are what a revision has to answer, so those carry forward.
+    The concerns themselves are what a revision has to answer, so those carry forward,
+    including every case an earlier reviewer did not count: without it, the next reviewer
+    cannot tell whether the replacements answer what was wrong with the cases they replaced.
     They come from Python's stored audits, so the planner cannot restate them.
     """
+    from .local_science import rejected_cases
     found = []
     for record in history:
-        for objection in (record.get("critique") or {}).get("objections", []):
-            if objection not in found:
-                found.append(objection)
-    return found[:12]
+        critique = record.get("critique") or {}
+        concerns = list(critique.get("objections", []))
+        concerns += ["An earlier version's case " + item["case_id"] + " was not counted (" + item["verdict"]
+                     + "): " + item["reason"] + " Suggested replacement: " + item["replacement"]
+                     for item in rejected_cases(critique)]
+        for concern in concerns:
+            if concern not in found:
+                found.append(concern)
+    # Keep the most recent: the latest round's concerns are what the new design must answer.
+    return found[-16:]
 
 
 def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=()):
     """The bounded packet a fresh session sees: the design and its facts, no planning."""
     from .documentary import CRITIQUE_RUBRIC
-    from .local_science import PLANNER_JUSTIFICATION
+    from .local_science import PLANNER_JUSTIFICATION, answer_form
 
     def clip(text, size=800):
         return text if len(text) <= size else text[:size] + " [truncated]"
@@ -272,11 +283,19 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                          "case_count": len(candidate["cases"]), "trials_per_case": trials,
                          "absolute_tolerance": candidate.get("absolute_tolerance"),
                          "references": [sources[key] for key in sorted(sources)],
-                         "cases_shown": min(len(candidate["cases"]), 6),
-                         "cases": [{"input": clip(case["input"]), "expected": clip(case["expected"]),
+                         # Every case, because each one gets a verdict. Showing the first six
+                         # left cases seven to twelve of a larger design unreviewed.
+                         # Inputs get a wider clip and options travel separately: a choice
+                         # lists its options at the end of its input and its expected value is
+                         # only an index, so a clipped input left the verdict unjudgeable.
+                         "cases": [{"case_id": case["case_id"], "answer_form": answer_form(candidate, case),
+                                    "input": clip(case["input"], 2000),
+                                    **({"options": [clip(option, 400) for option in case["options"]]}
+                                       if case.get("options") else {}),
+                                    "expected": clip(case["expected"]),
                                     "source_quote": clip(case["source_quote"]),
                                     "applicability": clip(case["applicability"])}
-                                   for case in candidate["cases"][:6]]},
+                                   for case in candidate["cases"]]},
             "justification": {key: clip(args[key], 2000) for key in PLANNER_JUSTIFICATION},
             "python_checked": {"evidence_ceiling": ceiling, "evidence_limits": limits,
                                "note": "Python already verified that every expected answer is quoted exactly "
@@ -284,21 +303,17 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                                        "fit for this claim at the proposed grade. Python counts cases and "
                                        "cannot weigh them: a function name, a scientific value and a fact "
                                        "the claim never states are the same shape once quoted, so whether "
-                                       "each case tests exactly what the claim asserts is decided here, "
-                                       "under the rubric's last criterion. A case that only recites naming "
-                                       "for a behavioural claim tests less than the claim; a case asking "
-                                       "about a consequence the claim never states tests more, and a subject "
-                                       "applying the skill can answer it only from the base model's own "
-                                       "knowledge or not at all. Neither counts toward the representative "
-                                       "cases grade A requires. Lowering the grade is what returns the "
-                                       "design to the planner for better cases, so a finding that does not "
-                                       "move the grade changes nothing."}}
+                                       "each case counts is decided here, in case_verdicts. Python then "
+                                       "recomputes the ceiling over the cases you count, under "
+                                       "rubric.case_requirements, and returns every rejected case with your "
+                                       "described replacement to the planner."}}
 
 
 def select(store, state, claim_id, work, args, subject):
     """Freeze one plan and settle its grade: propose, critique, then fix or ask for a revision."""
-    from .local_science import (MAX_ROUNDS, PLANNER_JUSTIFICATION, audit, environment_digest,
-                                evidence_ceiling, fingerprint, proposal_problem, weaker)
+    from .local_science import (MAX_ROUNDS, PLANNER_JUSTIFICATION, REPLACEMENT_ROUNDS, audit,
+                                environment_digest, evidence_ceiling, fingerprint, proposal_problem,
+                                rejected_cases)
     key = args["candidate_ref"]
     allowed = {value["candidate_ref"] for value in store.get_json(work["lookup_ref"])["candidates"]}
     if key not in allowed | set(work["candidate_refs"]):
@@ -310,24 +325,25 @@ def select(store, state, claim_id, work, args, subject):
     ceiling, limits = evidence_ceiling(candidate, references, trials)
     history = [store.get_json(item) for item in work.setdefault("negotiation_refs", [])]
     identity = fingerprint(candidate)
-    # The last critique of *this exact design* is the only grade below the ceiling the
-    # planner may accept. A critique of a design since revised says nothing about this one.
-    settled = next((record["critique"] for record in reversed(history)
-                    if record["candidate_fingerprint"] == identity and record.get("critique")), None)
-    # Clamped to the ceiling: a critique naming something stronger than the facts support
-    # is still capped, and an uncapped value here would leave the design unselectable.
-    # A critique supporting D or none says the design supports no *execution* grade, and
-    # audit() already reads it that way; acceptance must too. Only A, B and C can be
-    # proposed, so an accepted "D" left a no-grade design unselectable: the planner of run
-    # b43780be could neither accept the verdict nor run the plan, only abandon it.
-    supported = settled["supported_grade"] if settled else None
-    accepted = weaker(ceiling, supported) if supported in ("A", "B", "C") else None
+    # The grade the last critique of *this exact design* settled at is the only grade below
+    # the ceiling the planner may accept. A critique of a design since revised says nothing
+    # about this one.
+    previous = next((record for record in reversed(history)
+                     if record["candidate_fingerprint"] == identity and record.get("critique")), None)
+    settled = previous["critique"] if previous else None
+    # The audit's settled ceiling is already the weakest of the proposal, the ceiling over
+    # the cases the critique counted, and its grade, so it is clamped to the ceiling. A
+    # critique supporting D or none leaves it `None`: the design supports no *execution*
+    # grade, and acceptance reads it that way. Only A, B and C can be proposed, so an
+    # accepted "D" left a no-grade design unselectable: the planner of run b43780be could
+    # neither accept the verdict nor run the plan, only abandon it.
+    accepted = previous["settled_ceiling"] if previous else None
     problem = proposal_problem(args["target_grade"], ceiling, accepted)
     if problem:
         # Refuse before spending a critique session, and leave the claim in discovery so
         # strengthening the design or proposing the ceiling is the next ordinary step.
         if accepted:
-            tail = ", or accept " + accepted + " as its last critique concluded."
+            tail = ", or accept " + accepted + " as its last critique settled."
         elif settled and ceiling:
             tail = (". Its last critique supported no execution grade; proposing " + ceiling + " accepts "
                     "that, and the plan still runs to produce ungraded comparison evidence before the "
@@ -354,13 +370,13 @@ def select(store, state, claim_id, work, args, subject):
         # loop: no session and no round are spent on an unchanged design.
         return {"outcome": "local_design_unchanged", "candidate_ref": key,
                 "objections": prior_objections(history),
-                "message": "This design was already critiqued and supported " + accepted
+                "message": "This design was already critiqued and settled at " + accepted
                            + ". Change the evidence to justify more, or propose " + accepted + "."}
     elif rounds > MAX_ROUNDS:
         return {"outcome": "local_grade_rounds_exhausted", "candidate_ref": key,
                 "rounds_used": len(history), "objections": prior_objections(history),
                 "message": "The negotiation budget for this claim is spent. Reselect a design that "
-                           "was already critiqued and accept the grade it supported."}
+                           "was already critiqued and accept the grade it settled at."}
     else:
         packet = critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                                  prior_objections(history))
@@ -388,15 +404,23 @@ def select(store, state, claim_id, work, args, subject):
     work["negotiation_refs"].append(work["audit_ref"])
     if not audit_record["mechanically_accepted"]:
         return {"outcome": "local_audit_rejected", "audit": audit_record}
+    # Two revisions may be spent replacing cases the critique did not count. A third
+    # critique that still rejects cases settles the grade the counting cases support.
+    rejected = rejected_cases(critique) if critique and not accepting else []
+    replacements_used = sum(1 for record in history if rejected_cases(record.get("critique")))
+    replacements_spent = bool(rejected) and replacements_used >= REPLACEMENT_ROUNDS
     if (critique and not accepting and audit_record["settled_ceiling"] != args["target_grade"]
-            and rounds < MAX_ROUNDS):
+            and rounds < MAX_ROUNDS and not replacements_spent):
         # Strengthen the evidence and propose the new ceiling, or accept this grade.
-        # On the last round the critique's grade is settled instead of offered.
+        # On the last round the settled grade is fixed instead of offered.
         return {"outcome": "local_grade_revision_required", "audit": audit_record,
                 "supported_grade": critique["supported_grade"],
+                "settled_grade": audit_record["settled_ceiling"],
                 "objections": critique["objections"],
                 "required_revisions": critique["required_revisions"],
-                "rounds_remaining": MAX_ROUNDS - rounds}
+                "case_replacements": rejected,
+                "rounds_remaining": MAX_ROUNDS - rounds,
+                "replacement_rounds_remaining": REPLACEMENT_ROUNDS - replacements_used - bool(rejected)}
     state["claim_states"][claim_id] = "local_ready"
     return {"outcome": "local_plan_fixed", "candidate": candidate,
             "selection_ref": work["selection_ref"], "audit": audit_record}
@@ -415,7 +439,7 @@ def check_reference_host(settings,url):
 
 def compare(candidate,case,text,settings,subject,artifacts=None):
     if candidate["method"]!="python":
-        return catalog.compare(candidate["method"],text,case["expected"])
+        return catalog.compare(catalog.case_method(candidate,case),text,case["expected"])
     from .local_evaluators import score
     return score(candidate,case,text,settings,log=getattr(subject,"log",None),artifacts=artifacts)["status"]
 
@@ -606,14 +630,24 @@ def execute(store, state, claim_id, subject):
         receipts.append(score_ref)
         atomic_write(directory/f"{index:03}-score.json",canonical(scored))
         observations.append(scored)
+    # Cases the critique did not count ran and stay in the receipts, but a case measuring
+    # something other than the claim cannot pass or fail it. An audit written before case
+    # verdicts existed counted every case.
+    from .local_science import decide, rejected_cases
+    counted = audit_record.get("counted_cases")
+    counted = set(counted if counted is not None else (case["case_id"] for case in candidate["cases"]))
+    cases = [case for case in candidate["cases"] if case["case_id"] in counted]
+    scored = [row for row in observations if row["case_id"] in counted]
     result = {"kind": "local-comparison", "claim_id": claim_id, "candidate_ref": work["candidate_ref"],
               "selection_ref": work["selection_ref"], "observations": observations, "receipts": receipts,
-              "comparison_status": "invalid" if any(row["comparison_status"] == "invalid" for row in observations)
-              else "pass" if all(row["comparison_status"] == "pass" for row in observations) else "fail",
+              "comparison_status": "no_counted_cases" if not scored
+              else "invalid" if any(row["comparison_status"] == "invalid" for row in scored)
+              else "pass" if all(row["comparison_status"] == "pass" for row in scored) else "fail",
+              "uncounted_cases": [{key: item[key] for key in ("case_id", "verdict", "reason")}
+                                  for item in rejected_cases(audit_record.get("critique"))],
               "scientific_status": None, "evidence_grade": None, "synthetic": subject.identity["synthetic"],
               "limitations": candidate["qualification_limitations"] + [candidate["limitations"]]}
-    from .local_science import decide
-    result.update(decide(audit_record,observations,candidate["cases"],trials,synthetic=subject.identity["synthetic"]))
+    result.update(decide(audit_record,scored,cases,trials,synthetic=subject.identity["synthetic"]))
     work["result_ref"] = keep(store, state, result)
     needs_documentary=not result["evidence_grade"] and settings["documentary_assessment"]
     state["claim_states"][claim_id] = "local_documentary" if needs_documentary else "terminal_result"
@@ -677,6 +711,8 @@ def report(store, state):
         responses = [store.get_json(key) for key in terminal["receipts"]]
         answers = {(item["case_id"],item.get("trial",1)): item for item in responses if item.get("request_ref") and "text" in item}
         tests, sources = [], {}
+        audit_record = store.get_json(work["audit_ref"]) if work.get("audit_ref") else None
+        counted = (audit_record or {}).get("counted_cases")
         if candidate:
             trials=store.get_json(work["selection_ref"])["trials_per_case"] if work.get("selection_ref") else 1
             for case,trial in ((case,trial) for case in candidate["cases"] for trial in range(1,trials+1)):
@@ -689,6 +725,7 @@ def report(store, state):
                               "comparison_status": next((item["comparison_status"] for item in responses if item.get("case_id")==case["case_id"] and item.get("trial",1)==trial and "comparison_status" in item),"not_obtained"),
                               "reference_ref": case["reference_ref"], "reference_quote": case["source_quote"],
                               "applicability": case["applicability"],
+                              "counted": counted is None or case["case_id"] in counted,
                               "session_id": observed.get("session_id") if observed else None,
                               "observed_model_ids": observed.get("observed_model_ids", []) if observed else []})
         execution_counts={"planned":len(tests),"attempted":sum(item.get("kind")=="local-subject-request" for item in responses),
@@ -699,7 +736,7 @@ def report(store, state):
         meets_required=None if required_grade is None else bool(achieved in {"A","B","C","D"} and "ABCD".index(achieved)<= "ABCD".index(required_grade))
         rows.append({"claim": claim, "record": terminal, "tests": tests, "references": sources,"execution_counts":execution_counts,
                      "required_grade":required_grade,"meets_required_grade":meets_required,
-                     "audit":store.get_json(work["audit_ref"]) if work.get("audit_ref") else None,
+                     "audit":audit_record,
                      "documentary_assessment":store.get_json(work["assessment_ref"]) if work.get("assessment_ref") else None,
                      "candidate_scope": candidate["scope"] if candidate else None})
         lines.extend(["## " + cell(claim["statement"]), "",
@@ -708,7 +745,8 @@ def report(store, state):
         lines.extend(axis_lines(terminal, cell))
         if required_grade:
             lines.extend(["Required grade: "+required_grade+"; requirement "+("met" if meets_required else "not met"),""])
-        lines.extend(["Trials: "+"; ".join(key+" "+str(value) for key,value in execution_counts.items())+".",""])
+        # Every tested case, counted or not; completeness above covers the counted cases only.
+        lines.extend(["Trials run, every tested case: "+"; ".join(key+" "+str(value) for key,value in execution_counts.items())+".",""])
         if work.get("audit_ref"):
             # `.get` throughout: a run saved before the grade negotiation existed must stay
             # readable, and reporting an old record as "unrecorded" beats refusing to report.
@@ -716,9 +754,13 @@ def report(store, state):
             justification=settled.get("justification",{})
             lines.extend(["Proposed grade: "+cell(settled.get("proposed_grade") or "unrecorded")+"; evidence ceiling: "
                           +cell(settled.get("evidence_ceiling") or "none")+"; settled: "+cell(settled.get("settled_ceiling") or "none")
-                          +" after "+str(settled.get("critique_rounds",0))+" critique round(s).",""])
-            if settled.get("evidence_limits"):
-                lines.extend(["Grade limited by: "+cell(", ".join(settled["evidence_limits"]))+".",""])
+                          +" after "+str(settled.get("critique_rounds",0))+" critique round(s)"
+                          +("; ceiling over counted cases: "+cell(settled.get("case_ceiling") or "none") if "case_ceiling" in settled else "")
+                          +".",""])
+            # Over the counted cases when a critique judged them, so rejected cases show here.
+            limits=settled.get("case_limits",settled.get("evidence_limits"))
+            if limits:
+                lines.extend(["Grade limited by: "+cell(", ".join(limits))+".",""])
             for label,field in (("Coverage","coverage"),("Uncertainty","uncertainty"),
                                 ("Oracle independence","oracle_independence")):
                 lines.extend([label+": "+cell(justification.get(field,"unrecorded")),""])
@@ -727,15 +769,19 @@ def report(store, state):
                               +cell(settled["critique"]["supported_grade"] or "none")+":",""])
                 lines.extend("- "+cell(finding) for finding in settled["critique"]["findings"])
                 lines.extend("- Objection: "+cell(item) for item in settled["critique"]["objections"])
+                lines.extend("- Case "+cell(item["case_id"])+" not counted ("+cell(item["verdict"])+"): "+cell(item["reason"])
+                             +" Suggested replacement: "+cell(item["replacement"])
+                             for item in settled["critique"].get("case_verdicts") or [] if item["verdict"]!="counts")
                 lines.append("")
             else:
                 lines.extend(["No independent critique ran for this plan; no grade is assigned.",""])
         if terminal.get("asserted_by")=="planner":
             lines.extend(["This claim was ended by the planner, not by an observed execution failure.",""])
         if tests:
-            lines.extend(["| Input | Expected | Observed | Comparison | Case | Trial |", "| --- | --- | --- | --- | --- | --- |"])
+            lines.extend(["| Input | Expected | Observed | Comparison | Case | Trial | Counted |", "| --- | --- | --- | --- | --- | --- | --- |"])
             for case in tests:
-                lines.append("| " + " | ".join(cell(case[key]) for key in ("input", "expected", "observed", "comparison_status","case_id","trial")) + " |")
+                lines.append("| " + " | ".join(cell(case[key]) for key in ("input", "expected", "observed", "comparison_status","case_id","trial"))
+                             + " | " + ("yes" if case["counted"] else "no") + " |")
             if any(case["artifacts"] for case in tests):
                 from urllib.parse import quote
                 from pathlib import Path

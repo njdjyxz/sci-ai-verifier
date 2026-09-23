@@ -18,7 +18,10 @@ from sci_ai_verifier.mcp import Server
 
 ROOT = Path(__file__).resolve().parents[1]
 QUOTE = "The skill returns a plain decimal for each reference-table query."
-REFERENCE = "Independent fixture reference: alpha is 1.0, beta is 2.0, gamma is 3.0."
+REFERENCE = "Independent fixture reference: alpha is 1.0, beta is 2.0, gamma is 3.0, zeta is 4.0, eta is 5.0."
+# Three rows suffice for C; grade A needs five counting cases, per evidence-rubric.md.
+ROWS = ("alpha", "beta", "gamma")
+FIVE_ROWS = ROWS + ("zeta", "eta")
 
 
 class Subject:
@@ -36,7 +39,7 @@ class Subject:
             raise KeyboardInterrupt()
         if self.mode == "unavailable":
             raise Fault("claude_unavailable", "Unavailable fixture")
-        answer = {"alpha": "1.0", "beta": "2.0", "gamma": "3.0"}[request["case_input"]["input"]]
+        answer = {"alpha": "1.0", "beta": "2.0", "gamma": "3.0", "zeta": "4.0", "eta": "5.0"}[request["case_input"]["input"]]
         observation = {"text": "999" if self.mode == "wrong" else answer,
                        "response_id": "synthetic-" + str(len(self.requests)), "model_id": "synthetic",
                        "invocation_verified": self.mode != "unverified", "synthetic": True}
@@ -76,7 +79,7 @@ class LocalTests(unittest.TestCase):
         self.claims = self.data["manifest"]["claims"]
         self.claim_id = self.claims[0]["claim_id"] if self.claims else None
 
-    def candidate(self, *, lookup=True, **overrides):
+    def candidate(self, *, lookup=True, rows=ROWS, **overrides):
         # Lookup is legal only in local_lookup, so a second qualification skips it and
         # reuses the reference this claim already retrieved.
         if lookup:
@@ -89,7 +92,7 @@ class LocalTests(unittest.TestCase):
                      "limitations": "Fictional reference demonstrates mechanics only.",
                      "cases": [{"case_id": name, "input": name, "expected": str(index)+".0", "reference_ref": reference_ref,
                                 "source_quote": REFERENCE, "applicability": "Fixture table row"}
-                               for index, name in enumerate(("alpha", "beta", "gamma"), 1)]}
+                               for index, name in enumerate(rows, 1)]}
         arguments.update(overrides)
         self.call("qualify_local_candidate", **arguments)
         return self.data["candidate_ref"]
@@ -323,6 +326,42 @@ class LocalTests(unittest.TestCase):
         with self.assertRaises(Fault) as caught:
             qualify(proposal, {self.reference_ref: {"text": REFERENCE}})
         self.assertEqual(caught.exception.code, "invalid_arguments")
+
+    def mixed_cases(self):
+        open_rows = [{**case, "method": "numeric"} for case in self.rows("1.0", count=2)]
+        closed = [{**case, "case_id": "closed-%d" % index, "method": "choice"}
+                  for index, case in enumerate(self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))]
+        return open_rows + closed
+
+    def test_a_mixed_design_names_a_method_on_every_case_and_only_there(self):
+        self.reference()
+        self.candidate(lookup=False, method="mixed", cases=self.mixed_cases())
+        self.assertEqual(self.data["outcome"], "qualified_local")
+        # Numeric and choice controls each ran on their own cases.
+        checks = [control["positive_negative_boundary_checks"] for control in self.data["candidate"]["controls"]]
+        self.assertEqual(checks, [9, 9, 10, 10, 10])
+        self.assertEqual(self.data["candidate"]["absolute_tolerance"], "0.000001")
+        unnamed = self.mixed_cases()
+        del unnamed[0]["method"]
+        stray = [{**case, "method": "numeric"} for case in self.rows("1.0")]
+        for method, cases in (("mixed", unnamed), ("numeric", stray)):
+            with self.subTest(method=method):
+                self.candidate(lookup=False, method=method, cases=cases)
+                self.assertEqual(self.data["outcome"], "rejected")
+                self.assertTrue(any("mixed design every case names its method" in problem
+                                    for problem in self.data["candidate"]["qualification_problems"]))
+
+    def test_each_case_of_a_mixed_design_is_scored_by_its_own_method(self):
+        from sci_ai_verifier.local import compare
+        self.reference()
+        self.candidate(lookup=False, method="mixed", cases=self.mixed_cases())
+        candidate = self.data["candidate"]
+        numeric, closed = candidate["cases"][0], candidate["cases"][2]
+        # "1" is the right number for the open case and the right option for the closed one;
+        # "1.0000001" is only a number, so as an option index it fails rather than passing.
+        self.assertEqual(compare(candidate, numeric, "1.0000001", {}, None), "pass")
+        self.assertEqual(compare(candidate, closed, "1.0000001", {}, None), "fail")
+        self.assertEqual(compare(candidate, closed, "1", {}, None), "pass")
 
     def test_only_the_choice_method_takes_options(self):
         self.reference()

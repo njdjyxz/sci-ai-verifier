@@ -164,6 +164,16 @@ def presentation_probes(answer):
             ("The answer is %s" % answer, "invalid")]
 
 
+INSTALLED_METHODS = ("exact", "numeric", "choice")
+
+
+def case_method(candidate, case):
+    """The comparison a case is scored with. A `mixed` design names one per case; any
+    other design names one for all of them, and its cases carry none, so each case has
+    exactly one source for its method."""
+    return case.get("method") if candidate["method"] == "mixed" else candidate["method"]
+
+
 def compare(method, actual, expected):
     if method == "exact":
         # Never normalized: `_` and `*` are content here -- `rgroup_label`, SMARTS `[*]`.
@@ -209,9 +219,9 @@ def qualify(proposal, references):
     validate({**proposal,"claim_id":"candidate"},schemas({},obj,string)["qualify_local_candidate"])
     safe_payload(proposal)
     problems, controls = [], []
-    method = proposal["method"]
-    if method not in {"exact", "numeric", "choice"}:
-        problems.append("Only installed exact, numeric and choice comparison methods are available.")
+    design = proposal["method"]
+    if design not in {*INSTALLED_METHODS, "mixed"}:
+        problems.append("Only installed exact, numeric and choice comparison methods, or a mixed design of them, are available.")
     if len({case["input"] for case in proposal["cases"]}) != len(proposal["cases"]):
         problems.append("Case inputs must be distinct.")
     for case in proposal["cases"]:
@@ -222,7 +232,11 @@ def qualify(proposal, references):
         if not trimmed:
             problems.append("Expected answers cannot be blank.")
             continue
-        if method not in {"exact", "numeric", "choice"}:
+        if (design == "mixed") != ("method" in case):
+            problems.append("In a mixed design every case names its method; in any other design no case does.")
+            continue
+        method = case_method(proposal, case)
+        if method not in INSTALLED_METHODS:
             continue
         if method != "choice" and options:
             problems.append("Only the choice method takes options; an open answer is compared directly.")
@@ -295,7 +309,9 @@ def qualify(proposal, references):
             "status": "rejected" if problems else "qualified_local",
             "scientific_approval": "provisional", "qualification_problems": sorted(set(problems)),
             "controls": controls, "qualification_limitations": QUALIFICATION_LIMITS,
-            "qualified_at": utc_now(), "absolute_tolerance": str(TOLERANCE) if method == "numeric" else None}
+            "qualified_at": utc_now(),
+            "absolute_tolerance": str(TOLERANCE) if any(case_method(proposal, case) == "numeric"
+                                                        for case in proposal["cases"]) else None}
 
 
 def save_candidate(store, candidate):

@@ -12,7 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
 from sci_ai_verifier.common import Fault
 from sci_ai_verifier.local_science import (GRADES,MAX_ROUNDS,POLICY_REF,audit,decide,evidence_ceiling,
                                            proposal_problem,weaker)
-from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC,RUBRIC,assess,validate_assessment,
+from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC,RUBRIC,assess,critique,validate_assessment,
                                          validate_critique)
 from sci_ai_verifier.local_evaluators import qualify,validate_spec
 from sci_ai_verifier.local_candidates import METHOD_VERSION
@@ -22,19 +22,45 @@ RETRIEVED={"origin":"retrieved_public_https","url":"https://example.org/r","vers
 
 class CeilingTests(unittest.TestCase):
     def setUp(self):
-        self.references={"r"+str(index):dict(RETRIEVED) for index in range(3)}
+        self.references={"r"+str(index):dict(RETRIEVED) for index in range(5)}
         self.candidate={"method":"numeric","method_version":METHOD_VERSION,"name":"Fixture",
             "scope":"Fixture scope","limitations":"Fixture","absolute_tolerance":"0.000001",
             "cases":[{"case_id":str(index),"input":str(index),"expected":str(index)+".0",
                       "reference_ref":"r"+str(index),"source_quote":"row "+str(index)+" is "+str(index)+".0 exactly",
-                      "applicability":"row"} for index in range(3)]}
+                      "applicability":"row"} for index in range(5)]}
 
-    def ceiling(self,trials=3,**changes):
+    def ceiling(self,trials=3,counted=None,**changes):
         candidate={**self.candidate,**changes}
-        return evidence_ceiling(candidate,self.references,trials)
+        return evidence_ceiling(candidate,self.references,trials,counted)
 
     def test_retrieved_deterministic_three_trials_reaches_a(self):
         self.assertEqual(self.ceiling(),("A",[]))
+
+    def test_a_needs_five_counting_cases_and_three_or_four_reach_only_b(self):
+        for size in (3,4):
+            with self.subTest(cases=size):
+                grade,reasons=self.ceiling(cases=self.candidate["cases"][:size])
+                self.assertEqual(grade,"B")
+                self.assertEqual(reasons,["fewer_than_five_counting_cases"])
+
+    def test_a_recognised_only_design_cannot_pass_c(self):
+        """A `choice` design has no generated case, so an A-quality reference still gives C."""
+        options=["alpha","beta","gamma","delta","none of these"]
+        cases=[{**case,"expected":"1","options":options,"source_quote":"the answer is alpha here"}
+               for case in self.candidate["cases"]]
+        grade,reasons=self.ceiling(method="choice",cases=cases)
+        self.assertEqual(grade,"C")
+        self.assertEqual(reasons,["no_generated_case"])
+
+    def test_only_counted_cases_enter_the_ceiling(self):
+        """Run d87a6d5c: five cases, two of them counted, still graded A. The count now decides."""
+        self.assertEqual(self.ceiling(counted=["0","1","2","3","4"])[0],"A")
+        self.assertEqual(self.ceiling(counted=["0","1","2","3"])[0],"B")
+        self.assertEqual(self.ceiling(counted=["0","1","2"])[0],"B")
+        grade,reasons=self.ceiling(counted=["0","1"])
+        self.assertIsNone(grade)
+        self.assertIn("insufficient_distinct_cases",reasons)
+        self.assertIsNone(self.ceiling(counted=[])[0])
 
     def test_operator_dataset_and_generated_scorer_cap_at_b(self):
         self.references["r0"]={**RETRIEVED,"origin":"operator_local_resource"}
@@ -186,7 +212,7 @@ class DecisionTests(unittest.TestCase):
         candidate={"method":"numeric","method_version":METHOD_VERSION,"name":"Fixture",
                    "scope":"s","limitations":"l","absolute_tolerance":"0.000001",
                    "cases":[{"case_id":str(i),"reference_ref":"r","expected":"1.0","source_quote":"is 1.0 exactly"}
-                            for i in range(3)]}
+                            for i in range(5)]}
         critique={"supported_grade":"C","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
                   "objections":["Three rows do not cover the stated scope."],"required_revisions":"Add cases."}
         record=audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,
@@ -201,6 +227,37 @@ class DecisionTests(unittest.TestCase):
                                 {"r":dict(RETRIEVED)},critique=documentary,rounds=1)["settled_ceiling"])
         self.assertIsNone(audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,
                                 {"r":dict(RETRIEVED)})["settled_ceiling"])
+
+    def test_no_counted_case_reports_no_agreement_rather_than_unanimity(self):
+        record={"settled_ceiling":None,"evidence_limits":[],"case_limits":["insufficient_distinct_cases"],
+                "policy_ref":POLICY_REF,"proposed_grade":"A","evidence_ceiling":"A"}
+        result=decide(record,[],[],3,synthetic=False)
+        self.assertEqual(result["consistency"]["label"],"no_counted_cases")
+        self.assertIsNone(result["evidence_grade"])
+        self.assertIn("insufficient_distinct_cases",result["grade_limit_reasons"])
+
+    def test_the_case_count_binds_a_critique_that_rejected_cases_but_supported_a(self):
+        """The critique's letter cannot outrun its own verdicts; nor is its lower grade overridden."""
+        candidate={"method":"numeric","method_version":METHOD_VERSION,"name":"Fixture",
+                   "scope":"s","limitations":"l","absolute_tolerance":"0.000001",
+                   "cases":[{"case_id":str(i),"reference_ref":"r","expected":"1.0","source_quote":"is 1.0 exactly"}
+                            for i in range(5)]}
+        verdicts=[{"case_id":str(i),"verdict":"counts" if i<3 else "beyond_scope","reason":"r",
+                   "replacement":"" if i<3 else "Ask what the claim states."} for i in range(5)]
+        critique={"supported_grade":"A","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
+                  "objections":[],"required_revisions":[],"case_verdicts":verdicts}
+        record=audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,
+                     {"r":dict(RETRIEVED)},critique=critique)
+        self.assertEqual(record["evidence_ceiling"],"A")
+        self.assertEqual(record["counted_cases"],["0","1","2"])
+        self.assertEqual(record["case_ceiling"],"B")
+        self.assertEqual(record["settled_ceiling"],"B")
+        # Every case counting leaves the critique's own, lower judgment standing.
+        agreeing=[{**item,"verdict":"counts","replacement":""} for item in verdicts]
+        record=audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,
+                     {"r":dict(RETRIEVED)},critique={**critique,"supported_grade":"C","case_verdicts":agreeing})
+        self.assertEqual(record["case_ceiling"],"A")
+        self.assertEqual(record["settled_ceiling"],"C")
 
 
 class IndependentSessionTests(unittest.TestCase):
@@ -267,7 +324,8 @@ class IndependentSessionTests(unittest.TestCase):
         # emits. Recorded replies and the exhaustive refusal cases live in
         # tests/test_recorded_replies.py; this guards the shape the science path consumes.
         valid={"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
-               "objections":[],"required_revisions":["Add cases covering the rest of the scope."]}
+               "objections":[],"required_revisions":["Add cases covering the rest of the scope."],
+               "case_verdicts":[{"case_id":"c","verdict":"counts","reason":"in scope","replacement":""}]}
         self.assertEqual(validate_critique(valid)["supported_grade"],"B")
         self.assertEqual(validate_critique(valid)["required_revisions"],valid["required_revisions"])
         self.assertIsNone(validate_critique({**valid,"supported_grade":"none"})["supported_grade"])
@@ -276,6 +334,36 @@ class IndependentSessionTests(unittest.TestCase):
                        {**valid,"extra":"field"}):
             with self.subTest(broken=sorted(broken)),self.assertRaises(Fault):
                 validate_critique(broken)
+
+    def test_unusable_critique_shape_is_retried_once_and_a_verdict_never_is(self):
+        packet={"evidence":{"cases":[{"case_id":"c"}]}}
+        good=json.dumps({"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
+                         "objections":[],"required_revisions":[],
+                         "case_verdicts":[{"case_id":"c","verdict":"counts","reason":"r","replacement":""}]},
+                        separators=(",",":"))
+        calls=[]
+        def replies(*texts):
+            texts=iter(texts)
+            def isolated(adapter,packet,*,role,system_prompt,limit):
+                calls.append(role)
+                return ({"text":next(texts),"observed_model_ids":[],"usage":{},"total_cost_usd":0.0},str(uuid4()))
+            return isolated
+        # A case verdict naming a case the packet does not hold is a shape failure.
+        wrong_case=good.replace('"case_id":"c"','"case_id":"x"')
+        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=replies(wrong_case,good)):
+            result=critique(object(),packet)
+        self.assertEqual(result["supported_grade"],"B")
+        self.assertEqual([item.get("rejected") for item in result["attempts"]],["critic_response_invalid",None])
+        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=replies("not json","not json")):
+            with self.assertRaises(Fault) as caught:
+                critique(object(),packet)
+        self.assertEqual(caught.exception.code,"critic_response_invalid")
+        # A valid reply is kept at once, whatever grade it gives: one session, no re-roll.
+        calls.clear()
+        with patch("sci_ai_verifier.documentary.isolated_answer",
+                   side_effect=replies(good.replace('"B"','"none"',1),good)):
+            self.assertIsNone(critique(object(),packet)["supported_grade"])
+        self.assertEqual(len(calls),1)
 
 
 class GeneratedEvaluatorTests(unittest.TestCase):

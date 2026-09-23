@@ -35,7 +35,9 @@ class IntegrationTests(unittest.TestCase):
         h.data=h.runtime.call("start_verifier_run",{"source_path":str(h.source)})["data"]
         h.call("load_submitted_skill",source_path=str(h.source))
         h.snapshot=h.data["snapshot"]
-        h.ready(target_grade="A")  # Three trials of a retrieved token-exact design.
+        # Three trials of a retrieved token-exact design with three cases: ceiling B, since
+        # A needs five counting cases. Synthetic, so it stays ungraded either way.
+        h.ready(target_grade="B")
         h.call("execute_local_claim",claim_id=h.claim_id)
         self.assertEqual(h.data["outcome"],"local_documentary_required")
         self.assertEqual(len(h.subject.requests),9)
@@ -295,7 +297,7 @@ class GradeNegotiationTests(unittest.TestCase):
         h.call("load_submitted_skill",source_path=str(h.source))
         h.snapshot=h.data["snapshot"]
         h.extract()
-        return h.candidate()
+        return h.candidate(rows=fixture.FIVE_ROWS)
 
     def critic(self,supported):
         def run(adapter,packet):
@@ -413,7 +415,7 @@ class GradeNegotiationTests(unittest.TestCase):
             h.select(self.key,target_grade="A")
             self.assertEqual(h.data["outcome"],"local_grade_revision_required")
             # Strengthening the evidence is what buys another round.
-            stronger=h.candidate(lookup=False,name="Fixture table, wider coverage",
+            stronger=h.candidate(lookup=False,rows=fixture.FIVE_ROWS,name="Fixture table, wider coverage",
                                  limitations="Fictional reference; coverage extended after review.")
             h.select(stronger,target_grade="A")
         self.assertEqual(h.data["outcome"],"local_grade_revision_required")
@@ -428,6 +430,136 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertNotIn("supported_grade",canonical(self.packets[1]).decode())
         self.assertEqual(self.packets[1]["prior_objections"],
                          ["Three rows do not cover the whole stated scope."])
+
+    def rejecting(self,supported,rejected):
+        def run(adapter,packet):
+            self.packets.append(packet)
+            return critic_reply(packet,supported,rejected=rejected)
+        return run
+
+    def test_rejected_cases_cap_the_grade_even_when_the_critique_supports_a(self):
+        """Run d87a6d5c: the critique counted two of five cases and still supported A."""
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique",
+                   side_effect=self.rejecting("A",{"zeta":"beyond_scope","eta":"leaked"})):
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+        self.assertEqual(h.data["supported_grade"],"A")
+        self.assertEqual(h.data["settled_grade"],"B")
+        self.assertEqual(h.data["audit"]["counted_cases"],["alpha","beta","gamma"])
+        self.assertEqual([item["case_id"] for item in h.data["case_replacements"]],["zeta","eta"])
+        self.assertTrue(all(item["replacement"] for item in h.data["case_replacements"]))
+        self.assertEqual(h.data["replacement_rounds_remaining"],1)
+        # The critique saw every case, each with its ID and the design's answer form.
+        self.assertEqual([case["case_id"] for case in self.packets[0]["evidence"]["cases"]],list(fixture.FIVE_ROWS))
+        self.assertEqual({case["answer_form"] for case in self.packets[0]["evidence"]["cases"]},{"generated"})
+
+    def test_the_next_reviewer_is_told_which_cases_were_not_counted_and_why(self):
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique",
+                   side_effect=self.rejecting("A",{"eta":"duplicate"})):
+            h.select(self.key,target_grade="A")
+            replaced=h.candidate(lookup=False,rows=fixture.FIVE_ROWS,name="Fixture table, eta replaced")
+            h.select(replaced,target_grade="A")
+        self.assertEqual(self.packets[0]["prior_objections"],[])
+        carried=self.packets[1]["prior_objections"]
+        self.assertEqual(len(carried),1)
+        self.assertIn("case eta was not counted (duplicate)",carried[0])
+        self.assertIn("Suggested replacement:",carried[0])
+        # A verdict is not a grade, and no grade travels with it.
+        self.assertNotIn("supported_grade",canonical(self.packets[1]).decode())
+
+    def test_carried_concerns_keep_the_latest_round_when_they_overflow(self):
+        from sci_ai_verifier.local import prior_objections
+        rounds=[{"critique":{"objections":["round %d objection %d"%(number,index) for index in range(8)],
+                             "case_verdicts":[{"case_id":"c%d"%index,"verdict":"leaked","reason":"r%d"%number,
+                                               "replacement":"x"} for index in range(6)]}} for number in (1,2)]
+        carried=prior_objections(rounds)
+        self.assertEqual(len(carried),16)
+        # Round 2's concerns are what the next design must answer; none of them is dropped.
+        self.assertTrue(all(any("round 2 objection %d"%index==item for item in carried) for index in range(8)))
+        self.assertEqual(sum("(leaked): r2" in item for item in carried),6)
+
+    def test_a_mixed_design_reaches_a_with_two_open_cases_among_five(self):
+        h=self.h
+        options=fixture.LocalTests.OPTIONS
+        cases=[{"case_id":name,"input":name,"expected":str(index)+".0","reference_ref":h.reference_ref,
+                "source_quote":fixture.REFERENCE,"applicability":"Fixture table row","method":"numeric"}
+               for index,name in enumerate(("alpha","beta"),1)]
+        cases+=[{"case_id":"choice-"+str(index),"method":"choice","expected":"1","options":options,
+                 "input":"Row %d? %s"%(index,"; ".join(options)),"reference_ref":h.reference_ref,
+                 "source_quote":fixture.REFERENCE,"applicability":"Fixture table row"} for index in range(3)]
+        # Without its two open cases the design is recognised-only and stops at C. A refused
+        # proposal spends no session and leaves the claim in discovery.
+        extra=[{**cases[2],"case_id":"choice-"+tag,"input":"Row "+tag+"? "+"; ".join(options)} for tag in ("x","y")]
+        recognised=h.candidate(lookup=False,method="mixed",cases=cases[2:]+extra)
+        h.select(recognised,target_grade="A")
+        self.assertEqual(h.data["reason"],"above_evidence_ceiling")
+        self.assertEqual(h.data["evidence_ceiling"],"C")
+        self.assertIn("no_generated_case",h.data["evidence_limits"])
+        key=h.candidate(lookup=False,method="mixed",cases=cases)
+        self.assertEqual(h.data["outcome"],"qualified_local")
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
+            h.select(key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        self.assertEqual(h.data["audit"]["settled_ceiling"],"A")
+        forms=[case["answer_form"] for case in self.packets[0]["evidence"]["cases"]]
+        self.assertEqual(forms,["generated"]*2+["recognised"]*3)
+        # A choice case travels with its options, so the critique can read what index 1 names.
+        self.assertEqual(self.packets[0]["evidence"]["cases"][2]["options"],options)
+        self.assertNotIn("options",self.packets[0]["evidence"]["cases"][0])
+
+    def test_two_replacement_rounds_then_the_counting_cases_settle_the_grade(self):
+        h=self.h
+        rejected={"zeta":"beyond_scope","eta":"naming"}
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.rejecting("A",rejected)):
+            h.select(self.key,target_grade="A")
+            self.assertEqual(h.data["replacement_rounds_remaining"],1)
+            first=h.candidate(lookup=False,rows=fixture.FIVE_ROWS,name="Fixture table, first replacement")
+            h.select(first,target_grade="A")
+            self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            self.assertEqual(h.data["replacement_rounds_remaining"],0)
+            second=h.candidate(lookup=False,rows=fixture.FIVE_ROWS,name="Fixture table, second replacement")
+            h.select(second,target_grade="A")
+        # Both replacement rounds are spent, so the third rejection settles instead of asking again.
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        self.assertEqual(h.data["audit"]["settled_ceiling"],"B")
+        self.assertEqual(h.data["audit"]["critique_rounds"],3)
+        self.assertEqual(len(self.packets),3)
+        # Uncounted cases still run, but neither their trials nor their answers decide the claim.
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        result=h.data["result"]
+        self.assertEqual(len(h.subject.requests),15)
+        self.assertEqual(result["evidence_grade"],"B")
+        # The card says why: the limit is recorded over the counted cases, not the proposal's.
+        self.assertIn("fewer_than_five_counting_cases",result["grade_limit_reasons"])
+        self.assertEqual(result["accuracy"]["evaluated"],9)
+        self.assertEqual(result["completeness"]["planned_cases"],3)
+        self.assertEqual([item["case_id"] for item in result["uncounted_cases"]],["zeta","eta"])
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual({case["case_id"] for case in row["tests"] if not case["counted"]},{"zeta","eta"})
+        self.assertEqual(len(row["tests"]),15)
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Case zeta not counted (beyond_scope)",markdown)
+
+    def test_an_uncounted_case_that_fails_cannot_fail_the_claim(self):
+        """A case outside the claim measures something else; its fail would be a false fail."""
+        h=self.h
+        original=h.subject.observe
+        def observe(**request):
+            observation=original(**request)
+            return {**observation,"text":"999"} if request["case_input"]["input"]=="eta" else observation
+        h.subject.observe=observe
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.rejecting("B",{"eta":"beyond_scope"})):
+            h.select(self.key,target_grade="A")
+            self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            h.select(self.key,target_grade="B")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual(h.data["result"]["scientific_status"],"pass")
+        self.assertEqual(h.data["result"]["comparison_status"],"pass")
+        self.assertEqual(h.data["result"]["accuracy"],{"matched":12,"evaluated":12,"ratio":1.0})
 
     def test_critique_supporting_no_grade_leaves_the_comparison_ungraded(self):
         h=self.h
