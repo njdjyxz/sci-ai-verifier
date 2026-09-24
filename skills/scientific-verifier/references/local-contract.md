@@ -85,7 +85,10 @@ carry forward so a revision can be checked, grades do not, because a reviewer sh
 previous verdict would anchor on it. That separation is imperfect and is not claimed to
 be complete: an objection such as "three cases cannot support direct validation" implies
 a grade it does not state. Withholding the letter reduces anchoring; it does not remove
-the signal. It sees every case, each with its ID and answer form, and returns the
+the signal. The planner's notes are held to the same rule, which step 3 of "Negotiating
+the grade" in `evidence-rubric.md` owns: run b0955d2f's planner told one reviewer "The
+previous round settled at C", and a proposal whose notes mention an earlier review is
+now refused before its critique starts. It sees every case, each with its ID and answer form, and returns the
 strongest grade the evidence actually supports plus one verdict per case. The settled
 ceiling is the weakest of the proposal, Python's ceiling recomputed over the cases the
 critique counted, and that critique's grade.
@@ -296,6 +299,12 @@ or claim to capture private model reasoning. Failures return the attempt/log
 location when storage is available; inability to record required events stops
 execution rather than silently claiming a complete log. Live Claude streams and
 internal tool operations must both be captured, including partial failed runs.
+A run the runner closes early records who stopped it and why, in the categories of
+`artifact-contracts.md`: `cancelled` only for the operator's cancellation, `timeout`
+for the attempt deadline, and otherwise `agent_unavailable` with the planner's own
+last reported termination reason. Every such stop used to be recorded as the
+operator's cancellation; run 7f88fbef's planner had in fact hit the subscription
+session limit (HTTP 429).
 The public stdio connection processes cancellation notifications while a request
 is running and permits one active verification per connection. Cancellation or
 connection closure stops the managed process tree and preserves partial evidence;

@@ -196,14 +196,15 @@ class StreamLog:
                 pending.clear()
 
 
-def recorded_call(log, runtime, name, arguments, call_id=None):
+def recorded_call(log, runtime, name, arguments, call_id=None, **host):
+    # `host` carries runner-only keywords, never tool arguments a planner could supply.
     if log is None:
-        return runtime.call(name, arguments, call_id)
+        return runtime.call(name, arguments, call_id, **host)
     invocation = str(uuid4())
     started = time.monotonic()
     log.emit("tool_started", tool=name, invocation_id=invocation, arguments=arguments)
     try:
-        result = runtime.call(name, arguments, call_id)
+        result = runtime.call(name, arguments, call_id, **host)
     except BaseException as error:
         log.emit("tool_failed", tool=name, invocation_id=invocation,
                  code=getattr(error, "code", type(error).__name__), duration_seconds=time.monotonic()-started)

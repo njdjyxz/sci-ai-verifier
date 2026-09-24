@@ -15,7 +15,11 @@ from .common import Fault, canonical, digest, utc_now
 from .ingest import SECRET_BYTES
 from .storage import atomic_write, no_links
 
-MAX_REFERENCE = 256 * 1024
+# The fetch_local_reference section of tool-contracts.md owns both numbers. A page's raw
+# size says little about its text, so the page limit is generous and the planner's reply
+# is what stays small: a host spills a large reply to a file the planner cannot open.
+MAX_REFERENCE = 2 * 1024 * 1024
+REPLY_TEXT_BYTES = 40 * 1024
 # Bumped when qualification rules change, because a locally saved candidate is reused by
 # lookup without being re-qualified: only this string keeps one that passed superseded
 # rules out of a later run. -2 added the answer-form rule; -3 replaced its string-matched
@@ -114,9 +118,29 @@ def fetch_bytes(url, *, max_bytes=MAX_REFERENCE, text_only=False):
             connection.close()
     except (OSError, http.client.HTTPException, ValueError):
         raise Fault("reference_unavailable", "The bounded public reference download failed.") from None
-    if len(raw) > max_bytes or SECRET_BYTES.search(raw):
-        raise Fault("reference_rejected", "Reference exceeds its byte limit or contains credential-like material.")
-    return raw,content_type
+    return bounded_download(raw, max_bytes), content_type
+
+
+def bounded_download(raw, max_bytes):
+    """Refuse an oversized or credential-bearing download, and say which.
+
+    One message used to cover both, so run b0955d2f's planner could only guess why two
+    pages were refused, and its guess reached the documentary packet as fact.
+    """
+    if len(raw) > max_bytes:
+        raise Fault("reference_too_large", "The download is larger than its " + str(max_bytes) + "-byte limit.")
+    if SECRET_BYTES.search(raw):
+        raise Fault("reference_credential_material", "The download contains credential-like material and was not kept.")
+    return raw
+
+
+def reply_text(text):
+    """The part of a page's text a tool reply may carry, and its full size when cut."""
+    raw = text.encode("utf-8")
+    if len(raw) <= REPLY_TEXT_BYTES:
+        return text, None
+    # Cut on a character boundary; the pinned reference keeps every byte.
+    return raw[:REPLY_TEXT_BYTES].decode("utf-8", errors="ignore"), len(raw)
 
 
 def fetch_public(url):

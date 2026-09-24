@@ -1,5 +1,6 @@
 """One public action backed by Claude Code's own planner/MCP loop."""
 
+import json
 import os
 import sys
 import time
@@ -69,6 +70,42 @@ def planner_prompt(runtime, run_id, created):
     task = PLANNER_PROMPT.format(run_id=run_id, state_token=created["state_token"],
                                  source_path=created["authorized_parameters"]["source_path"])
     return task + "\n\n" + "\n\n".join(documents)
+
+
+def planner_stop(raw):
+    """What the planner's own last `result` event reported, when its process failed.
+
+    Run 7f88fbef's planner exited on the subscription session limit. The reason sat in
+    this event, and the run was recorded as the operator's cancellation.
+    """
+    for line in reversed(raw.splitlines()):
+        try:
+            event = json.loads(line)
+        except (ValueError, UnicodeError):
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            reason = str(event.get("terminal_reason") or ("error" if event.get("is_error") else "ended"))
+            if event.get("api_error_status"):
+                reason += " (HTTP " + str(event["api_error_status"]) + ")"
+            text = " ".join(str(event.get("result") or "").split())[:300]
+            return reason + (": " + text if text else "")
+    return None
+
+
+def closing_for(error):
+    """The (category, reason) a run closed by the runner records; None for the operator's own.
+
+    `cancelled` belongs to the operator alone. artifact-contracts.md gives a planner that
+    stopped by itself `agent_unavailable`, with its own termination reason.
+    """
+    code = getattr(error, "code", None)
+    if isinstance(error, KeyboardInterrupt) or code == "verification_cancelled":
+        return None
+    if code == "verification_timeout":
+        return "timeout", str(error)
+    if isinstance(error, Fault):
+        return "agent_unavailable", str(error)
+    return "agent_unavailable", "The planner could not run: " + (str(error) or type(error).__name__)
 
 
 class BoundRuntime:
@@ -169,7 +206,9 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
                 cwd=directory, env=env, timeout=timeout, max_bytes=8*1024*1024,
                 prompt=planner_prompt(runtime, run_id, created["data"]))
             if code:
-                raise Fault("planner_incomplete", "The Claude Code planner stopped before successful completion.")
+                stop = planner_stop(raw)
+                raise Fault("planner_incomplete", "The Claude Code planner stopped before successful completion"
+                            + (". Its last result reported " + stop + "." if stop else "."))
             receipt = parse_events(raw, expected_session=session)
             # Save identity and accounting only; the journal already records tool arguments/results.
             receipt = {key: receipt[key] for key in ("response_id", "observed_model_ids", "usage", "total_cost_usd")}
@@ -188,17 +227,19 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
         if control:
             control.finishing=True  # Cleanup/reporting remain available after cancellation/deadline.
         # A completed report survives a lost final planner response. No subject is rerun.
+        closing = closing_for(error)
+        reason = closing[1] if closing else "The operator cancelled this run."
         try:
             log.emit("run_recovery_started", run_id=run_id,
-                     code=getattr(error, "code", type(error).__name__))
+                     code=getattr(error, "code", type(error).__name__), reason=reason)
         except Fault:
             pass  # Diagnostic failure must not prevent authoritative cancellation.
-        def recovery_control(name):
+        def recovery_control(name, **host):
             try:
-                return recorded_call(log,runtime,name,{"run_id":run_id})
+                return recorded_call(log,runtime,name,{"run_id":run_id},**host)
             except Fault:
                 # Only read/recovery and idempotent cancellation use this fallback.
-                return runtime.call(name,{"run_id":run_id})
+                return runtime.call(name,{"run_id":run_id},**host)
         recovered = recovery_control("get_verifier_context")
         if recovered["status"] == "ok" and recovered["data"]["verification_complete"]:
             state, _ = runtime.store.read(run_id)
@@ -207,15 +248,16 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
                     "controller_receipt": "unavailable",
                     "report_json_path": str(runtime.store.run_dir(run_id) / "report-card.json"),
                     "report_markdown_path": str(runtime.store.run_dir(run_id) / "report-card.md")}}
-        recovery_control("cancel_verifier_run")
+        recovery_control("cancel_verifier_run", closing=closing)
         partial={}
         try:
             from .partial_report import write_partial_report
-            partial=write_partial_report(runtime.store,run_id,getattr(error,"code","interrupted"))
+            partial=write_partial_report(runtime.store,run_id,getattr(error,"code","interrupted"),reason)
         except (Fault,OSError):
             partial={"partial_report_unavailable":True}
         return {"status": "incomplete", "error": {"code": error.code if isinstance(error, Fault) else "interrupted",
                 "message": "Local verification stopped. Saved evidence is retained; no uncertain trial was replayed.",
+                "reason": reason,
                 "run_id": run_id, "run_directory": str(runtime.store.run_dir(run_id)), "verification_complete": False},**partial}
 
 

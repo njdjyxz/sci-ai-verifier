@@ -557,6 +557,53 @@ class LocalTests(unittest.TestCase):
         with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("127.0.0.1", 443))]), self.assertRaises(Fault):
             fetch_public("https://example.org")
 
+    def test_a_refused_download_says_whether_it_was_size_or_a_credential(self):
+        """Run b0955d2f's planner got one message for both causes and guessed which."""
+        from sci_ai_verifier.local_candidates import bounded_download
+        self.assertEqual(bounded_download(b"x" * 10, 10), b"x" * 10)
+        with self.assertRaises(Fault) as caught:
+            bounded_download(b"x" * 11, 10)
+        self.assertEqual(caught.exception.code, "reference_too_large")
+        with self.assertRaises(Fault) as caught:
+            bounded_download(b"page " + b"sk-ant-" + b"x" * 30, 1000)
+        self.assertEqual(caught.exception.code, "reference_credential_material")
+
+    def test_a_long_page_is_pinned_whole_and_only_its_reply_is_cut(self):
+        """A host spills a long reply to a file, and the planner has no tool to open it."""
+        from sci_ai_verifier.local_candidates import REPLY_TEXT_BYTES
+        self.extract()
+        self.call("list_local_candidates", claim_id=self.claim_id)
+        # The quoted rows sit past the cut, where only the pinned page holds them.
+        page = "Filler line of a long documentation page.\n" * (REPLY_TEXT_BYTES // 40) + REFERENCE
+        with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(page.encode(), page)):
+            self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/long",
+                      version="fixture-v1", license="Unknown; private analysis only")
+        shown = self.data["untrusted_reference"]
+        self.assertTrue(shown["text_truncated"])
+        self.assertEqual(shown["text_bytes_total"], len(page.encode()))
+        self.assertLessEqual(len(shown["text"].encode()), REPLY_TEXT_BYTES)
+        self.assertNotIn(REFERENCE, shown["text"])
+        # Quotes are checked against the whole pinned page, so its tail still qualifies.
+        self.reference_ref = self.data["reference_ref"]
+        self.candidate(lookup=False)
+        self.assertEqual(self.data["outcome"], "qualified_local")
+
+    def test_the_runner_records_who_closed_a_run(self):
+        """Only the operator cancels; a planner that stopped by itself is agent_unavailable."""
+        from sci_ai_verifier.partial_report import write_partial_report
+        reason = "The planner stopped. Its last result reported api_error (HTTP 429): session limit."
+        closed = self.runtime.call("cancel_verifier_run", {"run_id": self.data["run_id"]},
+                                   closing=("agent_unavailable", reason))
+        self.assertEqual((closed["error"]["code"], closed["error"]["message"]), ("agent_unavailable", reason))
+        write_partial_report(self.runtime.store, self.data["run_id"], "planner_incomplete", reason)
+        markdown = (self.runtime.store.run_dir(self.data["run_id"]) / "partial-report.md").read_text(encoding="utf-8")
+        self.assertIn("Reason: " + reason, markdown)
+        # With no runner reason the cancellation is the operator's, worded as it always was.
+        second = self.runtime.call("start_verifier_run", {"source_path": str(self.source)})["data"]
+        cancelled = self.runtime.call("cancel_verifier_run", {"run_id": second["run_id"]})
+        self.assertEqual((cancelled["error"]["code"], cancelled["error"]["message"]),
+                         ("cancelled", "The operator cancelled this run."))
+
 
 class ReportAxisTests(unittest.TestCase):
     """The card must render every axis shape, including ones that hold no measurement."""

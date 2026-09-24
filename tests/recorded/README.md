@@ -22,6 +22,7 @@ code, so it is the only test data here that can actually falsify the parser.
 | `subject-safety-refusal.jsonl` | subject | `e035eef6` | Provider safety refusal, category `bio`, with a fallback model that also refused |
 | `critic-case-verdict-extra-key.jsonl` | critic | `0a243b7e` | Complete rubric v5 reply supporting B; two case verdicts carry an extra, empty `verdict_note` |
 | `critic-case-verdict-extra-key-2.jsonl` | critic | `0a243b7e` | The retry against the same packet; one case verdict carries an extra, empty `case_id_note` |
+| `planner-session-limit.jsonl` | planner | `7f88fbef` | The planner's last two events: the CLI's `rate_limit` message and a `result` with `terminal_reason` `api_error`, HTTP 429, "You've hit your session limit" |
 
 `assessor-packet.json` is the real evidence packet the recorded assessor was
 given, so its citations can be checked against the bytes it actually saw. `critic-case-verdict-packet.json` is the real
@@ -33,9 +34,11 @@ critiques were rejected over a code fence and a list-shaped
 `required_revisions`. The `e035eef6` critique was rejected for answering every
 question and adding one more, which cost a grade A and 27 planned trials. The two
 `0a243b7e` critiques were rejected for one empty extra key inside a case verdict, and
-claim 1 of that run was lost with them. The
+claim 1 of that run was lost with them. The `e035eef6` safety
 refusal was reported as an indistinguishable "incomplete observation", hiding
-that the provider, not the skill, was the thing that failed.
+that the provider, not the skill, was the thing that failed. The `7f88fbef` planner
+stopped on the subscription session limit, and the runner recorded that as the
+operator cancelling the run.
 
 ## Rules for this directory
 

@@ -140,7 +140,9 @@ class Runtime:
             raise ValueError("All limits must be positive integers.")
         self.dispatcher = Dispatcher(self.store, self.subject)
 
-    def call(self, name, arguments, call_id=None):
+    def call(self, name, arguments, call_id=None, closing=None):
+        # `closing` is the runner's own (category, reason) for a run it cancels because its
+        # planner stopped; no tool argument can set it.
         try:
             if name not in SCHEMAS or name in WORKFLOW_TOOLS:
                 return self.dispatcher.dispatch(name, arguments, call_id)
@@ -155,7 +157,7 @@ class Runtime:
                                                       "original_attachment_attested": False})
             if name == "start_verifier_run":
                 return self._start(arguments, call_id)
-            return self._control(name, arguments["run_id"], call_id, arguments.get("section"))
+            return self._control(name, arguments["run_id"], call_id, arguments.get("section"), closing)
         except Fault as error:
             if error.fatal:
                 return persistence_failure(error.code, str(error))
@@ -452,7 +454,7 @@ class Runtime:
                         "to a file this planner cannot read.", fatal=True)
         return header
 
-    def _control(self, name, run_id, call_id, section=None):
+    def _control(self, name, run_id, call_id, section=None, closing=None):
         with self.store.lock(run_id):
             state, previous = self.store.read(run_id, verify_objects=False)
             before = deepcopy(metadata(state))
@@ -489,7 +491,10 @@ class Runtime:
                     data = cancel_and_report(self.store, state, "The operator cancelled this run.")
                     result = {"status": "ok", "data": {**metadata(state), **data}}
                 else:
-                    result = terminate(self.store, state, "cancelled", "The operator cancelled this run.")
+                    # The local runner closes a run its planner abandoned through this same
+                    # control, so the record must say who stopped it (artifact-contracts.md).
+                    category, reason = closing or ("cancelled", "The operator cancelled this run.")
+                    result = terminate(self.store, state, category, reason)
             else:
                 advance(state)
                 state["last_activity_at"] = utc_now()

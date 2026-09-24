@@ -37,7 +37,7 @@ CRITIC_RECORDINGS = {"critic-fenced-revision-list.jsonl": ("B", 5, True),
 CASE_VERDICT_RECORDINGS = {"critic-case-verdict-extra-key.jsonl": "verdict_note",
                            "critic-case-verdict-extra-key-2.jsonl": "case_id_note"}
 # Streams that are not critic replies, exercised by their own tests.
-OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl"]
+OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl", "planner-session-limit.jsonl"]
 # Every critic recording answered rubric v2, which had five criteria; v3 appended a sixth,
 # and v4 added the per-case verdict keys. A reply is judged against the rubric it was
 # answering -- judging it against a later one would fail real replies for a question nobody
@@ -255,6 +255,59 @@ class RecordedReplyTests(unittest.TestCase):
         with self.assertRaises(Fault) as caught:
             parse_events(raw, expected_session="00000000-0000-0000-0000-000000000000")
         self.assertEqual(caught.exception.code, "claude_identity_error")
+
+    def test_a_planner_stopped_by_the_session_limit_is_not_the_operators_cancellation(self):
+        """Run 7f88fbef: its planner hit the subscription limit and was recorded as cancelled."""
+        from sci_ai_verifier.local_entry import closing_for, planner_stop
+        stop = planner_stop(recorded("planner-session-limit.jsonl"))
+        self.assertEqual(stop, "api_error (HTTP 429): You've hit your session limit · resets 11:20am "
+                               "(America/Los_Angeles)")
+        category, reason = closing_for(Fault("planner_incomplete", "The planner stopped. It reported " + stop))
+        self.assertEqual(category, "agent_unavailable")
+        self.assertIn("HTTP 429", reason)
+        # The operator's own cancellation keeps its wording, and a deadline is a timeout.
+        self.assertIsNone(closing_for(Fault("verification_cancelled", "Cancelled.")))
+        self.assertIsNone(closing_for(KeyboardInterrupt()))
+        self.assertEqual(closing_for(Fault("verification_timeout", "Deadline."))[0], "timeout")
+        # A stream with no result event has nothing to report.
+        self.assertIsNone(planner_stop(b"not json\n"))
+
+    def test_the_runner_saves_a_session_limited_planner_truthfully(self):
+        """The whole recovery path over the real 7f88fbef stream, exit code to saved record."""
+        import tempfile
+        from sci_ai_verifier import local_entry
+        raw = recorded("planner-session-limit.jsonl")
+
+        class Replay(ClaudeCode):
+            def __init__(self, **options):
+                super().__init__(process=lambda command, **kwargs: (1, raw, b""), **options)
+
+            def preflight(self):
+                return {"executable": self.executable, "version": "2.1.268", "auth": self.auth,
+                        "model_requested": self.model, "live_execution_tested": False}
+
+        root = Path(__file__).resolve().parents[1]
+        (root / ".verifier/test-work").mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="recovery-", dir=root / ".verifier/test-work",
+                                         ignore_cleanup_errors=True) as temporary:
+            source, workspace = Path(temporary) / "source", Path(temporary) / "workspace"
+            source.mkdir()
+            workspace.mkdir()
+            (source / "SKILL.md").write_text("Return a plain decimal.", encoding="utf-8")
+            with patch.object(local_entry, "ClaudeCode", Replay), \
+                    patch.object(local_entry, "sweep_stale_directories", lambda log: None), \
+                    patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+                result = local_entry.verify(source, workspace=workspace, model="claude-opus-5", timeout=120,
+                                            instructions=root / "skills/scientific-verifier")
+            self.assertEqual(result["status"], "incomplete", result)
+            self.assertEqual(result["error"]["code"], "planner_incomplete")
+            self.assertIn("HTTP 429", result["error"]["reason"])
+            run_directory = Path(result["error"]["run_directory"])
+            outcomes = [json.loads(path.read_bytes()) for path in (run_directory / "operational-outcomes").glob("*.json")]
+            self.assertEqual([outcome["category"] for outcome in outcomes], ["agent_unavailable"])
+            self.assertIn("You've hit your session limit", outcomes[0]["reason"])
+            self.assertNotIn("operator", outcomes[0]["reason"])
+            self.assertIn("Reason: ", (run_directory / "partial-report.md").read_text(encoding="utf-8"))
 
 
 class ReplyShapeTests(unittest.TestCase):

@@ -550,6 +550,15 @@ The Local profile matrix in workflow.md governs their legality.
 - `fetch_local_reference`: in local_discovery, retrieve a bounded public HTTPS
   reference, pin bytes, and return text, digest, version and license notes.
   Redirects, private addresses, credentials and secret content are rejected.
+  A page may hold up to 2 MiB; a larger one is refused as `reference_too_large`,
+  and one containing credential-like material as `reference_credential_material`,
+  so the planner learns which. Page size says little about text: run b0955d2f
+  refused a 974 KB tutorial holding 21 KB of text. What must stay small is the
+  reply, because the planner cannot open a reply its host spills to a file, and a
+  53 KB reply was spilled once. So the reply carries at most the first 40 KiB of the
+  page's text, with `text_truncated` and `text_bytes_total` when it is cut: the
+  largest page text in run b0955d2f, 40,582 bytes in a 49,510-byte reply, reached its
+  planner intact. The whole page is pinned, and quotes are checked against all of it.
 - `qualify_local_candidate`: in local_discovery, propose a name, scope, method,
   limitations and at least three source-backed cases. Python checks provenance,
   answer form, controls and fixed comparison rules. Save qualified_local or
@@ -613,8 +622,13 @@ The Local profile matrix in workflow.md governs their legality.
   computes the strongest grade its own recorded facts support for that design,
   counting every case. Exactly two proposals are legal: that ceiling, or the grade
   the last critique of that same design settled at. `local_grade_proposal_refused`
-  names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling` or
-  `no_supported_execution_grade` — and spends no session. A permitted proposal starts a
+  names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling`,
+  `no_supported_execution_grade`, or `prior_review_in_packet` when a note the critique
+  would read mentions an earlier review (step 3 of "Negotiating the grade" in
+  `evidence-rubric.md`), with the `field` and `phrase` found — and spends no session.
+  Only a proposal that would start a critique is checked. A case's applicability and
+  the design's scope and limitations are fixed at qualification, so a note there needs
+  a revised candidate. A permitted proposal starts a
   fresh independent critique session, which sees every case with its `case_id` and
   answer form, receives earlier reviewers' objections and the cases they did not count
   (verdict, reason, suggested replacement) but never their grades, and may only lower

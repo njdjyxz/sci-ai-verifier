@@ -2,6 +2,7 @@
 
 from html import escape
 import base64
+import re
 
 from .common import Fault, canonical, digest, utc_now
 from .ingest import verified_snapshot
@@ -181,6 +182,10 @@ def operate(store, state, name, args, subject):
                      "authority": "not_independently_attested", "redistribution": "not_authorized"}
         key = keep(store, state, reference)
         work["reference_refs"].append(key)
+        # Qualification checks quotes against the pinned whole page; only the reply is cut.
+        shown, total = catalog.reply_text(text)
+        if total is not None:
+            reference = {**reference, "text": shown, "text_truncated": True, "text_bytes_total": total}
         return {"outcome": "reference_fetched", "reference_ref": key, "untrusted_reference": reference}
     if name in {"load_local_resource","fetch_local_asset"}:
         from .local_resources import inspect_resource,import_configured
@@ -260,6 +265,27 @@ def prior_objections(history):
                 found.append(concern)
     # Keep the most recent: the latest round's concerns are what the new design must answer.
     return found[-16:]
+
+
+# The planner's notes travel to the critique, so they must not carry what Python withholds.
+# Run b0955d2f's planner told one reviewer "The previous round settled at C" and another
+# that "Two independent critiques have given this case the verdict counts". `review` alone
+# is allowed: a source may be a review article.
+PRIOR_REVIEW = re.compile(r"\b(?:critiqu\w*|reviewers?|verdicts?|settled|no[- ]grade)\b"
+                          r"|\b(?:previous|earlier|prior|last) rounds?\b", re.IGNORECASE)
+
+
+def prior_review_note(candidate, args):
+    """The first planner note bound for the critique that mentions an earlier review."""
+    from .local_science import PLANNER_JUSTIFICATION
+    notes = [("scope", candidate["scope"]), ("limitations", candidate["limitations"])]
+    notes += [("applicability of " + case["case_id"], case["applicability"]) for case in candidate["cases"]]
+    notes += [(key, args[key]) for key in PLANNER_JUSTIFICATION]
+    for field, text in notes:
+        found = PRIOR_REVIEW.search(text)
+        if found:
+            return field, found.group(0)
+    return None
 
 
 def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=()):
@@ -378,6 +404,20 @@ def select(store, state, claim_id, work, args, subject):
                 "message": "The negotiation budget for this claim is spent. Reselect a design that "
                            "was already critiqued and accept the grade it settled at."}
     else:
+        note = prior_review_note(candidate, args)
+        if note:
+            # Like an out-of-range proposal, refused before a session or a round is spent.
+            field, phrase = note
+            return {"outcome": "local_grade_proposal_refused", "reason": "prior_review_in_packet",
+                    "field": field, "phrase": phrase, "evidence_ceiling": ceiling,
+                    "evidence_limits": limits, "candidate_ref": key,
+                    "acceptable_grades": sorted({item for item in (ceiling, accepted) if item}),
+                    "message": "The critique never learns what an earlier review decided, and " + field
+                               + " mentions one (" + repr(phrase) + "). Describe this design and its "
+                               "evidence only: Python already gives the critique the earlier objections "
+                               "and the cases they did not count. A justification field needs only a new "
+                               "proposal; a case's applicability or the design's scope or limitations "
+                               "needs a revised candidate."}
         packet = critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                                  prior_objections(history))
         work["critique_packet_ref"] = keep(store, state, packet)
