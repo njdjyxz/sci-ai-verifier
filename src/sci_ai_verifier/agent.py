@@ -349,9 +349,14 @@ class Runtime:
         else:
             content = self.store.get_json(ref)
         raw = content if isinstance(content, str) else canonical(content).decode("utf-8")
-        limit = state["limits"]["max_read_bytes"]
+        shown = raw[:state["limits"]["max_read_bytes"]]
+        if state["profile"] == "local":
+            # The local planner cannot open a reply its host spills to a file, so a section
+            # gets the reply limit fetch_local_reference owns (tool-contracts.md).
+            from .local_candidates import reply_text
+            shown = reply_text(shown)[0]
         return {"identity": name, "trust_class": trust, "bytes_total": len(raw.encode("utf-8")),
-                "truncated": len(raw) > limit, "content": raw[:limit]}
+                "truncated": shown != raw, "content": shown}
 
     def _bootstrap(self, state, section=None):
         if section is not None:

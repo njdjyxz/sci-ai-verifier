@@ -81,6 +81,13 @@ Before a critique runs, Python assumes every case counts, and that sets the ceil
 
 **A spare case.** When the sources allow it, design one more independent case than the grade needs. Critiques often reject a case, and a design holding exactly the minimum then loses its grade to that single verdict.
 
+**Common leaks.** `leaked` is the verdict critiques give most often: seven of the eleven cases run 3dc02567's critiques rejected. Four shapes recur, and each can be checked before proposing:
+
+- the question states the property under test, so every option but one is ruled out by the question's own wording;
+- the question prints the value and asks for a conversion of it, such as `0.8` asked for as a percentage;
+- only the correct option repeats a word from the question, such as the one option mentioning rings in a question about ring completeness;
+- the question quotes or paraphrases the source's own description of the answer, so the answer follows by naming convention.
+
 **Replacement.** Every case that does not count must be named with the verdict, the reason, and a description of a case that would test the claim in its place. The critique describes the replacement; it never writes one, because it has no tools to retrieve the reference that every expected answer must be quoted from, and a case it wrote would never be independently reviewed. The planner builds the replacement as a revised design, and a fresh critique reviews it. That critique is told which cases earlier reviewers did not count, with the verdict, reason and suggested replacement, so it can check that the new cases answer what was wrong with the old ones; it is never told an earlier grade. A claim gets at most **two replacement rounds**. A third critique that still rejects cases settles the grade the counting cases support, without another revision. This budget is separate from the negotiation's overall round limit, which still bounds every other kind of revision.
 
 **Execution.** Cases that do not count still execute and are reported with their verdicts, so nothing observed is hidden. They do not enter accuracy, consistency or status. A rejected case measures something other than the claim, so its failure would be a false `fail`, and its pass would be credit the claim did not earn. The status rule's "usable cases" are the counting cases.

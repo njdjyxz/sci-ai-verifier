@@ -219,6 +219,22 @@ explicit system prompts, restricted mode, all-path CLAUDE.md exclusions and a
 fresh empty repository root exclude unrelated local customizations.
 Claude Code v2.1.248 or later is required. Managed enterprise configuration and
 the CLI itself remain part of the trusted host; the text session is not an OS sandbox.
+Before the planner starts, the runner asks the pinned model for a one-word reply in a
+fresh no-tool session. A CLI that cannot serve that model stops the run as
+`model_unavailable` before any planner or subject cost; run a8036722 once died three
+seconds into its planner for that reason.
+
+Every trial must be answered by one model, the same one throughout the claim's trial
+set. Subject sessions run with Claude Code's model substitution and refusal fallback
+switched off (`CLAUDE_CODE_NO_MODEL_FALLBACK` and `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK`,
+undocumented switches present in CLI 2.1.268), and Python still reads each stream
+rather than trusting the switches. A `<synthetic>` message is a notice the CLI writes,
+not a model. A trial another model answered is not the pinned model's evidence: after a
+safety refusal it is `subject_refused`, naming the model that answered; otherwise it is
+`subject_model_changed`. A refusal the pinned model then answered itself counts, with
+the refusal recorded on the trial. Run 3dc02567 showed all three: Opus 5 refused an
+R-group question, Opus 4.8 answered two trials in its place, and Opus 5 answered the
+third itself.
 
 No reference answer, candidate, evaluator file, verifier conversation or arbitrary
 planner instruction is included in subject input. Subject input is the frozen
@@ -226,6 +242,17 @@ case input plus the pinned skill. A process deadline and output ceiling are
 enforced; timeout/cancellation terminates the process tree. An interrupted trial
 request is retained and is never silently replayed. Restarting verification
 creates a new run and discloses a new evidence sample.
+
+One disclosed retry is the exception. When `write_report_card` is called, Python
+re-runs once, in full, each claim whose execution a subject-trial fault stopped: a
+safety refusal, a model switch, a CLI failure or timeout, or a container failure. The
+retry uses the same frozen plan, model and inputs. A wrong answer is never retried,
+because it is evidence; neither is a security fault or a failure of Python's own checks.
+The first attempt's record and receipts stay in the report beside the retry's. A claim
+is not retried, and the report says why, when its plan settled no execution grade (the
+documentary step after it needs the planner), when the subject-call budget cannot
+cover it, or when less time remains before the attempt deadline than one minute per
+trial plus five for the report.
 
 ## Authentication and storage
 

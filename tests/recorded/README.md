@@ -23,6 +23,8 @@ code, so it is the only test data here that can actually falsify the parser.
 | `critic-case-verdict-extra-key.jsonl` | critic | `0a243b7e` | Complete rubric v5 reply supporting B; two case verdicts carry an extra, empty `verdict_note` |
 | `critic-case-verdict-extra-key-2.jsonl` | critic | `0a243b7e` | The retry against the same packet; one case verdict carries an extra, empty `case_id_note` |
 | `planner-session-limit.jsonl` | planner | `7f88fbef` | The planner's last two events: the CLI's `rate_limit` message and a `result` with `terminal_reason` `api_error`, HTTP 429, "You've hit your session limit" |
+| `subject-refusal-fallback.jsonl` | subject | `3dc02567` | Opus 5 refused an R-group question after the skill loaded; a `model_refusal_fallback` event, then `claude-opus-4-8` wrote the answer `R1` and the session succeeded |
+| `subject-refusal-recovered.jsonl` | subject | `3dc02567` | The same case: `model_refusal_no_fallback`, a `<synthetic>` refusal notice, then `claude-opus-5` answered `R1` itself |
 
 `assessor-packet.json` is the real evidence packet the recorded assessor was
 given, so its citations can be checked against the bytes it actually saw. `critic-case-verdict-packet.json` is the real
@@ -38,7 +40,8 @@ claim 1 of that run was lost with them. The `e035eef6` safety
 refusal was reported as an indistinguishable "incomplete observation", hiding
 that the provider, not the skill, was the thing that failed. The `7f88fbef` planner
 stopped on the subscription session limit, and the runner recorded that as the
-operator cancelling the run.
+operator cancelling the run. The first `3dc02567` subject stream succeeded with another
+model's answer, which was scored as the pinned model's.
 
 ## Rules for this directory
 

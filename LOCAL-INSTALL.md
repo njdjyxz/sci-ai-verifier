@@ -163,9 +163,10 @@ claude.exe -p "Reply OK" --model <new-model-id>
 If the output contains `unrecognized_model`, this CLI cannot serve that model; keep
 the current pin. `Not logged in` is expected from a plain PowerShell window, because
 the verifier's token is supplied only through the desktop app, and the model check
-happens before sign-in, so `unrecognized_model` is the line that matters. Skipping this
-costs a run: the verifier starts, the planner is refused within seconds, and the run
-ends incomplete with no evidence.
+happens before sign-in, so `unrecognized_model` is the line that matters. The verifier
+now makes the same check itself before every run and stops with `model_unavailable`
+if it fails, so a wrong pin no longer costs a run, only a few seconds; checking first
+still saves you the restart.
 
 `--timeout 5400` gives each verification 90 minutes. Without it the limit is 30
 minutes, which measurement shows is not enough: a five-claim skill took about 50

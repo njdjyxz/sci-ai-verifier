@@ -154,8 +154,21 @@ def limitation(store, state, claim_id, code, reason, receipts=None, *, asserted_
     return {"outcome": code, "limitation": record}
 
 
+def reply_reference(reference):
+    """A pinned reference as the planner may receive it: text past the reply limit is cut.
+
+    Quotes are checked against the pinned record, never against this copy.
+    """
+    shown, total = catalog.reply_text(reference.get("text") or "")
+    if total is None:
+        return reference
+    return {**reference, "text": shown, "text_truncated": True, "text_bytes_total": total}
+
+
 def operate(store, state, name, args, subject):
     if name == "write_report_card":
+        if subject is not None:
+            retry_stopped_claims(store, state, subject)
         return report(store, state)
     claim_id = args["claim_id"]
     if name not in CLAIM_LEGAL.get(state["claim_states"].get(claim_id), []):
@@ -182,11 +195,7 @@ def operate(store, state, name, args, subject):
                      "authority": "not_independently_attested", "redistribution": "not_authorized"}
         key = keep(store, state, reference)
         work["reference_refs"].append(key)
-        # Qualification checks quotes against the pinned whole page; only the reply is cut.
-        shown, total = catalog.reply_text(text)
-        if total is not None:
-            reference = {**reference, "text": shown, "text_truncated": True, "text_bytes_total": total}
-        return {"outcome": "reference_fetched", "reference_ref": key, "untrusted_reference": reference}
+        return {"outcome": "reference_fetched", "reference_ref": key, "untrusted_reference": reply_reference(reference)}
     if name in {"load_local_resource","fetch_local_asset"}:
         from .local_resources import inspect_resource,import_configured
         settings=settings_for(store,state)
@@ -211,7 +220,7 @@ def operate(store, state, name, args, subject):
                    "raw_ref":raw_ref,"retrieved_at":utc_now(),"authority":"not_independently_attested","redistribution":"not_authorized"}
         key=keep(store,state,reference)
         work["reference_refs"].append(key)
-        return {"outcome":"reference_fetched","reference_ref":key,"untrusted_reference":reference}
+        return {"outcome":"reference_fetched","reference_ref":key,"untrusted_reference":reply_reference(reference)}
     if name=="qualify_local_evaluator":
         from .local_evaluators import qualify
         from .mcp import parse_json
@@ -270,8 +279,9 @@ def prior_objections(history):
 # The planner's notes travel to the critique, so they must not carry what Python withholds.
 # Run b0955d2f's planner told one reviewer "The previous round settled at C" and another
 # that "Two independent critiques have given this case the verdict counts". `review` alone
-# is allowed: a source may be a review article.
-PRIOR_REVIEW = re.compile(r"\b(?:critiqu\w*|reviewers?|verdicts?|settled|no[- ]grade)\b"
+# is allowed: a source may be a review article. Bare `settled` refused run 3dc02567's "No
+# two cases are settled by the same discriminating fact", so only `settled at` is caught.
+PRIOR_REVIEW = re.compile(r"\b(?:critiqu\w*|reviewers?|verdicts?|settled at|no[- ]grade)\b"
                           r"|\b(?:previous|earlier|prior|last) rounds?\b", re.IGNORECASE)
 
 
@@ -577,7 +587,9 @@ def documentary_step(store,state,claim_id,name,args,subject):
     return {"outcome":"local_documentary_complete" if name=="assess_local_documentary" else "local_unverified_recorded","result":record}
 
 
-def execute(store, state, claim_id, subject):
+def execute(store, state, claim_id, subject, retry=False):
+    """Run the settled plan's full trial set; `retry` is the end-of-run re-run, kept apart."""
+    from .claude_runner import SYNTHETIC_MODEL
     from .storage import implementation_bytes
     if digest(implementation_bytes()) != state["local_method_ref"]:
         return limitation(store, state, claim_id, "method_changed", "Runtime code changed after bootstrap; start a new verification.")
@@ -589,7 +601,7 @@ def execute(store, state, claim_id, subject):
         return limitation(store, state, claim_id, "subject_identity_changed", "Restart with the originally pinned subject settings.")
     # Stable ordinal avoids repeating the 70-character claim hash in Windows
     # paths; the full claim/selection identity remains inside every receipt.
-    claim_directory = f"claim-{sorted(state['claim_states']).index(claim_id) + 1:03}"
+    claim_directory = f"claim-{sorted(state['claim_states']).index(claim_id) + 1:03}" + ("-retry" if retry else "")
     directory = no_links(store.root / "subject-runs" / state["run_id"] / claim_directory)
     if directory.exists() and list(directory.glob("*-request.json")):
         receipts = []
@@ -633,9 +645,10 @@ def execute(store, state, claim_id, subject):
         except (Fault, OSError) as error:
             code = error.code if isinstance(error, Fault) else "subject_unavailable"
             # A safety refusal is reported as itself. It says the provider would not answer,
-            # not that the skill was wrong, and it is never retried.
+            # not that the skill was wrong. Execution never retries a trial; the one
+            # disclosed re-run of a stopped claim is write_report_card's.
             reason = (str(error) if code == "subject_refused" else
-                      "Subject execution did not return a complete verified observation. No retry was made.")
+                      "Subject execution did not return a complete verified observation. Execution does not retry a trial.")
             return limitation(store, state, claim_id, code, reason, receipts)
         artifacts=[]
         for item in response.pop("artifacts",[]):
@@ -657,9 +670,16 @@ def execute(store, state, claim_id, subject):
         receipts.append(response_ref)
         models=response.get("observed_model_ids",[])
         if models:
-            if "observed_models_ref" not in work:
-                work["observed_models_ref"]=keep(store,state,models)
-            elif store.get_json(work["observed_models_ref"])!=models:
+            # Exactly one model answers every trial. Pinning whatever the first trial reported
+            # let run 3dc02567's first two trials, each answered partly by Opus 4.8, pass as a
+            # stable identity until the third differed.
+            answered=sorted(set(models)-{SYNTHETIC_MODEL})
+            pinned="retry_observed_models_ref" if retry else "observed_models_ref"
+            if len(answered)!=1:
+                return limitation(store,state,claim_id,"subject_model_changed","A trial was answered by "+(", ".join(answered) or "no model")+", not by exactly one model.",receipts)
+            if pinned not in work:
+                work[pinned]=keep(store,state,answered)
+            elif store.get_json(work[pinned])!=answered:
                 return limitation(store,state,claim_id,"subject_model_changed","Observed model identity changed within the frozen trial set.",receipts)
         try:
             evaluation_artifacts=[{"path":item["path"],"base64":base64.b64encode(store.get(item["object_ref"])).decode()} for item in artifacts] if candidate["method"]=="python" else None
@@ -693,6 +713,54 @@ def execute(store, state, claim_id, subject):
     needs_documentary=not result["evidence_grade"] and settings["documentary_assessment"]
     state["claim_states"][claim_id] = "local_documentary" if needs_documentary else "terminal_result"
     return {"outcome": "local_documentary_required" if needs_documentary else "local_comparison_complete", "result": result}
+
+
+# Trial faults the one end-of-run re-run may clear ("Subject boundary" in local-contract.md).
+# A security fault is never re-run, nor is a failure of Python's own checks.
+RETRY_FAULTS = {"subject_refused", "subject_model_changed", "subject_unavailable", "subject_response_invalid",
+                "skill_invocation_unverified", "claude_incomplete", "claude_protocol_error",
+                "claude_identity_error", "claude_timeout", "claude_output_limit", "claude_unavailable",
+                "sandbox_unavailable", "sandbox_image_unavailable", "sandbox_start_failed",
+                "sandbox_not_started", "sandbox_timeout", "sandbox_source_unavailable"}
+# One minute per trial is three times the slowest mean of run 3dc02567; five more for the report.
+RETRY_SECONDS_PER_TRIAL = 60
+RETRY_REPORT_SECONDS = 300
+# Set by the runner for its planner's tool server; absent when nothing bounds the attempt.
+DEADLINE_ENV = "SCI_VERIFIER_ATTEMPT_DEADLINE"
+
+
+def retry_stopped_claims(store, state, subject):
+    """Re-run once, in full, each claim a subject-trial fault stopped, and record why not otherwise."""
+    import os
+    import time
+    settings = settings_for(store, state)
+    deadline = os.environ.get(DEADLINE_ENV)
+    for claim_id in sorted(state["claim_states"]):
+        work = state["local_work"].get(claim_id) or {}
+        if (state["claim_states"][claim_id] != "terminal_operational" or "retry_ref" in work
+                or not work.get("outcome_ref") or not work.get("audit_ref") or not work.get("selection_ref")):
+            continue
+        first = store.get_json(work["outcome_ref"])
+        if first.get("fault") not in RETRY_FAULTS:
+            continue
+        trials = len(store.get_json(work["candidate_ref"])["cases"]) * store.get_json(work["selection_ref"])["trials_per_case"]
+        record = {"kind": "local-retry", "claim_id": claim_id, "fault": first["fault"], "first_attempt_ref": work["outcome_ref"]}
+        skip = None
+        if not store.get_json(work["audit_ref"]).get("settled_ceiling") and settings["documentary_assessment"]:
+            skip = "Its plan settled no execution grade, and the documentary step after a re-run needs the planner."
+        elif state["subject_calls_used"] + trials > settings["max_subject_calls"]:
+            skip = "The subject-call budget cannot cover a re-run of " + str(trials) + " trials."
+        elif deadline and float(deadline) - time.time() < trials * RETRY_SECONDS_PER_TRIAL + RETRY_REPORT_SECONDS:
+            skip = "Too little time remains before the attempt deadline to re-run " + str(trials) + " trials and write the report."
+        if skip:
+            work["retry_ref"] = keep(store, state, {**record, "status": "skipped", "reason": skip})
+            continue
+        del work["outcome_ref"]
+        outcome = execute(store, state, claim_id, subject, retry=True)["outcome"]
+        if state["claim_states"][claim_id] == "local_documentary":
+            # Nothing may wait on the planner once the report is being written.
+            state["claim_states"][claim_id] = "terminal_result"
+        work["retry_ref"] = keep(store, state, {**record, "status": "retried", "outcome": outcome})
 
 
 def axis_lines(terminal, cell):
@@ -768,14 +836,19 @@ def report(store, state):
                               "applicability": case["applicability"],
                               "counted": counted is None or case["case_id"] in counted,
                               "session_id": observed.get("session_id") if observed else None,
-                              "observed_model_ids": observed.get("observed_model_ids", []) if observed else []})
+                              "observed_model_ids": observed.get("observed_model_ids", []) if observed else [],
+                              "refusals": observed.get("refusals", []) if observed else []})
         execution_counts={"planned":len(tests),"attempted":sum(item.get("kind")=="local-subject-request" for item in responses),
                           "obtained":len(answers),"evaluated":sum("comparison_status" in item for item in responses),
                           "invalid":sum(item.get("comparison_status")=="invalid" for item in responses),"missing":len(tests)-len(answers)}
         required_grade=settings_for(store,state).get("minimum_grade")
         achieved=terminal.get("evidence_grade")
         meets_required=None if required_grade is None else bool(achieved in {"A","B","C","D"} and "ABCD".index(achieved)<= "ABCD".index(required_grade))
+        retry = store.get_json(work["retry_ref"]) if work.get("retry_ref") else None
+        if retry:
+            retry = {**retry, "first_attempt": store.get_json(retry["first_attempt_ref"])}
         rows.append({"claim": claim, "record": terminal, "tests": tests, "references": sources,"execution_counts":execution_counts,
+                     "retry": retry,
                      "required_grade":required_grade,"meets_required_grade":meets_required,
                      "audit":audit_record,
                      "documentary_assessment":store.get_json(work["assessment_ref"]) if work.get("assessment_ref") else None,
@@ -784,6 +857,11 @@ def report(store, state):
                       "Outcome: " + terminal.get("comparison_status", terminal.get("documentary_status",terminal.get("code",terminal.get("scientific_status") or "unavailable"))), "",
                       "Scientific status: "+cell(terminal.get("scientific_status") or "unassigned")+"; evidence grade: "+cell(terminal.get("evidence_grade") or "unassigned"),""])
         lines.extend(axis_lines(terminal, cell))
+        if retry:
+            first_attempt = "First attempt stopped by " + cell(retry["fault"]) + ": " + cell(retry["first_attempt"].get("reason", "")) + " "
+            lines.extend([first_attempt + ("Re-run once at the end of the run, with the same plan, model and inputs: "
+                                           + cell(retry["outcome"]) + "." if retry["status"] == "retried"
+                                           else "Not re-run: " + cell(retry["reason"])), ""])
         if required_grade:
             lines.extend(["Required grade: "+required_grade+"; requirement "+("met" if meets_required else "not met"),""])
         # Every tested case, counted or not; completeness above covers the counted cases only.

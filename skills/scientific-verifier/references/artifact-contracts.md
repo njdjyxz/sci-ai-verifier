@@ -407,7 +407,11 @@ invalid/missing counts, whether each tested case was counted, the settled grade
 negotiation, required-grade satisfaction
 and independent critique and documentary packet/assessment references. Limitation
 records carry `asserted_by`, distinguishing a planner-ended claim from an observed
-failure. A diagnostic workflow-log pointer
+failure. A trial's receipt and report row carry any safety `refusals` its stream
+recorded. A claim covered by the end-of-run retry of `local-contract.md` holds
+`retry_ref`; that record names the first attempt's fault, keeps a reference to the first
+attempt's record, and holds either the re-run's outcome or the reason it was skipped.
+The re-run's trials live in their own `claim-NNN-retry` directory under `subject-runs/`. A diagnostic workflow-log pointer
 links to the per-attempt hash-chained timeline. Partial reports after failures
 explicitly keep `verification_complete: false` and do not change journal results.
 Catalog inventory receipts pin exact release bytes, versions and retired IDs to

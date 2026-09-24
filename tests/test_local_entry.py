@@ -13,7 +13,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.common import canonical
-from sci_ai_verifier.local_entry import verify
+from sci_ai_verifier.local import DEADLINE_ENV
+from sci_ai_verifier.local_entry import PROBE_PROMPT, verify
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,9 +45,20 @@ class EntryTests(unittest.TestCase):
                            "EXAMPLE_APP_TOKEN": "entry-app-token", "UNRELATED_SECRET": "entry-unrelated-secret"}
             credential = "ANTHROPIC_API_KEY" if auth == "api" else "CLAUDE_CODE_OAUTH_TOKEN"
 
+            probes = []
+
             def controller(command, **kwargs):
+                if kwargs["prompt"] == PROBE_PROMPT:
+                    # The startup probe runs before the planner, in its own no-tool session.
+                    probes.append(command)
+                    session = command[command.index("--session-id")+1]
+                    return 0, canonical({"type": "result", "subtype": "success", "is_error": False,
+                                         "session_id": session, "result": "OK"}), b""
+                self.assertEqual(len(probes), 1, "the model is probed once, before the planner starts")
                 config = json.loads(Path(command[command.index("--mcp-config")+1]).read_bytes())
                 private = config["mcpServers"]["verifier_internal"]
+                # The tool server learns the attempt deadline, by reference like the credentials.
+                self.assertEqual(private["env"].get(DEADLINE_ENV), "${" + DEADLINE_ENV + ":-}")
                 # Model the MCP transport's safe baseline, not full parent inheritance.
                 child_env = {key: value for key, value in kwargs["env"].items()
                              if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "COMSPEC",

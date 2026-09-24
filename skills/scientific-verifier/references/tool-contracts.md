@@ -539,7 +539,7 @@ The same limit applies to the subject side. The agent selects and configures an 
 
 `load_submitted_skill`'s `source_path` confirms the path authorized at bootstrap; it never selects what is read, because the snapshot always uses the pinned path. A mismatch is fatal in the historical Desktop profiles, whose pinned contracts describe it that way. In the local profile it is repairable: the refusal names the correct path in `repair_fields`, the run stays in `created`, and the planner retries with it. Making it fatal there taught the caller the answer at the moment it could no longer use it.
 
-`get_verifier_context` returns a bounded header, never the bulk. The header carries committed state, the current token, `authorized_parameters.source_path`, an `instructions` index of identity/digest/bytes for every pinned document, `fetchable_sections`, and `omitted_sections` for anything that would not fit. Supplying `section` returns one named part -- a pinned instruction document or a committed artifact such as `manifest`, `snapshot`, `report`, `local_work`, `local_artifacts`, `local_configuration` or `operational_outcomes` -- with its `trust_class`, `bytes_total` and a `truncated` flag when it exceeds the run's read limit. An unknown name returns `unknown_context_section` and lists the valid ones. The control neither advances the workflow nor rotates the token.
+`get_verifier_context` returns a bounded header, never the bulk. The header carries committed state, the current token, `authorized_parameters.source_path`, an `instructions` index of identity/digest/bytes for every pinned document, `fetchable_sections`, and `omitted_sections` for anything that would not fit. Supplying `section` returns one named part -- a pinned instruction document or a committed artifact such as `manifest`, `snapshot`, `report`, `local_work`, `local_artifacts`, `local_configuration` or `operational_outcomes` -- with its `trust_class`, `bytes_total` and a `truncated` flag when it exceeds the run's read limit. In the local profile a section is also held to the reply limit of `fetch_local_reference`, because that planner cannot open a reply its host spills to a file. An unknown name returns `unknown_context_section` and lists the valid ones. The control neither advances the workflow nor rotates the token.
 ## Local profile tools
 
 All operations below require the current `run_id`, `state_token` and `claim_id`.
@@ -679,9 +679,13 @@ The Local profile matrix in workflow.md governs their legality.
   computed over the audit's `counted_cases`; the result lists the others under
   `uncounted_cases` with their verdicts, and their observations stay in the receipts. No uncertain trial retries. Produce a result or operational record.
   A provider safety refusal is recorded as `subject_refused`, naming the refusal
-  category, and is never retried: the case input is frozen, so the identical request
-  refuses again. A refusal reports that the provider would not answer, never that the
-  claim failed, and the trials it costs stay missing rather than being replaced —
+  category and, when Claude Code let another model answer, that model, whose answer is
+  never used ("Subject boundary" in `local-contract.md` owns the one-model rule).
+  Execution itself never retries a trial; the single disclosed re-run of a stopped claim
+  belongs to `write_report_card` below. A refusal does not always recur: in run 3dc02567
+  Opus 5 answered a case it had refused moments earlier. A refusal reports that the
+  provider would not answer, never that the claim failed, and the trials it costs stay
+  missing rather than being replaced —
   substituting fresh cases for refused ones after execution has begun would reshape
   coverage around whatever the provider happens to allow. Recovering that coverage
   requires a new plan, proposed and critiqued like any other.
@@ -690,10 +694,13 @@ The Local profile matrix in workflow.md governs their legality.
   independent claims. It is illegal in local_ready: a settled executable plan is
   ended by executing it, not by assertion. Records carry `asserted_by` so a report
   distinguishes a planner-ended claim from a failure Python observed.
-- `write_report_card`: in reporting, derive JSON and Markdown from all terminal
-  claims. Comparison status is separate from scientific verdict and grade under
-  the installed policy. Pin qualification, scope, the settled grade negotiation and
-  limitations.
+- `write_report_card`: in reporting, first re-run once each claim a subject-trial fault
+  stopped, under the retry rule in "Subject boundary" of `local-contract.md`; then derive
+  JSON and Markdown from all terminal claims. Comparison status is separate from
+  scientific verdict and grade under the installed policy. Pin qualification, scope, the
+  settled grade negotiation and limitations. A claim the rule covered carries `retry`,
+  naming the first attempt's fault with that attempt's record, and either the re-run's
+  outcome or the reason it was not re-run.
 ## Additional local resource and evaluator tools
 
 Resource tools are legal in local_discovery/local_documentary; evaluator
@@ -707,6 +714,9 @@ token and claim binding. The workflow matrix is authoritative.
   version, license and units. Reject redirects, private addresses, mismatched
   bytes, oversized files and unsafe archive members. Never extract an archive
   on the host. A configured reference-host restriction also applies here.
+  Both tools keep a text preview of up to 128,000 characters with the resource, but
+  their reply carries only as much of it as `fetch_local_reference` allows, flagged
+  `text_truncated` with `text_bytes_total` when cut.
 - `qualify_local_evaluator`: accept a bounded JSON evaluator specification with
   Python scoring code, source-backed cases and positive/negative/boundary/held-out
   controls. Run each control in a disposable pinned container. Store its inputs,

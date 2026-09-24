@@ -286,11 +286,11 @@ class GradeNegotiationTests(unittest.TestCase):
         # Three trials of a retrieved, token-exact, installed-method comparison: ceiling A.
         self.key=self.build(3)
 
-    def build(self, trial_count, name="graded"):
+    def build(self, trial_count, name="graded", **settings):
         h=self.h
         # A non-synthetic subject identity is what makes a grade reachable at all.
         h.subject.identity={"adapter_id":"local-fixture","model_id":"fixture-model","synthetic":False}
-        h.subject.settings={**load_configuration(),"trial_count":trial_count}
+        h.subject.settings={**load_configuration(),"trial_count":trial_count,**settings}
         h.runtime=Runtime(h.base/name,h.source,fixture.ROOT/"skills/scientific-verifier",
                           profile="local",subject_adapter=h.subject)
         h.data=h.runtime.call("start_verifier_run",{"source_path":str(h.source)})["data"]
@@ -494,6 +494,124 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertEqual(h.data["outcome"],"local_plan_fixed")
         self.assertEqual(h.data["audit"]["critique_rounds"],1)
         self.assertEqual(len(self.packets),1)
+
+    def test_only_settled_at_marks_an_earlier_outcome(self):
+        """Run 3dc02567: bare "settled" refused an innocent sentence about the design."""
+        from sci_ai_verifier.local import PRIOR_REVIEW
+        self.assertIsNone(PRIOR_REVIEW.search("No two cases are settled by the same discriminating fact."))
+        self.assertTrue(PRIOR_REVIEW.search("The previous round settled at C."))
+        self.assertTrue(PRIOR_REVIEW.search("This design settled at B once."))
+
+    def stop_first(self, code, calls=1):
+        """The subject raises `code` on its first `calls` trials, then answers normally."""
+        h=self.h
+        answer=h.subject.observe
+        count=[0]
+
+        def observe(**request):
+            count[0]+=1
+            if count[0]<=calls:
+                h.subject.requests.append(request)
+                raise Fault(code,"Fixture "+code+".")
+            return answer(**request)
+        h.subject.observe=observe
+
+    def stopped(self, code, key=None, target="A"):
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic(target)):
+            h.select(key or self.key,target_grade=target)
+        self.stop_first(code)
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual(h.data["outcome"],code)
+        self.assertEqual(len(h.subject.requests),1)
+
+    def test_a_claim_a_refusal_stopped_is_re_run_once_at_the_end_with_both_attempts_reported(self):
+        h=self.h
+        self.stopped("subject_refused")
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual((row["record"]["evidence_grade"],row["record"]["scientific_status"]),("A","pass"))
+        self.assertEqual((row["retry"]["status"],row["retry"]["fault"],row["retry"]["outcome"]),
+                         ("retried","subject_refused","local_comparison_complete"))
+        self.assertEqual(row["retry"]["first_attempt"]["code"],"subject_refused")
+        self.assertEqual(len(h.subject.requests),16)  # one refused, then all fifteen once more
+        self.assertIn("Re-run once at the end of the run",Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
+        # The re-run's trials sit apart from the first attempt's.
+        runs=h.runtime.store.root/"subject-runs"/h.data["run_id"]
+        self.assertEqual(len(list(runs.glob("claim-*-retry/*-request.json"))),15)
+        self.assertEqual(len([path for path in runs.glob("claim-*/*-request.json") if "-retry" not in path.parent.name]),1)
+
+    def test_a_wrong_answer_is_never_re_run(self):
+        h=self.h
+        h.subject.mode="wrong"
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
+            h.select(self.key,target_grade="A")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual(row["record"]["scientific_status"],"fail")
+        self.assertIsNone(row["retry"])
+        self.assertEqual(len(h.subject.requests),15)
+
+    def test_a_security_fault_is_never_re_run(self):
+        h=self.h
+        self.stopped("subject_boundary_violation")
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual(row["record"]["code"],"subject_boundary_violation")
+        self.assertIsNone(row["retry"])
+        self.assertEqual(len(h.subject.requests),1)
+
+    def test_a_re_run_the_time_left_cannot_cover_is_skipped_and_says_why(self):
+        import os,time
+        from sci_ai_verifier.local import DEADLINE_ENV
+        h=self.h
+        self.stopped("subject_refused")
+        with patch.dict(os.environ,{DEADLINE_ENV:str(int(time.time())+60)}):
+            h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual(row["retry"]["status"],"skipped")
+        self.assertIn("Too little time",row["retry"]["reason"])
+        self.assertEqual(row["record"]["code"],"subject_refused")
+        self.assertEqual(len(h.subject.requests),1)
+        self.assertIn("Not re-run: Too little time",Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
+
+    def test_a_re_run_the_call_budget_cannot_cover_is_skipped(self):
+        h=self.h
+        key=self.build(3,name="budget",max_subject_calls=15)
+        self.stopped("subject_refused",key=key)
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual(row["retry"]["status"],"skipped")
+        self.assertIn("subject-call budget",row["retry"]["reason"])
+
+    def test_an_ungraded_plan_is_not_re_run_because_its_documentary_step_needs_the_planner(self):
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("none")):
+            h.select(self.key,target_grade="A")
+            h.select(self.key,target_grade="A")
+        self.assertIsNone(h.data["audit"]["settled_ceiling"])
+        self.stop_first("subject_refused")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual(row["retry"]["status"],"skipped")
+        self.assertIn("settled no execution grade",row["retry"]["reason"])
+
+    def test_a_long_resource_preview_reaches_the_planner_cut(self):
+        from sci_ai_verifier.local_candidates import REPLY_TEXT_BYTES
+        h=self.h
+        path=h.base/"long-table.txt"
+        text="compound,value\n"+"CHEMBL1,1.0\n"*6000
+        path.write_bytes(text.encode())  # Bytes, so Windows adds no carriage returns.
+        resource={"path":str(path.resolve()),"sha256":digest(path.read_bytes()),"version":"fixture-v1",
+                  "license":"Unknown; private analysis only","units":"none","description":"Long fixture table"}
+        self.build(3,name="resource",resources={"table":resource})
+        h.call("load_local_resource",claim_id=h.claim_id,resource_name="table",format="text")
+        shown=h.data["untrusted_reference"]
+        self.assertTrue(shown["text_truncated"])
+        self.assertEqual(shown["text_bytes_total"],len(text.encode()))
+        self.assertLessEqual(len(shown["text"].encode()),REPLY_TEXT_BYTES)
 
     def test_accepting_a_settled_grade_is_not_checked_because_no_reviewer_reads_it(self):
         h=self.h

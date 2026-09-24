@@ -8,9 +8,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from .agent import ConfigurationError, Runtime
-from .claude_runner import ClaudeCode, prepare_workspace, isolated_environment, parse_events, session_directory, sweep_stale_directories
+from .claude_runner import (NO_SUBSTITUTION, ClaudeCode, prepare_workspace, isolated_environment, parse_events,
+                            session_directory, sweep_stale_directories)
 from .common import Fault, canonical
-from .local import OPERATIONS
+from .local import DEADLINE_ENV, OPERATIONS
 from .local_candidates import safe_payload
 from .storage import atomic_write, no_links
 from .tools import DEFINITIONS, obj, string
@@ -92,6 +93,35 @@ def planner_stop(raw):
     return None
 
 
+PROBE_PROMPT = "Reply with the single word OK."
+PROBE_TIMEOUT_SECONDS = 90
+
+
+def probe_model(adapter):
+    """Ask the pinned model for one word, in a fresh no-tool session, before anything is spent.
+
+    Run a8036722 died three seconds into its planner because the CLI could not serve the
+    pinned model. Substitution is off here as in subject sessions, so another model cannot
+    answer in the pinned one's place.
+    """
+    session = str(uuid4())
+    with session_directory("sci-verifier-probe-", getattr(adapter, "log", None)) as temporary:
+        directory = no_links(Path(temporary) / "workspace")
+        prepare_workspace(directory)
+        command = adapter.command(directory, session, controller=True)
+        for flag, value in (("--tools", ""), ("--allowedTools", ""), ("--max-turns", "1"), ("--system-prompt", PROBE_PROMPT)):
+            command[command.index(flag) + 1] = value
+        env = {**isolated_environment(Path(temporary) / "config", adapter.auth), **NO_SUBSTITUTION}
+        code, raw, _ = adapter.run(command, role="probe", cwd=directory, env=env, prompt=PROBE_PROMPT,
+                                   timeout=PROBE_TIMEOUT_SECONDS, max_bytes=262144)
+    if code:
+        stop = planner_stop(raw)
+        raise Fault("model_unavailable", "Claude Code could not answer a one-word request with " + adapter.model
+                    + (": " + stop + "." if stop else "."))
+    response = parse_events(raw, expected_session=session)
+    return {"model_requested": adapter.model, "observed_model_ids": response["observed_model_ids"]}
+
+
 def closing_for(error):
     """The (category, reason) a run closed by the runner records; None for the operator's own.
 
@@ -162,6 +192,7 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
         # whose every execution claim was already doomed.
         from .sandbox import DockerSandbox
         preflight["sandbox"] = DockerSandbox(workspace, settings).preflight()
+    preflight["model_probe"] = probe_model(adapter)
     log.emit("setup_finished", preflight=preflight)
     runtime = Runtime(workspace, source if source.is_dir() else source.parent, instructions,
                       profile="local", subject_adapter=adapter)
@@ -183,7 +214,11 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
             # credential is offered under a neutral alias that survives that expansion.
             alias = "SCI_VERIFIER_INTERNAL_CREDENTIAL"
             env[alias] = env[credential]
-            internal_env = {credential: "${" + alias + ":-}"}
+            # The planner is stopped `timeout` seconds after it starts, which is about now. Its
+            # tool server needs that to decide whether the end-of-run re-run still fits, and
+            # gets it by reference like everything else, so the configuration holds no values.
+            env[DEADLINE_ENV] = str(int(time.time() + timeout))
+            internal_env = {credential: "${" + alias + ":-}", DEADLINE_ENV: "${" + DEADLINE_ENV + ":-}"}
             for tool in settings["external_tools"].values():
                 for key in tool["credential_env"]:
                     if key in os.environ:

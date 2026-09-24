@@ -127,7 +127,8 @@ class LocalTests(unittest.TestCase):
 
     def test_a_model_swap_inside_one_trial_set_is_operational_not_a_result(self):
         """A grade describes one subject. If the identity changes mid-set, there is no result."""
-        self.subject.models = [["fixture-model"], ["swapped-model"], ["fixture-model"]]
+        # The fourth call swaps again, so the end-of-run re-run meets the same fault.
+        self.subject.models = [["fixture-model"], ["swapped-model"], ["fixture-model"], ["swapped-model"]]
         self.ready()
         self.call("execute_local_claim", claim_id=self.claim_id)
         self.assertEqual(self.data["outcome"], "subject_model_changed")
@@ -138,9 +139,26 @@ class LocalTests(unittest.TestCase):
         # The observations taken before the swap are kept, not discarded.
         self.assertTrue(limitation["receipts"])
         self.call("write_report_card")
-        record = self.data["report"]["claims"][0]["record"]
-        self.assertEqual(record["code"], "subject_model_changed")
-        self.assertIsNone(record["evidence_grade"])
+        row = self.data["report"]["claims"][0]
+        self.assertEqual(row["record"]["code"], "subject_model_changed")
+        self.assertIsNone(row["record"]["evidence_grade"])
+        self.assertEqual((row["retry"]["status"], row["retry"]["outcome"]), ("retried", "subject_model_changed"))
+
+    def test_a_trial_answered_by_two_models_is_refused_at_once(self):
+        """Run 3dc02567 pinned [opus-4-8, opus-5] from trial 1 and scored trial 2 as stable."""
+        self.subject.models = [["fixture-model", "other-model"]]
+        self.ready()
+        self.call("execute_local_claim", claim_id=self.claim_id)
+        self.assertEqual(self.data["outcome"], "subject_model_changed")
+        self.assertIn("not by exactly one model", self.data["limitation"]["reason"])
+        self.assertEqual(len(self.subject.requests), 1)
+
+    def test_a_cli_notice_is_not_a_model(self):
+        """A refusal the pinned model then answered itself leaves a `<synthetic>` notice."""
+        self.subject.models = [["<synthetic>", "fixture-model"], ["fixture-model"]]
+        self.ready()
+        self.call("execute_local_claim", claim_id=self.claim_id)
+        self.assertEqual(self.data["result"]["comparison_status"], "pass")
 
     def test_empty_catalog_discovery_complete_report_and_offline_reuse(self):
         key = self.ready()
@@ -587,6 +605,11 @@ class LocalTests(unittest.TestCase):
         self.reference_ref = self.data["reference_ref"]
         self.candidate(lookup=False)
         self.assertEqual(self.data["outcome"], "qualified_local")
+        # Re-reading the claim's artifacts as a section is held to the same reply limit.
+        section = self.runtime.call("get_verifier_context", {"run_id": self.data["run_id"],
+                                                              "section": "local_artifacts"})["data"]["section"]
+        self.assertTrue(section["truncated"])
+        self.assertLessEqual(len(section["content"].encode()), REPLY_TEXT_BYTES)
 
     def test_the_runner_records_who_closed_a_run(self):
         """Only the operator cancels; a planner that stopped by itself is agent_unavailable."""

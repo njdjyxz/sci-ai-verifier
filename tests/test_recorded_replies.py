@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from sci_ai_verifier.claude_runner import ClaudeCode, parse_events, refusal_category
+from sci_ai_verifier.claude_runner import NO_SUBSTITUTION, ClaudeCode, parse_events, refusal_category
 from sci_ai_verifier.common import Fault, canonical, digest
 from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, CRITIQUE_RUBRIC, RUBRIC, critique,
     parse_reply, validate_assessment, validate_critique)
@@ -37,7 +37,8 @@ CRITIC_RECORDINGS = {"critic-fenced-revision-list.jsonl": ("B", 5, True),
 CASE_VERDICT_RECORDINGS = {"critic-case-verdict-extra-key.jsonl": "verdict_note",
                            "critic-case-verdict-extra-key-2.jsonl": "case_id_note"}
 # Streams that are not critic replies, exercised by their own tests.
-OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl", "planner-session-limit.jsonl"]
+OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
+                    "subject-refusal-fallback.jsonl", "subject-refusal-recovered.jsonl"]
 # Every critic recording answered rubric v2, which had five criteria; v3 appended a sixth,
 # and v4 added the per-case verdict keys. A reply is judged against the rubric it was
 # answering -- judging it against a later one would fail real replies for a question nobody
@@ -62,6 +63,16 @@ V4_REF = "be80e6974bde1cb6c02de6145b1cffe87ef0505a16b45a4f0fb736eee8956a14"
 
 def recorded(name):
     return (RECORDED / name).read_bytes()
+
+
+def probe_stream(command, model="claude-opus-5", text="OK"):
+    """A minimal successful stream for the startup probe. Hand-written: no run recorded one."""
+    session = command[command.index("--session-id") + 1]
+    events = [{"type": "system", "subtype": "init", "session_id": session, "model": model},
+              {"type": "assistant", "session_id": session,
+               "message": {"model": model, "role": "assistant", "content": [{"type": "text", "text": text}]}},
+              {"type": "result", "subtype": "success", "is_error": False, "session_id": session, "result": text}]
+    return b"".join(canonical(event) + b"\n" for event in events)
 
 
 def session_of(raw):
@@ -233,7 +244,71 @@ class RecordedReplyTests(unittest.TestCase):
                                 case_input={"input": "case"}, config=subject.identity, timeout_seconds=2)
         self.assertEqual(caught.exception.code, "subject_refused")
         self.assertIn("bio", str(caught.exception))
-        self.assertIn("not retried", str(caught.exception))
+        # It no longer claims the refusal would recur: run 3dc02567's Opus 5 answered a case
+        # it had refused moments earlier.
+        self.assertIn("safety grounds", str(caught.exception))
+
+    def replay_subject(self, name):
+        """The whole subject path over a recorded successful stream; returns it and the env."""
+        raw, seen = recorded(name), {}
+
+        def replay(command, **kwargs):
+            seen["env"] = kwargs["env"]
+            return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
+
+        subject = ClaudeCode(auth="subscription", process=replay, settings={**load_configuration(), "sandbox_image": None})
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+            observation = subject.observe(source=[{"path": "SKILL.md", "content": "Return the supplied text."}],
+                                          case_input={"input": "case"}, config=subject.identity, timeout_seconds=2)
+        return observation, seen
+
+    def test_an_answer_another_model_wrote_after_a_refusal_is_a_refusal(self):
+        """Run 3dc02567: Opus 5 refused, Opus 4.8 answered, and the trial was scored as Opus 5's."""
+        with self.assertRaises(Fault) as caught:
+            self.replay_subject("subject-refusal-fallback.jsonl")
+        self.assertEqual(caught.exception.code, "subject_refused")
+        self.assertIn("claude-opus-4-8", str(caught.exception))
+        self.assertIn("not used", str(caught.exception))
+
+    def test_a_refusal_the_pinned_model_answered_itself_counts_and_is_noted(self):
+        observation, seen = self.replay_subject("subject-refusal-recovered.jsonl")
+        self.assertEqual(observation["text"], "R1")
+        self.assertEqual(observation["observed_model_ids"], ["<synthetic>", "claude-opus-5"])
+        self.assertEqual([(item["subtype"], item["fallback_model"]) for item in observation["refusals"]],
+                         [("model_refusal_no_fallback", None)])
+        # Substitution is also switched off at the source.
+        self.assertEqual({key: seen["env"].get(key) for key in NO_SUBSTITUTION}, NO_SUBSTITUTION)
+
+    def test_the_startup_probe_asks_the_pinned_model_with_substitution_off(self):
+        from sci_ai_verifier.local_entry import PROBE_PROMPT, probe_model
+        seen = {}
+
+        def process(command, **kwargs):
+            seen.update(command=command, env=kwargs["env"], prompt=kwargs["prompt"])
+            return 0, probe_stream(command), b""
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+            probe = probe_model(ClaudeCode(auth="subscription", model="claude-opus-5", process=process))
+        self.assertEqual(probe, {"model_requested": "claude-opus-5", "observed_model_ids": ["claude-opus-5"]})
+        command = seen["command"]
+        self.assertEqual((command[command.index("--tools") + 1], command[command.index("--max-turns") + 1]), ("", "1"))
+        self.assertEqual(seen["prompt"], PROBE_PROMPT)
+        self.assertEqual({key: seen["env"].get(key) for key in NO_SUBSTITUTION}, NO_SUBSTITUTION)
+
+    def test_a_model_the_cli_cannot_serve_stops_before_the_planner(self):
+        """Run a8036722's planner died three seconds in; the probe now stops the run first."""
+        from sci_ai_verifier.local_entry import probe_model
+        # Hand-written in the shape of the CLI's error result; no run recorded one.
+        failed = canonical({"type": "result", "subtype": "success", "is_error": True, "api_error_status": 400,
+                            "terminal_reason": "api_error",
+                            "result": "API Error: 400 [claude-code:unrecognized_model] claude-opus-5-5"}) + b"\n"
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+            with self.assertRaises(Fault) as caught:
+                probe_model(ClaudeCode(auth="subscription", model="claude-opus-5-5",
+                                       process=lambda command, **kwargs: (1, failed, b"")))
+        self.assertEqual(caught.exception.code, "model_unavailable")
+        self.assertIn("unrecognized_model", str(caught.exception))
+        self.assertIn("HTTP 400", str(caught.exception))
 
     def test_a_non_zero_exit_without_a_refusal_stays_incomplete(self):
         """Only a real refusal gets the refusal name; an ordinary crash must not."""
@@ -278,9 +353,15 @@ class RecordedReplyTests(unittest.TestCase):
         from sci_ai_verifier import local_entry
         raw = recorded("planner-session-limit.jsonl")
 
+        def process(command, **kwargs):
+            # The startup probe is answered; the planner then stops as 7f88fbef's did.
+            if kwargs["prompt"] == local_entry.PROBE_PROMPT:
+                return 0, probe_stream(command), b""
+            return 1, raw, b""
+
         class Replay(ClaudeCode):
             def __init__(self, **options):
-                super().__init__(process=lambda command, **kwargs: (1, raw, b""), **options)
+                super().__init__(process=process, **options)
 
             def preflight(self):
                 return {"executable": self.executable, "version": "2.1.268", "auth": self.auth,

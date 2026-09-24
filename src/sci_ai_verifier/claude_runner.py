@@ -265,15 +265,17 @@ def stage_skill(directory, source, *, computational=False):
     return plugin, pins
 
 
-def refusal_category(raw):
-    """The provider's safety category when it refused this request, else None.
+# Undocumented switches present in Claude Code 2.1.268 that stop it answering with a model
+# other than the pinned one. The stream is still checked, because a trial counts only when
+# one model answered it ("Subject boundary" in local-contract.md).
+NO_SUBSTITUTION = {"CLAUDE_CODE_NO_MODEL_FALLBACK": "1", "CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK": "1"}
+# A notice the CLI writes itself, such as a refusal message; it is not a model.
+SYNTHETIC_MODEL = "<synthetic>"
 
-    A refusal is not a crash and must never be retried: the same immutable case input
-    refuses again, so a retry spends a subject call to re-learn what is already recorded.
-    It is also not a scientific result about the skill -- nothing was observed -- so it
-    stays an operational limitation with its own name rather than hiding inside a
-    generic incomplete-observation record.
-    """
+
+def refusal_events(raw):
+    """Every safety refusal the stream recorded, with the model that answered instead, if any."""
+    found = []
     for line in raw.splitlines():
         if not line.strip():
             continue
@@ -283,9 +285,24 @@ def refusal_category(raw):
             continue
         if (isinstance(event, dict) and event.get("type") == "system"
                 and str(event.get("subtype", "")).startswith("model_refusal")):
-            category = event.get("api_refusal_category")
-            return category if isinstance(category, str) and category else "unspecified"
-    return None
+            category, fallback = event.get("api_refusal_category"), event.get("fallback_model")
+            found.append({"subtype": str(event["subtype"])[:80],
+                          "category": category[:80] if isinstance(category, str) and category else "unspecified",
+                          "fallback_model": fallback[:150] if isinstance(fallback, str) and fallback else None})
+    return found
+
+
+def refusal_category(raw):
+    """The provider's safety category when it refused this request, else None.
+
+    A refusal is not a scientific result about the skill -- nothing the pinned model said
+    was observed -- so it stays an operational limitation with its own name rather than
+    hiding inside a generic incomplete-observation record. Execution never retries it; the
+    one disclosed end-of-run re-run is `write_report_card`'s, since a refusal does not
+    always recur.
+    """
+    found = refusal_events(raw)
+    return found[0]["category"] if found else None
 
 
 def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
@@ -421,7 +438,7 @@ class ClaudeCode:
             prepare_workspace(directory)
             computational=bool(self.settings.get("sandbox_image"))
             plugin, pins = stage_skill(directory, source, computational=computational)
-            env = isolated_environment(Path(temporary) / "config", self.auth)
+            env = {**isolated_environment(Path(temporary) / "config", self.auth), **NO_SUBSTITUTION}
             for tool in self.settings["external_tools"].values():
                 for key in tool["credential_env"]:
                     if key in os.environ:
@@ -450,7 +467,7 @@ class ClaudeCode:
                 refused = refusal_category(raw)
                 if refused:
                     raise Fault("subject_refused", "The subject provider refused this case on safety grounds ("
-                                + refused + "). The identical frozen input would refuse again, so it is not retried.")
+                                + refused + ").")
                 raise Fault("claude_incomplete", "Claude Code exited without a complete observation.")
             extra=["mcp__subject__run_command"]
             if self.settings["allowed_subject_hosts"]:
@@ -473,7 +490,17 @@ class ClaudeCode:
             for pin in pins:
                 if digest((plugin / "skills/submitted" / pin["path"]).read_bytes()) != pin["loaded_sha256"]:
                     raise Fault("subject_boundary_violation", "The loaded skill changed during execution.")
-            result.update(model_id=self.model, skill_name=SUBJECT_SKILL, source_pins=pins,
+            # After the security checks, so a refusal never masks a boundary violation. In run
+            # 3dc02567 Opus 5 refused an R-group question and Claude Code answered it with
+            # Opus 4.8; that answer is not the pinned model's. A refusal the pinned model then
+            # answered itself is kept and noted on the trial.
+            refusals = refusal_events(raw)
+            substitute = next((item for item in refusals if item["fallback_model"]), None)
+            if substitute:
+                raise Fault("subject_refused", "The subject model refused this case on safety grounds ("
+                            + substitute["category"] + ") and Claude Code answered it with "
+                            + substitute["fallback_model"] + " instead. That answer is not the pinned model's and was not used.")
+            result.update(model_id=self.model, refusals=refusals, skill_name=SUBJECT_SKILL, source_pins=pins,
                           authentication_mode=self.auth, synthetic=False,
                           boundary="local Linux container; host CLI has Skill and bounded container MCP tools" if computational else "restricted text-only CLI session; not an OS sandbox")
             return result
