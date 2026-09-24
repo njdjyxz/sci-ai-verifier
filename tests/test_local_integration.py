@@ -375,6 +375,9 @@ class GradeNegotiationTests(unittest.TestCase):
             self.assertEqual(set(packet),{"claim","proposed_grade","rubric","prior_objections",
                                           "evidence","justification","python_checked"})
             self.assertNotIn("observations",canonical(packet).decode())
+            # Run 84e90683's reviewer counted a case its own objection placed outside the claim.
+            self.assertIn("never counts",packet["rubric"]["verdict_consistency"])
+            self.assertIn("correctly applying the claim as written",packet["rubric"]["case_verdicts"]["beyond_scope"])
         h.call("execute_local_claim",claim_id=h.claim_id)
         result=h.data["result"]
         self.assertEqual(result["evidence_grade"],"C")
@@ -534,6 +537,7 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertEqual((row["retry"]["status"],row["retry"]["fault"],row["retry"]["outcome"]),
                          ("retried","subject_refused","local_comparison_complete"))
         self.assertEqual(row["retry"]["first_attempt"]["code"],"subject_refused")
+        self.assertIsNone(row["fallback"])  # the re-run cleared it, so nothing stands in
         self.assertEqual(len(h.subject.requests),16)  # one refused, then all fifteen once more
         self.assertIn("Re-run once at the end of the run",Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
         # The re-run's trials sit apart from the first attempt's.
@@ -551,6 +555,7 @@ class GradeNegotiationTests(unittest.TestCase):
         row=h.data["report"]["claims"][0]
         self.assertEqual(row["record"]["scientific_status"],"fail")
         self.assertIsNone(row["retry"])
+        self.assertIsNone(row["fallback"])
         self.assertEqual(len(h.subject.requests),15)
 
     def test_a_security_fault_is_never_re_run(self):
@@ -560,6 +565,7 @@ class GradeNegotiationTests(unittest.TestCase):
         row=h.data["report"]["claims"][0]
         self.assertEqual(row["record"]["code"],"subject_boundary_violation")
         self.assertIsNone(row["retry"])
+        self.assertIsNone(row["fallback"])  # a security fault is not a trial fault a D may stand in for
         self.assertEqual(len(h.subject.requests),1)
 
     def test_a_re_run_the_time_left_cannot_cover_is_skipped_and_says_why(self):
@@ -574,7 +580,11 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertIn("Too little time",row["retry"]["reason"])
         self.assertEqual(row["record"]["code"],"subject_refused")
         self.assertEqual(len(h.subject.requests),1)
-        self.assertIn("Not re-run: Too little time",Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Not re-run: Too little time",markdown)
+        # The fallback needs time too, and says so rather than overrunning the deadline.
+        self.assertEqual(row["fallback"]["status"],"not_assessed")
+        self.assertIn("No fallback documentary assessment: Too little time",markdown)
 
     def test_a_re_run_the_call_budget_cannot_cover_is_skipped(self):
         h=self.h
@@ -593,10 +603,86 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertIsNone(h.data["audit"]["settled_ceiling"])
         self.stop_first("subject_refused")
         h.call("execute_local_claim",claim_id=h.claim_id)
-        h.call("write_report_card")
+        packets,assess=self.assessed()
+        with patch("sci_ai_verifier.documentary.assess",side_effect=assess):
+            h.call("write_report_card")
         row=h.data["report"]["claims"][0]
         self.assertEqual(row["retry"]["status"],"skipped")
         self.assertIn("settled no execution grade",row["retry"]["reason"])
+        # Its documentary step no longer waits on the planner: Python assembles the fallback.
+        self.assertEqual((row["record"]["evidence_grade"],row["fallback"]["status"]),("D","assessed"))
+
+    def assessed(self, status="inconclusive"):
+        """An assessor double that keeps every packet it is given and cites its first excerpt."""
+        packets=[]
+
+        def assess(adapter,packet):
+            packets.append(packet)
+            first=packet["evidence"][0]
+            return assessor_reply(packet,status,[{"reference_ref":first["reference_ref"],"quote":first["quote"]}])
+        return packets,assess
+
+    def timed_out_twice(self, key=None):
+        """The first attempt's first trial times out, and so does the re-run's."""
+        self.stopped("claude_timeout",key=key)
+        self.stop_first("claude_timeout")
+
+    def test_a_claim_its_re_run_did_not_clear_gets_a_fallback_d_that_keeps_the_fault(self):
+        """Run 84e90683: both attempts of the ring-option claim timed out and it reported nothing."""
+        h=self.h
+        self.timed_out_twice()
+        packets,assess=self.assessed()
+        with patch("sci_ai_verifier.documentary.assess",side_effect=assess):
+            h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        record=row["record"]
+        self.assertEqual((record["evidence_grade"],record["scientific_status"]),("D","inconclusive"))
+        self.assertEqual((record["fault"],record["fallback_for"]["fault"]),("claude_timeout","claude_timeout"))
+        self.assertEqual({record[axis] for axis in ("accuracy","consistency","completeness")},{"not_obtained"})
+        self.assertEqual((row["retry"]["status"],row["retry"]["outcome"]),("retried","claude_timeout"))
+        self.assertEqual(row["fallback"]["status"],"assessed")
+        self.assertTrue(row["documentary_assessment"]["ai_judgment"])
+        # Python builds the packet from the cases' own quotes, deduplicated; no answer enters it.
+        self.assertEqual(set(packets[0]),{"claim","evidence","rubric","limitations"})
+        self.assertEqual(packets[0]["evidence"],[{"reference_ref":h.reference_ref,"quote":fixture.REFERENCE,
+                                                  "url":"https://example.org/reference","version":"fixture-v1",
+                                                  "license":"Unknown; private analysis only"}])
+        self.assertEqual(len(h.subject.requests),2)  # one trial per attempt, none after
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Fallback documentary assessment: no execution evidence was obtained",markdown)
+        self.assertIn("Runner fault: claude_timeout",markdown)
+        self.assertIn("no trial below enters accuracy, status or grade",markdown)
+
+    def test_an_assessor_failure_leaves_the_fault_as_the_outcome(self):
+        h=self.h
+        self.timed_out_twice()
+        with patch("sci_ai_verifier.documentary.assess",side_effect=Fault("assessor_unavailable","fixture")):
+            h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual((row["record"]["code"],row["record"]["evidence_grade"]),("claude_timeout",None))
+        self.assertEqual(row["fallback"]["status"],"not_assessed")
+        self.assertIn("did not complete (assessor_unavailable)",row["fallback"]["reason"])
+
+    def test_no_fallback_is_attempted_while_documentary_assessment_is_off(self):
+        h=self.h
+        self.timed_out_twice(key=self.build(3,name="no-documentary",documentary_assessment=False))
+        with patch("sci_ai_verifier.documentary.assess",side_effect=AssertionError("must not run")):
+            h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual(row["record"]["code"],"claude_timeout")
+        self.assertEqual(row["fallback"]["status"],"not_assessed")
+        self.assertIn("disabled",row["fallback"]["reason"])
+
+    def test_a_timeout_names_the_trial_and_the_limit_it_reached(self):
+        """Run 84e90683 said only that no observation returned, while its subject was still working."""
+        h=self.h
+        self.stopped("claude_timeout")
+        reason=h.data["limitation"]["reason"]
+        limit=load_configuration()["subject_timeout_seconds"]
+        self.assertIn("Trial 1 of case alpha reached this verifier's per-trial limit of "+str(limit)
+                      +" s (subject_timeout_seconds)",reason)
+        self.assertIn("not a property of the skill",reason)
+        self.assertNotIn("does not retry",reason)
 
     def test_a_long_resource_preview_reaches_the_planner_cut(self):
         from sci_ai_verifier.local_candidates import REPLY_TEXT_BYTES

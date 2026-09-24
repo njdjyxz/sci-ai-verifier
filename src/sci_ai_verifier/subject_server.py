@@ -50,7 +50,10 @@ class TextRuntime:
 
 class SubjectRuntime:
     instructions = "Run submitted scripts inside /work. Commands cannot access the host or network."
-    definitions = [{"name":"run_command", "description":"Run a shell command in this trial's isolated Linux workspace /work, with bounded output and deadline.",
+    # Run 84e90683's subjects ran `pip install rdkit` despite the instructions above; the tool
+    # itself is what a subject reads before each call ("Subject boundary", local-contract.md).
+    definitions = [{"name":"run_command", "description":"Run a shell command in this trial's isolated Linux workspace /work, with bounded output and deadline. "
+                    "The container has no network access, so nothing can be downloaded or installed; use only what its image already provides.",
                     "inputSchema":obj({"command":string(16000), "stdin":{"type":"string","maxLength":131072},
                                        "timeout_seconds":{"type":"integer","minimum":1,"maximum":3600}})}]
 

@@ -58,6 +58,8 @@ class SandboxTests(unittest.TestCase):
             files=box.collect()
             self.assertEqual(files[0]["bytes"],7)
             self.assertEqual(SubjectRuntime(box).call("run_command",{"command":"python3 script.py","stdin":"","timeout_seconds":5})["status"],"ok")
+            # The tool is what a subject reads before each call; run 84e90683's ran pip anyway.
+            self.assertIn("nothing can be downloaded or installed",SubjectRuntime(box).definitions[0]["description"])
             self.assertEqual(SubjectRuntime(box).call("run_command",{"command":"x","stdin":"","timeout_seconds":5,"container":"other"})["status"],"unavailable")
         self.assertEqual(self.commands[-1][0][-3:],["rm","--force",box.name])
         self.assertFalse(staged.exists())

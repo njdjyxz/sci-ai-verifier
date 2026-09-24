@@ -45,8 +45,17 @@ OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl", "plan
 # had asked them. Criteria are append-only and v4 only added keys, so each earlier rubric is
 # reconstructed from the live one, and the digests below were taken before the later
 # versions existed: they prove each reconstruction is the exact rubric those sessions saw.
+# v5 as runs b0955d2f, 3dc02567 and 84e90683 recorded it. v6 added one key and widened the
+# `beyond_scope` definition, so removing the key and restoring that definition gives v5,
+# and every earlier rubric is rebuilt from v5 rather than from the live one.
+V6_KEYS = ("verdict_consistency",)
+V5 = {**{key: value for key, value in CRITIQUE_RUBRIC.items() if key not in V6_KEYS},
+      "id": "local-evidence-critique-v5",
+      "case_verdicts": {**CRITIQUE_RUBRIC["case_verdicts"],
+                        "beyond_scope": "Asks a consequence or fact the claim never states"}}
+V5_REF = "bf9442695413d32d8e95cb7f9786f638071f9d037eeff9db4a3a682fe718ef56"
 V4_KEYS = ("case_verdicts", "case_requirements", "case_replacement")
-BEFORE_V4 = {key: value for key, value in CRITIQUE_RUBRIC.items() if key not in V4_KEYS}
+BEFORE_V4 = {key: value for key, value in V5.items() if key not in V4_KEYS}
 ANSWERED = {**BEFORE_V4, "id": "local-evidence-critique-v2", "criteria": CRITIQUE_RUBRIC["criteria"][:5]}
 ANSWERED_REF = "91f33b72c208817675e458838093f10c73d156067e64d10e299509fe8feacd36"
 # v3 as run d87a6d5c recorded it on all five of its critiques.
@@ -54,8 +63,8 @@ V3 = {**BEFORE_V4, "id": "local-evidence-critique-v3"}
 V3_REF = "07140328e5a3cbdd4eec803717fa0c71e0b05c0c5394d4f73b72b1f581c8663e"
 # v4 as run 28d19f8a recorded it on all five of its critiques. v5 changed only the wording
 # of the `duplicate` verdict, so restoring that one definition must give v4's exact digest.
-V4 = {**CRITIQUE_RUBRIC, "id": "local-evidence-critique-v4",
-      "case_verdicts": {**CRITIQUE_RUBRIC["case_verdicts"],
+V4 = {**V5, "id": "local-evidence-critique-v4",
+      "case_verdicts": {**V5["case_verdicts"],
                         "duplicate": "Tests the same fact as an earlier case in this design, so it adds no "
                                      "independent evidence; the reason names that earlier case, which keeps its own verdict"}}
 V4_REF = "be80e6974bde1cb6c02de6145b1cffe87ef0505a16b45a4f0fb736eee8956a14"
@@ -108,18 +117,18 @@ class RecordedReplyTests(unittest.TestCase):
                 self.assertIsInstance(value["required_revisions"], list)
 
     def test_recorded_case_verdicts_with_an_extra_key_are_complete_answers(self):
-        """Both replies answered every question the live rubric asks and added one empty
-        key inside a verdict. They are judged against the packet they were given, whose
-        rubric is the live one, and the extra key is kept, not read."""
+        """Both replies answered every question rubric v5 asks and added one empty key
+        inside a verdict. They are judged against the packet they were given, whose rubric
+        was v5, and the extra key is kept, not read."""
         packet = json.loads((RECORDED / "critic-case-verdict-packet.json").read_bytes())
-        self.assertEqual(digest(canonical(packet["rubric"])), digest(canonical(CRITIQUE_RUBRIC)))
+        self.assertEqual(digest(canonical(packet["rubric"])), V5_REF)
         case_ids = [case["case_id"] for case in packet["evidence"]["cases"]]
         for name, extra in CASE_VERDICT_RECORDINGS.items():
             with self.subTest(recording=name):
                 raw = recorded(name)
                 response = parse_events(raw, expected_session=session_of(raw))
                 self.assertFalse(response["tool_calls"])
-                value = validate_critique(parse_reply(response["text"]), CRITIQUE_RUBRIC, case_ids)
+                value = validate_critique(parse_reply(response["text"]), V5, case_ids)
                 self.assertEqual(value["supported_grade"], "B")
                 self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
                 carrying = [item for item in value["case_verdicts"] if extra in item]
@@ -175,6 +184,7 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertEqual(digest(canonical(ANSWERED)), ANSWERED_REF)
         self.assertEqual(digest(canonical(V3)), V3_REF)
         self.assertEqual(digest(canonical(V4)), V4_REF)
+        self.assertEqual(digest(canonical(V5)), V5_REF)
 
     def test_the_live_rubric_refuses_real_replies_that_never_judged_case_scope(self):
         """The scope criterion is enforced, not advisory. These three real critiques answered

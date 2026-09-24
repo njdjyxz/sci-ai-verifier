@@ -35,6 +35,7 @@ deterministic tools, bounded processes and saved evidence.
 | `b43780be` (2026-09-22) | sar-analysis | 3 at A, 2 at B, 1 at D; 63 observed, 0 misread, 18 never run |
 | `b0955d2f` (2026-09-23) | sar-analysis | 1 at A, 2 at B, 1 at D; 54 of 54 passed, 0 invalid, 0 faults |
 | `3dc02567` (2026-09-24) | sar-analysis | 4 at A, 1 at B, 1 voided by a refusal fallback; 95 of 95 scored trials passed |
+| `84e90683` (2026-09-24) | sar-analysis | 1 at A, 1 at B, 1 at D with no trials, 1 voided by two timeouts; 27 of 27 counted trials passed |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -48,9 +49,11 @@ What that does and does not establish: the **A and B branches** both carry settl
 from live runs, and the planner has now used all three comparison methods, including an
 open `exact` case written specifically to make the subject generate an answer rather than
 recognise one. **Grade C and `qualify_local_evaluator` have never been exercised.** The
-documentary path has now run four times: once to completion, once rejected, once in
-`b43780be` for a claim that should have executed first and could not, and once in `b0955d2f`
-after that claim's ungraded plan had executed first, as it now must.
+documentary path has now run five times: once to completion, once rejected, once in
+`b43780be` for a claim that should have executed first and could not, once in `b0955d2f`
+after that claim's ungraded plan had executed first, as it now must, and once in `84e90683`
+for a claim the planner never tried to execute, which the operator accepts: D is AI judgment
+by design.
 
 **Reply-format noise is gone.** It appeared three times in three forms — a plural in
 `e13f50ee`, a capital letter in `fb64115f`, markdown bold in `7efbdd8c` — each a correct
@@ -64,11 +67,17 @@ That and the reason its D claim never ran were fixed in commit `4457ddc`; the fu
 is the 2026-09-22 entry in the archive. Run `b0955d2f` then saw several of the week's fixes
 work live and exposed four problems, fixed the same day. Run `3dc02567` saw three of those
 four work, and exposed a refusal fallback that let another model's answers be scored as the
-pinned model's. The fix for that, an end-of-run re-run and four smaller fixes are **not yet
-seen live**; the 2026-09-24 entry below has the details.
+pinned model's. Run `84e90683` saw the end-of-run re-run and the model probe work live; no
+refusal came up. It exposed a critique that counted a case its own objection placed outside
+the claim, a claim that reported nothing after two timeouts, and a sandbox without RDKit.
+Their fixes are **not yet seen live**; the 2026-09-24 entry below has the details.
 
-Automated suite: **315 passed, 2 skipped**. Fixtures remain synthetic, reviewed registries
-remain empty, and nothing in the automated suite establishes scientific acceptance.
+Automated suite: **318 passed, 2 skipped, 1 failing on this machine only**. The failing
+`test_runlog.py` preflight test fails the same way on the untouched `2d9f8af` tree: its
+stale-directory sweep finds this machine's leftover `sci-verifier-*` directories in `%TEMP%`
+and logs an event the test does not expect.
+Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
+suite establishes scientific acceptance.
 
 ## History
 
@@ -125,96 +134,130 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
   replies, a run the runner closes names who stopped it, and the rubric asks for a spare
   case. Other sessions that day committed `a202146` and `041552c`.
 
-## Claude: 2026-09-24 (run 3dc02567; one model per trial, an end-of-run re-run, four smaller fixes)
+## Claude: 2026-09-24 (runs 3dc02567 and 84e90683; one model per trial, a re-run, a fallback D, an RDKit image)
 
 ### Current stage and status
 
-Version 0.7.0, local workflow. Run `3dc02567`, on commit `18ef2b9`, completed: six claims at
-A, A, A, B and A, and one voided; 95 of 95 scored trials passed, with no `invalid`. It saw
-three of `18ef2b9`'s four fixes work live. The page limits admitted the RGD tutorial that
-`b0955d2f` had refused, and cut two long pages to 40 KiB. The spare case kept claims 3 and 6
-at A after the critique rejected one case each. The prior-review refusal fired once, on a false
-positive. The stop-reason fix did not come up.
+Version 0.7.0, local workflow. Two sar-analysis runs today.
 
-Claim 4 exposed a real hole. It was voided as `subject_model_changed`, but the cause was
-Opus 5's safety filter refusing an R-group question, after which Claude Code answered two
-trials with `claude-opus-4-8`. The guard pinned the first trial's mixed model set, so trial 2
-was scored as stable, and only trial 3, which Opus 5 answered itself, voided the claim.
+Run `3dc02567`, on `18ef2b9`, completed six claims: A, A, A, B and A, and one voided by a
+refusal fallback; 95 of 95 scored trials passed. It led to commit `2d9f8af`: one model per
+trial, one disclosed re-run at the end, a narrower prior-review trigger, the leak shapes in
+the rubric, the 40 KiB limit on section and resource-preview replies, and a startup model
+probe.
 
-This session's fixes, contracts first, are tested and **pushed to `main` in the commit that
-carries this entry, but have not met a live run**:
+Run `84e90683`, on `2d9f8af`, completed four claims:
 
-1. **One model per trial.** Subject sessions run with Claude Code's substitution switched off,
-   and Python refuses any trial another model answered. A refusal another model answered is
-   `subject_refused`, naming that model. A `<synthetic>` notice is not a model, so a refusal
-   Opus 5 then answered itself counts, with the refusal noted on the trial. "Subject boundary"
-   in `local-contract.md` owns the rule.
-2. **One disclosed re-run at the end.** `write_report_card` re-runs once, in full, each claim a
-   subject-trial fault stopped. A wrong answer, a security fault and a failure of Python's own
-   checks are never re-run. A claim is skipped, with the reason recorded, when its plan settled
-   no grade, the call budget cannot cover it, or the time left cannot. Both attempts are
-   reported.
-3. **The prior-review trigger** now needs `settled at`, not bare `settled`.
-4. **Leak patterns**, taken from the reviewers' own reasons, in "Cases each grade requires".
-5. **Section and resource-preview replies** get the 40 KiB reply limit in the local profile.
-6. **A startup model probe**: a CLI that cannot serve the pin stops the run as
-   `model_unavailable` before any planner or subject cost.
+| Claim | Status | Grade | Accuracy | Note |
+| --- | --- | --- | --- | --- |
+| FindMCS `threshold` | pass | B | 12 of 12 | four counting cases |
+| `completeRingsOnly` / `ringMatchesRingOnly` | withheld | none | not obtained | `claude_timeout`, and again on the re-run |
+| pIC50 | pass | A | 15 of 15 | one `duplicate` case not counted |
+| dummy atoms / `makeDummiesQueries` | inconclusive | D | n/a | documentary, no trials |
 
-Superseded today: a safety refusal "is never retried", because "the identical request refuses
-again". Trial 3 of claim 4 disproved that, and the operator chose one disclosed re-run at the
-end instead. Also superseded: the earlier reading of `subject_model_changed` as random CLI
-fallback. It was a refusal fallback, and the 2026-09-21 case may have been one too.
+It used 2,762 s of the 5,400 s limit, cost about $16, and had no `invalid` and no model
+change. Of `2d9f8af`'s fixes, the probe worked (4.6 s), the re-run fired with time to spare
+and repeated the timeout, and the section limit cut the planner's end-of-run report re-read.
+No refusal occurred, so the one-model rule and the fallback switches are still unobserved;
+the prior-review trigger never fired; `leaked` was two of the three rejections.
+
+It exposed three problems:
+
+1. **A critique counted cases its own objection placed outside the claim.** It wrote that "a
+   subject applying the claim as worded answers 2 to both and fails", counted both cases, and
+   all six trials of one of them failed. Had the claim finished it would have read A with
+   status fail. Two of `3dc02567`'s critiques made the same contradiction.
+2. **The ring-option claim reported nothing.** Both attempts stopped at the 120 s subject
+   limit, and the report never named the limit.
+3. **The sandbox had no RDKit.** Every ring-option trial first tried to import and install
+   it. Two ran out of time working an MCS out by hand, and six worked one out wrongly. In the
+   new image RDKit returns every expected answer.
+
+This session's fixes, contracts first, are tested and pushed to `main` in the commit that
+carries this entry, but **have not met a live run**:
+
+1. **Fallback D.** A claim that a subject-trial fault still stops after the re-run gets a
+   documentary assessment Python assembles from its cases' reference quotes, and the fault
+   stays on the record. "Independent documentary path" in `local-contract.md` owns the rule.
+2. **An honest timeout.** A `claude_timeout` names the case, the trial and the
+   `subject_timeout_seconds` it reached, and says the limit is the verifier's.
+3. **Critique rubric v6.** `beyond_scope` covers a key that a subject correctly applying the
+   claim could miss, and `verdict_consistency` says objections and verdicts must agree.
+4. **A fifth leak shape**: the correct option in the source's wording among options written
+   fresh.
+5. **The subject's command tool says nothing can be installed.**
+6. **An RDKit image**, [images/rdkit/](images/rdkit/Dockerfile), pinned in
+   `.verifier/local-settings.json`.
+
+Operator decisions today: D stays pure AI judgment and needs no trials, so every claim gives
+the reader something to refer to; a re-run claim's first attempt stays out of the report,
+being the product of a runner fault; `subject_timeout_seconds` stays at 120 s until a large
+skill needs more; RDKit belongs in the image.
+
+Superseded today: "a safety refusal is never retried", replaced by the one disclosed re-run;
+the reading of `subject_model_changed` as random fallback, which was a refusal fallback; my
+recommendation that D follow an execution, declined; a stopped ungraded plan ending with
+nothing, since it is still not re-run but now gets the fallback; the pinned image
+`78387bc3…`, now `12771144…`; and checking the server's start time, replaced by the run's own
+code digest below.
 
 ### What has been done
 
 This session:
 
-- Cleaned `b0955d2f` into the session scratchpad and ran `3dc02567`. Report
-  `.verifier/runs/3dc02567-756f-4b76-9ae7-7de1d964b915/report-card.md`, workflow log
-  `.verifier/attempts/e8507224-d9b0-4e11-8abc-88a9e58c5411/workflow.md`. About $35 at API
-  rates: planner $22.11, subjects $10.11, critiques $2.78.
-- It took 90 minutes, and the planner finished 8 seconds inside the app's 5,400-second limit.
-  The planner's own thinking took 41 minutes, 96 sequential trials took 29 minutes (18 s each),
-  and nine critiques took 19. Six critiques ran 121–147 s, past the old two-minute deadline.
-- Implemented the six fixes above. `artifact-contracts.md` describes the new `refusals` and
-  `retry_ref` fields. `LOCAL-INSTALL.md` notes that the model check is now automatic.
-- Verification: suite 301 → 315 passed, 2 skipped. Seventeen one-line mutations of the fixes
-  were each caught. Two new real recordings from `3dc02567`,
-  `tests/recorded/subject-refusal-fallback.jsonl` and `subject-refusal-recovered.jsonl`, are
-  replayed through the real subject adapter.
-- Not verified: whether `CLAUDE_CODE_NO_MODEL_FALLBACK` and
-  `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK` stop the fallback at the source. Testing that needs a
-  live subject session with the desktop app's token. The stream check enforces the rule
-  either way.
-- Considered and not done: lowering grade A's case count, cutting review rounds, fewer trials,
-  a verdict that sticks across rounds, and not running rejected cases. Each weakens what a grade
-  means or breaks the rule that everything observed is reported.
+- Cleaned `3dc02567` into the session scratchpad and ran `84e90683`. Report
+  `.verifier/runs/84e90683-1e8f-4712-bf32-a8754c0322e7/report-card.md`, workflow log
+  `.verifier/attempts/74972df6-1d0d-46d6-b341-05fd8f918e70/workflow.md`. Cost: planner
+  $10.74, 36 subject sessions $4.21, four critiques $0.96, assessor $0.14; the two timed-out
+  sessions are unpriced.
+- Checked the failure against its source. RDKit's own `test4RingMatches` asserts 3 atoms for
+  `completeRingsOnly=True` on `CCCCC` and `CCC1CCCCC1`, so the key was right and the
+  subject's `2` wrong. The timed-out trials ran `import rdkit` and `pip install rdkit`, then
+  thought until they were killed.
+- Implemented the six fixes in `local-contract.md`, `tool-contracts.md`,
+  `artifact-contracts.md`, `evidence-rubric.md`, `LOCAL-CONFIG.md`, `local.py`,
+  `documentary.py`, `subject_server.py` and `images/rdkit/`.
+- Verification: suite 315 → 319 tests, with 318 passing, 2 skipped and the one machine-only
+  failure under "Current state". Twelve one-line mutations of the fixes were each caught.
+  `test_recorded_replies.py` rebuilds v5 from v6 and pins its digest, `bf944269…`. The image
+  was checked through the verifier's own `DockerSandbox` and subject tool, as user 65534
+  with no network. RDKit 2026.03.6 and pandas 3.0.6 import, the six ring-option questions
+  return 3, 2, 3, 2, 3 and 5 as RDKit's tests assert, and an ACS1996 SVG draws.
+- Not verified: any of the six fixes live, and still the effect of
+  `CLAUDE_CODE_NO_MODEL_FALLBACK` and `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK`.
+- Considered and not done: requiring execution before D (declined); a Python check that
+  objections agree with verdicts, since 26 of the two runs' 92 objections and revisions name
+  a counted case legitimately; reporting the first attempt's answers (declined); a longer
+  subject limit (deferred by the operator).
+
+Earlier today, in the `3dc02567` session: `2d9f8af`'s six fixes, with the suite 301 → 315,
+seventeen mutations caught and two new recordings replayed through the real subject adapter.
+That run took 90 minutes, 8 s inside the limit.
 
 ### Before the next run
 
 1. **Docker Desktop is running** and the pinned image is present:
-   `sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea`
-   (`python:3.12-slim`).
-2. **The verifier server started after the commit that carries these fixes.** Read the start
-   time with
-   `Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -like '*serve-local*' }`,
-   and restart Claude Desktop if it predates the commit.
-3. **The model is `claude-opus-5`.** Claude Code 2.1.268 cannot serve `claude-opus-5-5`; the new
-   probe now stops such a run in seconds.
+   `sha256:127711447fe5260556ae724850ef4186a79ea774ec119ebb01c3775240f5264e`
+   (`sci-verifier-rdkit:2026.3.6`, built from `images/rdkit/` as `LOCAL-CONFIG.md` says).
+2. **A new Code-tab session after the commit that carries these fixes.** Every session, new
+   or resumed, starts its own `serve-local`, and a resumed one keeps the code it started
+   with; restarting the app is not needed. After the run, the run itself settles it:
+   `run.json`'s `local_method_ref` must equal the tree's digest, printed by
+   `python -c "import sys; sys.path.insert(0, 'src'); from sci_ai_verifier.storage import implementation_bytes; from sci_ai_verifier.common import digest; print(digest(implementation_bytes()))"`.
+3. **The model is `claude-opus-5`.** The probe stops a run the CLI cannot serve.
 4. **The working tree is clean** at that commit, or at a later one that did not touch `src/`.
-5. **The plan's 5-hour window has room**; a run costs about $35 at API rates.
-6. **The timeout.** The app passes `--timeout 5400` to `serve-local`, and `3dc02567` used all but
-   8 seconds of it. The end-of-run re-run also needs time left, one minute per trial plus five.
-   Raising it is the operator's setting.
+5. **The plan's 5-hour window has room**; `84e90683` cost about $16 and `3dc02567` about $35.
+6. **The timeout.** The app passes 5,400 s; four claims took 46 minutes and six took 90. A
+   fallback needs up to nine minutes of the time left.
 
 ### Cleaning the previous sar-analysis run
 
-Move, do not delete, into the session scratchpad. The previous run is `3dc02567`:
+Move, do not delete, into the session scratchpad. The previous run is `84e90683`:
 
-- `.verifier/runs/3dc02567-756f-4b76-9ae7-7de1d964b915`
-- `.verifier/attempts/e8507224-d9b0-4e11-8abc-88a9e58c5411`
-- `.verifier/subject-runs/3dc02567-756f-4b76-9ae7-7de1d964b915`
-- the **twelve** candidates in `.verifier/candidates/` at `local-reference-comparison-5`
+- `.verifier/runs/84e90683-1e8f-4712-bf32-a8754c0322e7`
+- `.verifier/attempts/74972df6-1d0d-46d6-b341-05fd8f918e70`
+- `.verifier/subject-runs/84e90683-1e8f-4712-bf32-a8754c0322e7`
+- the **seven** candidates in `.verifier/candidates/` at `local-reference-comparison-5`
 
 **Keep** the glycoengineering run `76ce4af1-…`, its attempt `a1ec3e49-…`, its subject-runs, and
 the five candidates at `local-reference-comparison-1`. Leave `.verifier/store/` alone. Do not
@@ -222,19 +265,21 @@ leave a shell inside a directory you are moving.
 
 ### What to check in the run
 
-`verify_skill` returns 190–350 KB, which overflows the tool result; read
+`verify_skill` returns 150–350 KB, which overflows the tool result; read
 `.verifier/runs/<run>/report-card.json` on disk.
 
-1. **The new code ran.** The server's start time shows it. `controller-receipt.json` also carries
-   `preflight.model_probe`, and a subject response carries `refusals`.
-2. **Refusals.** Did any subject stream record `model_refusal_fallback`? If the switches work, a
-   refusal shows only `model_refusal_no_fallback`. Quote the events.
-3. **The re-run.** Did `write_report_card` re-run a stopped claim, did it fit in the time left,
-   and what did it return? Read the claim's `retry`.
-4. **Leaks.** Is `leaked` still most of the critiques' rejections (seven of eleven in `3dc02567`)?
-5. **The prior-review refusal.** Any refusal left, and was it a real leak or a false positive?
-6. **`invalid` is still zero**, and record the claim count (`3dc02567` extracted six) and the
-   run time against the timeout.
+1. **The new code ran.** `run.json`'s `local_method_ref` matches the tree, and every
+   critique's `rubric_ref` is v6,
+   `9dc8fd5d3510504e4bf49ee3b06600eb2e2cf0315df8c474f695a4dbca2864f9`.
+2. **RDKit.** Do the subjects' commands import it? Do cases like the ring-option ones pass
+   now? Any `claude_timeout`, and what was the subject doing? Quote the events.
+3. **The fallback.** Did any claim carry `fallback`? Its status and reason, and the record's
+   first limitation line.
+4. **Critique v6.** Did any critique still count a case its own objection placed outside the
+   claim? Quote every `beyond_scope` verdict.
+5. **Leaks.** Are each case's options written in one style? The `leaked` count.
+6. **The rest.** Any refusal (quote the `model_refusal_*` events), `invalid` still zero, the
+   claim count and the run time.
 
 ### Reading the results without fooling yourself
 
@@ -245,28 +290,34 @@ leave a shell inside a directory you are moving.
   re-run's trials sit in `claim-NNN-retry`. Map them by `case_id`.
 - **`subject_refused` or `subject_model_changed`: read the trial's `system` events** in the
   workflow log (`model_refusal_*`) before advising anything. A refusal may or may not recur.
+- **A `claude_timeout` can come from the case itself.** Trace the subject's commands and
+  thinking before promising that a re-run or a longer limit fixes it.
 - **A run the runner closed should say `agent_unavailable`** with the planner's own reason; one
   that still says "The operator cancelled this run." for a stop nobody made means old code.
 - **`workflow.jsonl` truncates long tool results** at about 16 KB; every tool call's whole
   request and result, including every critique round, is in `.verifier/runs/<run>/events/`.
+- **With RDKit in the image, a subject can compute an answer instead of recalling it.** A pass
+  then says the skill-guided subject ran RDKit correctly, a different statement from knowing it.
+- **A fallback D rests on its cases' quotes alone.** Read it as documentary, never as behaviour.
 - **A clean run is not proof of a fix** if the model never produced the case the fix handles.
 
 ### Open questions for the operator
 
 1. **Should the aggregation rule become a plan field?** Still `unanimity`, still correct.
-2. **Claim coverage.** `3dc02567` extracted six claims; `74eadedd` extracted three.
+2. **Claim coverage.** `3dc02567` extracted six claims, `84e90683` four and `74eadedd` three.
 3. **A narrow capitalization residue, by choice.** Tokens carrying both cases — `Core`,
    `Threshold`, `Fuc` — stay open answers. Their case is semantic, but a subject could still
    lowercase one.
-4. **Recognition is untouched.** The leak guidance is the first planner-side response; a choice
-   can still be passed by spotting the conventional-looking option.
+4. **Recognition.** The fifth leak shape covers one tell; a subject can still pick the
+   conventional-looking option.
 5. **Reviewers disagree on unchanged cases.** Spare cases absorbed two rejections in `3dc02567`;
    keep watching whether that is enough.
 6. **A claim Opus 5 refuses cannot be verified on Opus 5.** If the re-run is refused too, the
    report says so, and that is the finding: a provider limitation, not the skill's.
-
-Settled today: the preflight now asks the CLI whether it can serve the pinned model (formerly
-open question 4), and the local section reader is held to the reply limit (formerly 6).
+7. **Other operational endings.** Only subject-trial faults get a fallback D; a claim ended by
+   `critic_unavailable` or by the planner still reports nothing. Should they get one?
+8. **Knowledge or execution.** With RDKit available, should some cases stay questions a
+   subject must answer without running code?
 
 ### Deferred, and why
 
@@ -276,11 +327,13 @@ open question 4), and the local section reader is held to the reply limit (forme
   about 10.
 - **Opus 5.5** — until WinGet offers Claude Code 2.1.280; the startup probe now catches a
   premature switch.
+- **A longer subject limit** — the operator will raise `subject_timeout_seconds` when a large
+  skill needs it; the report now names the limit whenever it stops a trial.
 - **The case-level contract** — flagged do-not-implement until four or five case-type rules
   accumulate; `a202146`'s answer forms and case verdicts overlap it, unreviewed. Design in the
   archive, 2026-09-22.
 - **Automatic dependency resolution** — flagged do-not-implement, design in the archive,
-  2026-09-18.
+  2026-09-18. `images/rdkit/` is the manual path it would automate.
 
 ### Prompt for the next session
 
@@ -302,16 +355,15 @@ Do not change code, commit or push unless I ask.
 
 ### Urgent next steps, if any
 
-None now. Before the next live run, restart Claude Desktop so `serve-local` loads the commit
-that carries these fixes, and consider raising the timeout.
+None now. Before the next live run, start a new session so `serve-local` loads the commit that
+carries these fixes.
 
 ### Suggested next move
 
-Run `sar-analysis` once on the new code and read the refusal path, the end-of-run re-run and
-the probe rather than the grades.
+Run `sar-analysis` once on the new code and image, and read the RDKit path, any fallback and
+the critique's verdicts rather than the grades.
 
 ### Recommended next action
 
-Restart Claude Desktop, confirm the server started after this commit, raise the timeout if
-the operator agrees, clean `3dc02567` as above, and run once. It is finished when every item under "What to check in the
-run" has a recorded answer.
+Start a new session, clean `84e90683` as above, and run once. It is finished when every item
+under "What to check in the run" has a recorded answer.

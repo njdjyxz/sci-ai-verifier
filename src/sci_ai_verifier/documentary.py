@@ -29,7 +29,10 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # still supported A: a finding the letter could ignore, so the count moved to Python.
 # v5 widened `duplicate` to near-copies. Run 28d19f8a's reviewer objected that R1, R2 and the
 # full key set "all resolve to the same R-prefix-plus-index convention" and counted all three.
-CRITIQUE_RUBRIC={"id":"local-evidence-critique-v5","criteria":[
+# v6 widened `beyond_scope` to a key a subject correctly applying the claim could miss, and
+# added `verdict_consistency`. Run 84e90683's reviewer wrote that such a subject "answers 2
+# ... and fails", counted the case anyway, and six trials out of six then failed it.
+CRITIQUE_RUBRIC={"id":"local-evidence-critique-v6","criteria":[
         "Whether the expected answers are a fit-for-purpose oracle for this exact claim, independent of the submitted skill",
         "Whether the selected cases and trial count cover the claim's stated scope well enough for the proposed grade",
         "Whether the comparison rule, tolerance and stated uncertainty match what the claim actually asserts",
@@ -50,7 +53,8 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v5","criteria":[
         # v4: every case gets a verdict, and Python enforces the case table on the ones that count.
         "case_verdicts":{"counts":"Tests what the claim asserts, no less and no more, without giving the answer away",
         "naming":"Only recites what something is called, for a claim about what it does",
-        "beyond_scope":"Asks a consequence or fact the claim never states",
+        "beyond_scope":"Asks a consequence or fact the claim never states, including a key that turns on a finer "
+        "fact than the claim asserts, so that a subject correctly applying the claim as written could answer otherwise",
         "leaked":"The answer can be read from the question itself",
         "duplicate":"Turns on the same fact or rule as an earlier case in this design, so a subject that answers "
         "one will answer the other and it adds no independent evidence. This covers near-copies, such as the same "
@@ -66,7 +70,12 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v5","criteria":[
         "the proposal and your grade. Your grade is your own judgment of the whole design; do not lower it "
         "mechanically for the count, which Python already applies."},
         "case_replacement":"For every case that does not count, describe a case that would test the claim in its "
-        "place: what it should ask and why that stays inside the claim. Describe it; do not write expected answers."}
+        "place: what it should ask and why that stays inside the claim. Describe it; do not write expected answers.",
+        "verdict_consistency":"Your objections and verdicts must agree. A case you object to because it tests more "
+        "or less than the claim asserts takes that verdict, never counts; an objection about a counting case may "
+        "question only how strong it is. Judge each case against the claim's statement and expected behaviour: its "
+        "scope line narrows them and never widens them. The claim's wording is fixed; judge the cases against it as "
+        "written, and do not ask for it to be restated."}
 CRITIQUE_REF=digest(canonical(CRITIQUE_RUBRIC))
 CRITIC_SHAPE_ATTEMPTS = 2
 # Every case of a twelve-case design, with its full options, plus the justification and

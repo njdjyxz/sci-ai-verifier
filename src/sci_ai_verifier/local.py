@@ -169,6 +169,7 @@ def operate(store, state, name, args, subject):
     if name == "write_report_card":
         if subject is not None:
             retry_stopped_claims(store, state, subject)
+            fallback_documentary(store, state, subject)
         return report(store, state)
     claim_id = args["claim_id"]
     if name not in CLAIM_LEGAL.get(state["claim_states"].get(claim_id), []):
@@ -514,9 +515,69 @@ def stronger_evidence_available(store,state,claim_id,work):
                for key in work.get("candidate_refs",[]))
 
 
-def documentary_step(store,state,claim_id,name,args,subject):
-    from .documentary import assess,RUBRIC,RUBRIC_REF
+def assessor_changed(state, subject):
+    """True when the runtime or the assessor's settings differ from those pinned at bootstrap."""
     from .storage import implementation_bytes
+    return digest(implementation_bytes()) != state["local_method_ref"] or subject.identity != state["subject_config"]
+
+
+def documentary_record(store, state, claim_id, evidence, limitations, subject, retained, fallback_for=None):
+    """Assess one pinned packet in a fresh session and return its record; a Fault says why not.
+
+    The planner's documentary step and the fallback after a runner fault share this, so the
+    packet, the replay marker and the grade-D rule have one owner. `fallback_for` names the
+    fault a fallback stands in for.
+    """
+    from .documentary import assess, RUBRIC, RUBRIC_REF
+    work = state["local_work"][claim_id]
+    claim = claim_record(store, state, claim_id)
+    packet = {"claim": {key: claim[key] for key in ("statement", "scope", "expected_behavior")},
+              "evidence": evidence, "rubric": RUBRIC, "limitations": limitations}
+    packet_ref = keep(store, state, packet)
+    work["documentary_packet_ref"] = packet_ref
+    marker = no_links(store.run_dir(state["run_id"]) / ("assessor-" + str(sorted(state["claim_states"]).index(claim_id)) + ".json"))
+    if marker.exists():
+        raise Fault("interrupted_assessment", "A prior assessment request exists and was not automatically replayed.")
+    atomic_write(marker, canonical({"packet_ref": packet_ref, "created_at": utc_now()}))
+    try:
+        response = assess(subject, packet)
+    except (Fault, OSError, AttributeError) as error:
+        raise Fault(getattr(error, "code", "assessor_unavailable"),
+                    "The independent assessment did not complete; this is not missing scientific evidence.") from error
+    assessment_ref = keep(store, state, response)
+    work["assessment_ref"] = assessment_ref
+    # A completed independent assessment against the installed rubric is grade D.
+    # Synthetic fixture observations never receive a grade.
+    graded = not state["subject_config"]["synthetic"]
+    # The planner's path compares documents and never runs the skill, so there is no
+    # behaviour to measure: `not_applicable`. A fallback stands in for an execution that was
+    # attempted and lost, which is what `not_obtained` says.
+    unmeasured = "not_obtained" if fallback_for else "not_applicable"
+    notes = ["Documentary consistency only; scientific performance remains unverified.",
+             response["assessment"]["limitations"],
+             "Assessed by a fresh independent session against the installed rubric; AI judgment is primary and disclosed."
+             if graded else "Synthetic fixture run; no grade is assigned."]
+    if fallback_for:
+        notes.insert(0, "Fallback documentary assessment after " + fallback_for["fault"] + ": " + fallback_for["reason"]
+                     + " No execution evidence was obtained, so this grade is AI judgment of the reference quotes the"
+                     " claim's planned cases were keyed to, not of the skill's behaviour.")
+    record = {**retained, "kind": "local-documentary", "assessment_ref": assessment_ref, "packet_ref": packet_ref,
+              "rubric_ref": RUBRIC_REF,
+              "scientific_status": response["assessment"]["status"] if graded else None,
+              "evidence_grade": "D" if graded else None,
+              "status_withheld_reason": None if graded else "synthetic_observations",
+              "accuracy": unmeasured, "consistency": unmeasured, "completeness": unmeasured,
+              # A fallback keeps the runner fault on its own axis, beside the grade.
+              "fault": fallback_for["fault"] if fallback_for else None,
+              "documentary_status": response["assessment"]["status"],
+              "ai_involvement": {"orchestration": True, "evidence_generation": True, "verdict": True},
+              "limitations": notes}
+    if fallback_for:
+        record["fallback_for"] = fallback_for
+    return record
+
+
+def documentary_step(store,state,claim_id,name,args,subject):
     work=state["local_work"][claim_id]
     if not work.get("lookup_ref"):
         raise Fault("catalog_lookup_required","Check available evaluators before concluding this claim.")
@@ -529,8 +590,7 @@ def documentary_step(store,state,claim_id,name,args,subject):
         raise Fault("stronger_evidence_available",
                     "A qualified candidate for this claim has not been executed. Select and run it, "
                     "or record why it does not apply, before taking a documentary or unverified outcome.")
-    if name=="assess_local_documentary" and (digest(implementation_bytes())!=state["local_method_ref"]
-                                             or subject.identity!=state["subject_config"]):
+    if name=="assess_local_documentary" and assessor_changed(state,subject):
         return limitation(store,state,claim_id,"assessment_identity_changed","Runtime or assessor settings changed after bootstrap.")
     previous=store.get_json(work["result_ref"]) if work.get("result_ref") else None
     retained={"claim_id":claim_id,"receipts":previous["receipts"] if previous else [],
@@ -551,37 +611,10 @@ def documentary_step(store,state,claim_id,name,args,subject):
             if item["quote"] not in resource["text"]:
                 raise Fault("documentary_reference_invalid","Every excerpt must be an exact reference quote.")
             evidence.append({**item,"url":resource["url"],"version":resource["version"],"license":resource["license"]})
-        claim=claim_record(store,state,claim_id)
-        packet={"claim":{key:claim[key] for key in ("statement","scope","expected_behavior")},"evidence":evidence,"rubric":RUBRIC,"limitations":args["limitations"]}
-        packet_ref=keep(store,state,packet)
-        work["documentary_packet_ref"]=packet_ref
-        marker=no_links(store.run_dir(state["run_id"])/("assessor-"+str(sorted(state["claim_states"]).index(claim_id))+".json"))
-        if marker.exists():
-            return limitation(store,state,claim_id,"interrupted_assessment","A prior assessment request exists and was not automatically replayed.",retained["receipts"])
-        atomic_write(marker,canonical({"packet_ref":packet_ref,"created_at":utc_now()}))
         try:
-            response=assess(subject,packet)
-        except (Fault,OSError,AttributeError) as error:
-            return limitation(store,state,claim_id,getattr(error,"code","assessor_unavailable"),"The independent assessment did not complete; this is not missing scientific evidence.",retained["receipts"])
-        assessment_ref=keep(store,state,response)
-        work["assessment_ref"]=assessment_ref
-        # A completed independent assessment against the installed rubric is grade D.
-        # Synthetic fixture observations never receive a grade.
-        graded=not state["subject_config"]["synthetic"]
-        record={**retained,"kind":"local-documentary","assessment_ref":assessment_ref,"packet_ref":packet_ref,
-                "rubric_ref":RUBRIC_REF,
-                "scientific_status":response["assessment"]["status"] if graded else None,"evidence_grade":"D" if graded else None,
-                "status_withheld_reason":None if graded else "synthetic_observations",
-                # This path compares documents and never runs the skill, so there is no
-                # behaviour to measure. `not_applicable` says that; `not_obtained` would
-                # wrongly suggest a measurement was attempted and lost.
-                "accuracy":"not_applicable","consistency":"not_applicable","completeness":"not_applicable",
-                "fault":None,
-                "documentary_status":response["assessment"]["status"],"ai_involvement":{"orchestration":True,"evidence_generation":True,"verdict":True},
-                "limitations":["Documentary consistency only; scientific performance remains unverified.",
-                    response["assessment"]["limitations"],
-                    "Assessed by a fresh independent session against the installed rubric; AI judgment is primary and disclosed."
-                    if graded else "Synthetic fixture run; no grade is assigned."]}
+            record=documentary_record(store,state,claim_id,evidence,args["limitations"],subject,retained)
+        except Fault as error:
+            return limitation(store,state,claim_id,error.code,str(error),retained["receipts"])
     work["result_ref"]=keep(store,state,record)
     state["claim_states"][claim_id]="terminal_result"
     return {"outcome":"local_documentary_complete" if name=="assess_local_documentary" else "local_unverified_recorded","result":record}
@@ -646,9 +679,18 @@ def execute(store, state, claim_id, subject, retry=False):
             code = error.code if isinstance(error, Fault) else "subject_unavailable"
             # A safety refusal is reported as itself. It says the provider would not answer,
             # not that the skill was wrong. Execution never retries a trial; the one
-            # disclosed re-run of a stopped claim is write_report_card's.
-            reason = (str(error) if code == "subject_refused" else
-                      "Subject execution did not return a complete verified observation. Execution does not retry a trial.")
+            # disclosed re-run of a stopped claim is write_report_card's, and its record says
+            # what happened, so this reason does not predict it.
+            if code == "subject_refused":
+                reason = str(error)
+            elif code == "claude_timeout":
+                # The limit is ours. Saying "did not return an observation" hid that run
+                # 84e90683's subject was still working when the verifier's 120 s ran out.
+                reason = ("Trial " + str(trial) + " of case " + case["case_id"] + " reached this verifier's per-trial limit of "
+                          + str(settings["subject_timeout_seconds"]) + " s (subject_timeout_seconds) before the subject answered. "
+                          "The limit is the verifier's setting, not a property of the skill; a longer limit may let this case finish.")
+            else:
+                reason = "Subject execution did not return a complete verified observation."
             return limitation(store, state, claim_id, code, reason, receipts)
         artifacts=[]
         for item in response.pop("artifacts",[]):
@@ -763,6 +805,75 @@ def retry_stopped_claims(store, state, subject):
         work["retry_ref"] = keep(store, state, {**record, "status": "retried", "outcome": outcome})
 
 
+def case_quotes(store, candidate_ref, limit=8):
+    """Each distinct reference quote a candidate's cases were keyed to, in case order.
+
+    Qualification already proved every one exact, so a packet built from them needs no planner.
+    """
+    evidence = []
+    for case in store.get_json(candidate_ref)["cases"]:
+        if not case.get("reference_ref") or not case.get("source_quote"):
+            continue
+        reference = store.get_json(case["reference_ref"])
+        item = {"reference_ref": case["reference_ref"], "quote": case["source_quote"], "url": reference["url"],
+                "version": reference["version"], "license": reference["license"]}
+        if item not in evidence and case["source_quote"] in reference["text"]:
+            evidence.append(item)
+    return evidence[:limit]
+
+
+def fallback_documentary(store, state, subject):
+    """Give each claim a runner fault still stops a documentary assessment Python assembles.
+
+    Run 84e90683's ring-option claim timed out twice and reported nothing. The planner has
+    finished by now, so the evidence is the reference quote each planned case was keyed to,
+    and no subject answer enters the packet ("Independent documentary path",
+    local-contract.md). Whenever the assessment does not run, the fault stays the outcome.
+    """
+    import os
+    import time
+    from .documentary import ASSESSOR_SHAPE_ATTEMPTS, ASSESSOR_TIMEOUT_SECONDS
+    settings = settings_for(store, state)
+    deadline = os.environ.get(DEADLINE_ENV)
+    for claim_id in sorted(state["claim_states"]):
+        work = state["local_work"].get(claim_id) or {}
+        if (state["claim_states"][claim_id] != "terminal_operational" or "fallback_ref" in work
+                or not work.get("outcome_ref")):
+            continue
+        stopped = store.get_json(work["outcome_ref"])
+        if stopped.get("fault") not in RETRY_FAULTS:
+            continue
+        fallback_for = {"fault": stopped["fault"], "limitation_ref": work["outcome_ref"], "reason": stopped["reason"]}
+        record = {"kind": "local-fallback", "claim_id": claim_id, **fallback_for}
+        evidence = case_quotes(store, work["candidate_ref"]) if work.get("candidate_ref") else []
+        reason = None
+        if not settings["documentary_assessment"]:
+            reason = "Documentary assessment is disabled in the local settings."
+        elif not evidence:
+            reason = "The claim has no qualified candidate whose reference quotes could be assessed."
+        elif (deadline and float(deadline) - time.time()
+              < ASSESSOR_SHAPE_ATTEMPTS * ASSESSOR_TIMEOUT_SECONDS + RETRY_REPORT_SECONDS):
+            reason = "Too little time remains before the attempt deadline for an assessment and the report."
+        elif assessor_changed(state, subject):
+            reason = "Runtime or assessor settings changed after bootstrap."
+        if reason is None:
+            retained = {"claim_id": claim_id, "receipts": stopped["receipts"], "comparison_ref": None,
+                        "synthetic": state["subject_config"]["synthetic"]}
+            limitations = ("Assembled by the verifier after the planner finished: execution of this claim stopped on "
+                           + stopped["fault"] + " and was not recovered. Each excerpt is the reference passage one of "
+                           "the claim's planned test cases was keyed to. No subject answer is included.")
+            try:
+                result = documentary_record(store, state, claim_id, evidence, limitations, subject, retained, fallback_for)
+            except Fault as error:
+                reason = "The fallback assessment did not complete (" + error.code + ")."
+            else:
+                work["result_ref"] = keep(store, state, result)
+                state["claim_states"][claim_id] = "terminal_result"
+                work["fallback_ref"] = keep(store, state, {**record, "status": "assessed"})
+                continue
+        work["fallback_ref"] = keep(store, state, {**record, "status": "not_assessed", "reason": reason})
+
+
 def axis_lines(terminal, cell):
     """Render the independent axes so a reader can localise the fault at a glance.
 
@@ -847,8 +958,9 @@ def report(store, state):
         retry = store.get_json(work["retry_ref"]) if work.get("retry_ref") else None
         if retry:
             retry = {**retry, "first_attempt": store.get_json(retry["first_attempt_ref"])}
+        fallback = store.get_json(work["fallback_ref"]) if work.get("fallback_ref") else None
         rows.append({"claim": claim, "record": terminal, "tests": tests, "references": sources,"execution_counts":execution_counts,
-                     "retry": retry,
+                     "retry": retry, "fallback": fallback,
                      "required_grade":required_grade,"meets_required_grade":meets_required,
                      "audit":audit_record,
                      "documentary_assessment":store.get_json(work["assessment_ref"]) if work.get("assessment_ref") else None,
@@ -862,6 +974,11 @@ def report(store, state):
             lines.extend([first_attempt + ("Re-run once at the end of the run, with the same plan, model and inputs: "
                                            + cell(retry["outcome"]) + "." if retry["status"] == "retried"
                                            else "Not re-run: " + cell(retry["reason"])), ""])
+        if fallback:
+            lines.extend([("Fallback documentary assessment: no execution evidence was obtained, so a fresh AI session "
+                           "judged the claim against the reference quotes its planned cases were keyed to. Its grade D "
+                           "is AI judgment only." if fallback["status"] == "assessed"
+                           else "No fallback documentary assessment: " + cell(fallback["reason"])), ""])
         if required_grade:
             lines.extend(["Required grade: "+required_grade+"; requirement "+("met" if meets_required else "not met"),""])
         # Every tested case, counted or not; completeness above covers the counted cases only.
@@ -897,6 +1014,8 @@ def report(store, state):
         if terminal.get("asserted_by")=="planner":
             lines.extend(["This claim was ended by the planner, not by an observed execution failure.",""])
         if tests:
+            if terminal.get("fault") and terminal.get("asserted_by") != "planner":
+                lines.extend(["A runner fault stopped this claim, so no trial below enters accuracy, status or grade.", ""])
             lines.extend(["| Input | Expected | Observed | Comparison | Case | Trial | Counted |", "| --- | --- | --- | --- | --- | --- | --- |"])
             for case in tests:
                 lines.append("| " + " | ".join(cell(case[key]) for key in ("input", "expected", "observed", "comparison_status","case_id","trial"))

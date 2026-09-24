@@ -37,6 +37,19 @@ saves its immutable image ID. Include only the required scientific tools; do not
 bake account credentials into an image. Trials never run host `pip` or install
 dependencies. Images must provide Python 3, `/bin/sh` and `cp`.
 
+[`images/rdkit/`](images/rdkit/Dockerfile) is one such image, for skills that use RDKit
+and pandas, such as `examples/sar-analysis`. It holds the pinned `python:3.12-slim` base,
+exact Debian libraries for RDKit's drawing module and hash-pinned wheels. Build it and
+read its ID:
+
+```powershell
+docker build -t sci-verifier-rdkit:2026.3.6 "D:\Su Lab\sci-ai-verifier\images\rdkit"
+docker image inspect --format "{{.Id}}" sci-verifier-rdkit:2026.3.6
+```
+
+Pin that ID through the helper as above, or set `sandbox_image` to it in the settings
+file the verifier is registered with. A run pins the ID, never the tag.
+
 ## Datasets and binary resources
 
 Add a named entry under `resources` with exactly these fields, using real values:

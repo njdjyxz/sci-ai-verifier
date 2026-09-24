@@ -1,0 +1,9 @@
+# Hash-pinned wheels for images/rdkit/Dockerfile: RDKit and pandas for chemistry skills such
+# as examples/sar-analysis. Resolved on 2026-09-24 against the pinned python:3.12-slim base
+# for linux/amd64; the hashes are those wheels', so another platform refuses to build.
+numpy==2.5.3 --hash=sha256:b7e18c623bb5c95acb3b3328861272816ba199fb531921c5d6d0b675f1fde9e3
+pandas==3.0.6 --hash=sha256:0704044b676496b8350e023b09f174a26772456c974a2b11c36bebb558c9490d
+pillow==12.3.0 --hash=sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91
+python-dateutil==2.9.0.post0 --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+rdkit==2026.3.6 --hash=sha256:9f97b58f1962df73bdacf44347bfa013f4fcb9896e049f98af2183e70e7aab46
+six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274

@@ -695,12 +695,15 @@ The Local profile matrix in workflow.md governs their legality.
   ended by executing it, not by assertion. Records carry `asserted_by` so a report
   distinguishes a planner-ended claim from a failure Python observed.
 - `write_report_card`: in reporting, first re-run once each claim a subject-trial fault
-  stopped, under the retry rule in "Subject boundary" of `local-contract.md`; then derive
-  JSON and Markdown from all terminal claims. Comparison status is separate from
-  scientific verdict and grade under the installed policy. Pin qualification, scope, the
-  settled grade negotiation and limitations. A claim the rule covered carries `retry`,
-  naming the first attempt's fault with that attempt's record, and either the re-run's
-  outcome or the reason it was not re-run.
+  stopped, under the retry rule in "Subject boundary" of `local-contract.md`; then give
+  each claim still stopped the fallback documentary assessment of "Independent
+  documentary path" there; then derive JSON and Markdown from all terminal claims.
+  Comparison status is separate from scientific verdict and grade under the installed
+  policy. Pin qualification, scope, the settled grade negotiation and limitations. A
+  claim the rule covered carries `retry`, naming the first attempt's fault with that
+  attempt's record, and either the re-run's outcome or the reason it was not re-run. A
+  claim the fallback covered carries `fallback`, saying whether it was assessed or why
+  not; an assessed one's record is grade D with `fallback_for` naming the fault.
 ## Additional local resource and evaluator tools
 
 Resource tools are legal in local_discovery/local_documentary; evaluator

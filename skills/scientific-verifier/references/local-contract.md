@@ -153,6 +153,20 @@ no-evidence path; runtime failures never establish it. Both paths carry the evid
 preconditions stated for `assess_local_documentary` and `record_local_unverified` in
 tool-contracts.md.
 
+A claim that a subject-trial fault still stops after the one re-run of "Subject
+boundary" receives a **fallback** documentary assessment, so it still gives the reader something to refer to.
+`write_report_card` runs it after the planner has finished, so Python assembles the packet
+itself. Its evidence is the reference quote each of the claim's planned cases was keyed to,
+already proved exact at qualification, at most eight of them. Its limitations are Python's
+own account of the stop. No subject answer enters it. Assessor, rubric and grade are those
+of any D. The record keeps the runner fault in its `fault` field and reads `not_obtained`
+for accuracy, consistency and completeness, because execution was attempted and lost. It
+names itself a fallback. It is not attempted, and the reason is recorded, when documentary
+assessment is disabled, when the claim never qualified a candidate, or when less time
+remains before the attempt deadline than two assessor sessions plus five minutes for the
+report. An assessor failure leaves the fault record as the claim's outcome. Run 84e90683's
+ring-option claim is why: both attempts timed out, and the claim reported nothing.
+
 This contract defines version 0.7's implemented local mechanisms and enforceable
 boundaries. The repository's DEVELOPMENT-PLAN.md retains the full project goal
 and records automated validation separately from pending manual CLI/desktop,
@@ -207,7 +221,10 @@ replaces execution-affecting frontmatter; original bytes and the transformation
 digest remain in the receipt. Explicit Skill-tool invocation and a successful
 matching tool result are required. A prompt mentioning the skill is insufficient.
 Dynamic skill shell interpolation and nested Claude configuration are unsupported.
-Dependencies must already exist in the pinned image. No trial installs packages.
+Dependencies must already exist in the pinned image. No trial installs packages, and
+the subject's command tool says so: in run 84e90683 every trial of the ring-option claim
+first tried to install RDKit, and two spent their whole limit on the attempt and on
+working the answer out by hand.
 
 Text sessions expose Skill and a bounded private submitted-file reader. Computational sessions
 expose Skill and the private container/resource/app tools described above. Host
@@ -239,7 +256,10 @@ third itself.
 No reference answer, candidate, evaluator file, verifier conversation or arbitrary
 planner instruction is included in subject input. Subject input is the frozen
 case input plus the pinned skill. A process deadline and output ceiling are
-enforced; timeout/cancellation terminates the process tree. An interrupted trial
+enforced; timeout/cancellation terminates the process tree. A trial that reaches its
+deadline is `claude_timeout`, and its record names the case, the trial and the
+`subject_timeout_seconds` it reached. That limit is this verifier's setting, not a
+property of the skill, and the report says so. An interrupted trial
 request is retained and is never silently replayed. Restarting verification
 creates a new run and discloses a new evidence sample.
 
@@ -252,7 +272,9 @@ The first attempt's record and receipts stay in the report beside the retry's. A
 is not retried, and the report says why, when its plan settled no execution grade (the
 documentary step after it needs the planner), when the subject-call budget cannot
 cover it, or when less time remains before the attempt deadline than one minute per
-trial plus five for the report.
+trial plus five for the report. A claim the re-run does not clear, or that is not
+re-run, then receives the fallback documentary assessment described under
+"Independent documentary path".
 
 ## Authentication and storage
 

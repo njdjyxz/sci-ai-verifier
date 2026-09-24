@@ -115,7 +115,8 @@ packages. Keep Docker Desktop running while testing computational skills.
 
 This initial image provides Python's standard library. If a skill needs NumPy,
 R, a chemistry toolkit or another package, prepare an image containing those
-dependencies first; see [dependencies and configuration](LOCAL-CONFIG.md).
+dependencies first; see [dependencies and configuration](LOCAL-CONFIG.md), which
+also describes the reviewed RDKit image.
 Missing packages produce a limitation, not an invented result. If
 `.verifier\local-settings.json` already exists from your previous setup, keep it
 and check its image/settings before reusing it. The helper deliberately does not
