@@ -121,11 +121,13 @@ every case and describing replacements takes a critique 60 to 120 seconds, and t
 two-minute deadline it used to share with the assessor killed one in run 74eadedd.
 
 The installed policy then requires every planned trial and case to be scored. Missing
-observations are operational. Invalid observations remain counted and prevent an
-A/B/C grade. Only counting cases enter accuracy, consistency and status; the others
-still run and are reported with their verdicts. Scored-status agreement must be unanimous within each case for a grade;
-unanimous failure is as eligible as unanimous success. The achieved grade is the
-settled ceiling, or none when any of those conditions fails. The verdict is pass only
+observations are operational. Invalid observations remain counted. Only counting cases
+enter accuracy, consistency and status; the others still run and are reported with
+their verdicts. The achieved grade is the settled ceiling, fixed before any trial ran,
+and nothing observed afterwards moves it: invalid observations and disagreement
+between a case's trials can change the status, never the grade, and each is recorded
+among the execution limits. `evidence-rubric.md` owns that rule; a skill failing every
+trial against an A-grade reference keeps grade A. The verdict is pass only
 if all scored trials pass, fail if at least one fails and none is invalid, and
 inconclusive if any is invalid. No eligible grade grants no scientific verdict and
 requests a separate documentary assessment; it never silently invents a weaker grade.

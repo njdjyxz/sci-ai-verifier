@@ -232,6 +232,14 @@ In the session of run `d416f79d`, started at 22:55 PDT on 2026-09-24 after `da76
   first time verifies it once, in 2.5 s.
 - Not verified: either fix live. The two timelines are still rewritten whole on every write,
   0.06 s at 2,430 events.
+- Later, at the operator's request: corrected `local-contract.md`, whose paragraph on the
+  installed policy still said that invalid observations prevent a grade and that trials must
+  agree unanimously for one. That was true when written in `f7293ec` (2026-09-12); since the
+  six-axis report card, `670033f` (2026-09-21), `decide()` keeps the settled grade and both
+  change only the status and the execution limits, as `evidence-rubric.md` says. The local
+  planner receives that file in full, so every local run since 2026-09-21 was given the old
+  rule. The paragraph now states the current rule and names its owner. Suite unchanged: 338
+  passing, 2 skipped, the machine-only failure.
 
 Against "What to check in the run" of the 2026-09-24 entry:
 
