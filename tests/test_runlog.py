@@ -76,6 +76,32 @@ class LogTests(unittest.TestCase):
             records = [json.loads(line) for line in Path(log.paths["jsonl_path"]).read_text().splitlines()]
             self.assertEqual([item["sequence"] for item in records], list(range(1,18)))
 
+    def test_threads_of_one_process_share_one_valid_event_chain(self):
+        """Claim-only sessions run four at a time, each logging its stream from its own thread."""
+        from concurrent.futures import ThreadPoolExecutor
+        with tempfile.TemporaryDirectory() as directory:
+            log = WorkflowLog(directory)
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(lambda index: log.emit("thread", index=index), range(40)))
+            log.emit("threads_finished")
+            records = [json.loads(line) for line in Path(log.paths["jsonl_path"]).read_text().splitlines()]
+            self.assertEqual([item["sequence"] for item in records], list(range(1, 42)))
+            self.assertEqual([item["previous_digest"] for item in records[1:]], [item["digest"] for item in records[:-1]])
+            self.assertEqual(sorted(item["data"]["index"] for item in records[:-1]), list(range(40)))
+
+    def test_threads_keep_one_chain_where_the_file_lock_admits_them_all(self):
+        """POSIX file locks do not exclude threads of the process that holds them, so on Linux or
+        macOS only the in-process lock keeps concurrent emits from racing for one sequence."""
+        from concurrent.futures import ThreadPoolExecutor
+        admit_all = lambda descriptor: (lambda: None, lambda: None)
+        with tempfile.TemporaryDirectory() as directory, patch("sci_ai_verifier.runlog.file_lock", admit_all):
+            log = WorkflowLog(directory)
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(lambda index: log.emit("thread", index=index), range(40)))
+            records = [json.loads(line) for line in Path(log.paths["jsonl_path"]).read_text().splitlines()]
+            self.assertEqual([item["sequence"] for item in records], list(range(1, 41)))
+            self.assertEqual([item["previous_digest"] for item in records[1:]], [item["digest"] for item in records[:-1]])
+
     def test_tampered_event_cannot_be_silently_reprojected(self):
         with tempfile.TemporaryDirectory() as directory:
             log = WorkflowLog(directory)

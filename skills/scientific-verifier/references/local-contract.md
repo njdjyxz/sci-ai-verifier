@@ -51,7 +51,7 @@ remain in coverage denominators.
 ## Negotiated evidence grade, plan audit and deterministic grade policy
 
 Selection freezes source, subject/configuration, candidate, trial count, tolerances
-and the `evidence-strength-v1` policy and writes a deterministic audit before
+and the installed evidence-strength policy (`scripts/local_policy.py` prints it) and writes a deterministic audit before
 execution. The grade is settled during that selection and requires no human review.
 
 The planner proposes `target_grade` A, B or C with an explicit justification.
@@ -76,6 +76,14 @@ The ceiling is the weaker of the two. The local planner receives that section an
 "Negotiating the grade" pinned with its other instructions, since its session cannot
 read files.
 
+First, Python measures what `beyond_scope` describes, a rule *No more* in
+`evidence-rubric.md` owns and `select_local_candidate` in `tool-contracts.md` specifies.
+Fresh no-tool sessions that see only the claim answer each case twice, and a case any
+answer misses does not count. The critique judging that design never sees those
+answers. A session that cannot complete, or that another model answered after a
+refusal, leaves its case unmeasured, not rejected, so a provider fault cannot lower a
+grade.
+
 A fresh no-tool session then receives the claim, the evidence design, the reference
 provenance, the justification, Python's ceiling, the concerns earlier reviewers raised
 about earlier versions of this design (their objections and every case they did not
@@ -91,23 +99,24 @@ previous round settled at C", and a proposal whose notes mention an earlier revi
 now refused before its critique starts. It sees every case, each with its ID and answer form, and returns the
 strongest grade the evidence actually supports plus one verdict per case. The settled
 ceiling is the weakest of the proposal, Python's ceiling recomputed over the cases the
-critique counted, and that critique's grade.
+critique counted and the claim-only answers did not miss, and that critique's grade.
 
 When the settled grade is below the proposal, the planner may strengthen the design and
 propose the new ceiling, which earns another round, or accept the grade that design
 settled at, which settles immediately without another session. Repeating a proposal on
 a design already critiqued is refused and consumes neither a session nor a round, so
 the budget of one round per rubric grade bounds real revisions rather than repetition.
-Rounds whose critique rejected cases are also counted against the two replacement
-rounds in `evidence-rubric.md`; once those are spent, a critique that still rejects
-cases settles the plan. Accepting a design that settled at no grade leaves the plan
+Rounds with rejected cases, whether the critique or the claim-only answers rejected
+them, are also counted against the two replacement rounds in `evidence-rubric.md`; once
+those are spent, a round that still rejects cases settles the plan. Accepting a design that settled at no grade leaves the plan
 ungraded: it still executes and produces comparison evidence, and the claim continues
 to the documentary path. An unavailable critique is an operational limitation.
 
 A critique reply whose *shape* is unusable is retried once in a second fresh session
 against the identical packet, under the same rule as the documentary assessor below. A
 reply that parses and judges the design is never re-rolled, whatever grade it gives.
-The critique session has five minutes; the documentary assessor keeps two. Judging
+The critique session has five minutes; the documentary assessor keeps two; each
+claim-only session has two, four running at once. Judging
 every case and describing replacements takes a critique 60 to 120 seconds, and the
 two-minute deadline it used to share with the assessor killed one in run 74eadedd.
 

@@ -283,8 +283,28 @@ class GradeNegotiationTests(unittest.TestCase):
         self.h.setUp()
         self.addCleanup(self.h.doCleanups)
         self.packets=[]
+        # Every case reaches its key from the claim alone unless a test says otherwise: the real
+        # probe starts Claude Code sessions, which the fixture subject cannot run.
+        self.probed=[]
+        patcher=patch("sci_ai_verifier.documentary.claim_probe",side_effect=self.probe())
+        patcher.start()
+        self.addCleanup(patcher.stop)
         # Three trials of a retrieved, token-exact, installed-method comparison: ceiling A.
         self.key=self.build(3)
+
+    def probe(self,missed=()):
+        """Claim-only answers shaped as documentary.claim_probe returns them; `missed` names the
+        cases every answer got wrong."""
+        def run(adapter,claim,candidate,cache=None):
+            self.probed.append({"claim":claim,"cases":[case["case_id"] for case in candidate["cases"]],
+                                "cache":sorted(cache or {})})
+            return {"kind":"claim-probe","prompt_ref":"fixture","samples_per_case":2,
+                    "cases":[{"case_id":case["case_id"],"case_ref":"ref-"+case["case_id"],"expected":case["expected"],
+                              "outcome":"missed" if case["case_id"] in missed else "reached",
+                              "samples":[{"answer":"UNDETERMINED" if case["case_id"] in missed else case["expected"],
+                                          "status":"invalid" if case["case_id"] in missed else "pass"}]*2}
+                             for case in candidate["cases"]]}
+        return run
 
     def build(self, trial_count, name="graded", **settings):
         h=self.h
@@ -472,6 +492,55 @@ class GradeNegotiationTests(unittest.TestCase):
         # The critique saw every case, each with its ID and the design's answer form.
         self.assertEqual([case["case_id"] for case in self.packets[0]["evidence"]["cases"]],list(fixture.FIVE_ROWS))
         self.assertEqual({case["answer_form"] for case in self.packets[0]["evidence"]["cases"]},{"generated"})
+
+    def test_a_case_the_claim_alone_does_not_settle_does_not_count_whatever_the_critique_says(self):
+        """Run 3b3f3c94: critiques counted "lone ring atoms", a key narrower than the claim, and a
+        subject applying the skill answered "none of these". Sessions given only the claim miss
+        such a key, so Python withholds the case from the count. The critique's own verdict is
+        kept, and the critique never sees the claim-only answers."""
+        h=self.h
+        with patch("sci_ai_verifier.documentary.claim_probe",side_effect=self.probe(missed={"eta"})), \
+             patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+        self.assertEqual(h.data["audit"]["counted_cases"],["alpha","beta","gamma","zeta"])
+        self.assertEqual(h.data["settled_grade"],"B")
+        replaced=h.data["case_replacements"]
+        self.assertEqual([(item["case_id"],item["verdict"],item.get("source")) for item in replaced],
+                         [("eta","beyond_scope","claim_probe")])
+        self.assertIn("Fresh sessions given only the claim answered 'UNDETERMINED' and 'UNDETERMINED' where the key is",
+                      replaced[0]["reason"])
+        self.assertTrue(replaced[0]["replacement"])
+        self.assertEqual(h.data["case_gap"]["counting_needed"],1)
+        verdicts={item["case_id"]:item["verdict"] for item in h.data["audit"]["critique"]["case_verdicts"]}
+        self.assertEqual(verdicts["eta"],"counts")
+        self.assertEqual(self.probed[-1]["claim"]["statement"],h.claims[0]["statement"])
+        self.assertNotIn("UNDETERMINED",canonical(self.packets[0]).decode())
+        self.assertNotIn("claim_probe",canonical(self.packets[0]).decode())
+        # Accepting B settles on that same critique and its claim-only answers, with no new probe.
+        before=len(self.probed)
+        with patch("sci_ai_verifier.documentary.critique",side_effect=AssertionError("must not run")):
+            h.select(self.key,target_grade="B")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        self.assertEqual(len(self.probed),before)
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        result=h.data["result"]
+        self.assertEqual(result["evidence_grade"],"B")
+        self.assertEqual([item["case_id"] for item in result["uncounted_cases"]],["eta"])
+        h.call("write_report_card")
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Case eta not counted (beyond_scope, from the claim-only answers)",markdown)
+        self.assertIn("Claim-only answers: 4 of 5 cases reached their key from the claim alone; 1 missed.",markdown)
+
+    def test_a_changed_design_reuses_the_claim_only_answers_of_its_unchanged_cases(self):
+        """A revision usually replaces one or two cases, so only those are asked again."""
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.rejecting("A",{"eta":"duplicate"})):
+            h.select(self.key,target_grade="A")
+            replaced=h.candidate(lookup=False,rows=fixture.FIVE_ROWS,name="Fixture table, eta replaced")
+            h.select(replaced,target_grade="A")
+        self.assertEqual(self.probed[0]["cache"],[])
+        self.assertEqual(self.probed[1]["cache"],["ref-"+name for name in sorted(fixture.FIVE_ROWS)])
 
     def test_the_next_reviewer_is_told_which_cases_were_not_counted_and_why(self):
         h=self.h

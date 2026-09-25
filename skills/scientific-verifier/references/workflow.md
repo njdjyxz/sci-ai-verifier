@@ -536,8 +536,9 @@ finish without doing the work:
 
 - `select_local_candidate` stays in `local_discovery` and returns
   `local_grade_revision_required` whenever the settled grade — the weakest of the
-  proposal, the ceiling over the critique's counting cases and the critique's own
-  grade — is below the proposal. Repeating the call with a strengthened design or
+  proposal, the ceiling over the cases that count and the critique's own grade — is
+  below the proposal. A case counts when the critique counted it and the claim-only
+  answers `tool-contracts.md` describes did not miss its key. Repeating the call with a strengthened design or
   the settled grade is the negotiation. After the installed round limit, or once the
   replacement rounds in `evidence-rubric.md` are spent and a critique still rejects
   cases, the settled grade is fixed and the claim reaches `local_ready`.

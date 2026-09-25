@@ -4,6 +4,7 @@ import errno
 import json
 import os
 import re
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,6 +18,10 @@ SENSITIVE = re.compile(r"token|secret|password|authorization|api.?key|credential
 MAX_EVENTS = 20000
 MAX_LOG_BYTES = 32*1024*1024
 MAX_TEXT = 16000
+# Claim-only sessions run four at a time and each logs its stream. The file lock alone does not
+# serialize threads of one process on POSIX and gives up after five seconds, so emits also
+# queue on this lock, keeping the digest chain in order.
+EMIT_LOCK = threading.Lock()
 
 
 def redact(value, secrets=(), depth=0):
@@ -101,7 +106,7 @@ class WorkflowLog:
 
     def emit(self, event, **data):
         try:
-            with locked(self.directory/".lock"):
+            with EMIT_LOCK, locked(self.directory/".lock"):
                 files = sorted(no_links(self.directory/"events").glob("[0-9]*.json"))
                 if len(files) >= MAX_EVENTS:
                     raise Fault("workflow_log_limit", "The workflow event limit was reached.")

@@ -36,7 +36,7 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v4",
+    "id": "evidence-strength-v5",
     "minimum_cases": MINIMUM_CASES,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
@@ -44,7 +44,8 @@ POLICY = {
     "cases": {"A": {"counting": DIRECT_CASES, "generated": DIRECT_GENERATED},
               "B": {"counting": MINIMUM_CASES, "generated": EXTERNAL_GENERATED},
               "C": {"counting": MINIMUM_CASES, "generated": 0},
-              "counted": "cases the independent critique gave the verdict counts; before a critique, every case",
+              "counted": "cases the independent critique gave the verdict counts and the claim-only answers did "
+                         "not miss; before a critique, every case",
               "generated": "methods " + ", ".join(sorted(GENERATED_METHODS)) + "; choice is recognised"},
     "proposal": "each round proposes the current evidence ceiling, or accepts the grade the "
                 "last critique of this exact design settled at",
@@ -225,16 +226,43 @@ def proposal_problem(target, ceiling, accepted=None):
     return None
 
 
+def probe_missed(critique):
+    """The claim-only answers Python recorded on this critique for cases they missed, by case ID."""
+    probe = (critique or {}).get("claim_probe") or {}
+    return {item["case_id"]: item for item in probe.get("cases", []) if item["outcome"] == "missed"}
+
+
 def counted_cases(critique):
-    """Case IDs the critique counted, or `None` when no critique judged individual cases."""
+    """Case IDs the critique counted and the claim-only answers did not miss, or `None` when no
+    critique judged individual cases."""
     if not critique or critique.get("case_verdicts") is None:
         return None
-    return [item["case_id"] for item in critique["case_verdicts"] if item["verdict"] == "counts"]
+    missed = probe_missed(critique)
+    return [item["case_id"] for item in critique["case_verdicts"]
+            if item["verdict"] == "counts" and item["case_id"] not in missed]
 
 
 def rejected_cases(critique):
-    """Each case the critique did not count, with its verdict, reason and described replacement."""
-    return [item for item in (critique or {}).get("case_verdicts") or [] if item["verdict"] != "counts"]
+    """Each case that does not count, in case order, with its verdict, reason and described replacement.
+
+    The critique's own rejections are kept as it gave them. A case it counted that the
+    claim-only answers missed is Python's `beyond_scope`, and says so.
+    """
+    missed = probe_missed(critique)
+    found = []
+    for item in (critique or {}).get("case_verdicts") or []:
+        if item["verdict"] != "counts":
+            found.append(item)
+        elif item["case_id"] in missed:
+            probe = missed[item["case_id"]]
+            answers = " and ".join(repr(sample["answer"]) for sample in probe["samples"] if "answer" in sample)
+            found.append({"case_id": item["case_id"], "verdict": "beyond_scope", "source": "claim_probe",
+                          "reason": "Fresh sessions given only the claim answered " + answers + " where the key is "
+                                    + repr(probe["expected"]) + ", so a subject applying the claim as written could "
+                                    "answer otherwise.",
+                          "replacement": "A case whose key the claim's statement and expected behaviour settle, so "
+                                         "that a subject knowing only the claim reaches it."})
+    return found
 
 
 def case_gap(candidate, counted, grade, supported):

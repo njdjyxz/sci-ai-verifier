@@ -429,6 +429,17 @@ def select(store, state, claim_id, work, args, subject):
                                "and the cases they did not count. A justification field needs only a new "
                                "proposal; a case's applicability or the design's scope or limitations "
                                "needs a revised candidate."}
+        # Measured before the critique and never shown to it: what a subject knowing only the
+        # claim answers ("No more" in evidence-rubric.md). A generated evaluator's free output
+        # needs the sandbox to be scored, so only installed methods are asked.
+        probe = None
+        if candidate["method"] != "python":
+            from .documentary import claim_probe
+            # Earlier rounds' answers travel on their critiques, so an unchanged case is not asked again.
+            earlier = {item["case_ref"]: item for record in history
+                       for item in ((record.get("critique") or {}).get("claim_probe") or {}).get("cases", [])
+                       if item["outcome"] != "unmeasured"}
+            probe = claim_probe(subject, claim, candidate, cache=earlier)
         packet = critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                                  prior_objections(history))
         work["critique_packet_ref"] = keep(store, state, packet)
@@ -440,6 +451,9 @@ def select(store, state, claim_id, work, args, subject):
             return limitation(store, state, claim_id, getattr(error, "code", "critic_unavailable"),
                               "The independent grade critique did not complete." + detail + " This is an "
                               "operational failure, not an absence of scientific evidence.", asserted_by="runtime")
+        if probe is not None:
+            # Python's measurement travels with the critique it settles against, beside its verdicts.
+            critique = {**critique, "claim_probe": probe}
         work["critique_ref"] = keep(store, state, critique)
     work["candidate_ref"] = key
     selection = {"candidate_ref": key, "applicability": args["applicability"],
@@ -1007,9 +1021,20 @@ def report(store, state):
                               +cell(settled["critique"]["supported_grade"] or "none")+":",""])
                 lines.extend("- "+cell(finding) for finding in settled["critique"]["findings"])
                 lines.extend("- Objection: "+cell(item) for item in settled["critique"]["objections"])
-                lines.extend("- Case "+cell(item["case_id"])+" not counted ("+cell(item["verdict"])+"): "+cell(item["reason"])
-                             +" Suggested replacement: "+cell(item["replacement"])
-                             for item in settled["critique"].get("case_verdicts") or [] if item["verdict"]!="counts")
+                from .local_science import rejected_cases
+                # In case order: the critique's rejections, and Python's, marked, for cases the
+                # claim-only answers missed.
+                lines.extend("- Case "+cell(item["case_id"])+" not counted ("+cell(item["verdict"])
+                             +(", from the claim-only answers" if item.get("source")=="claim_probe" else "")+"): "
+                             +cell(item["reason"])+" Suggested replacement: "+cell(item["replacement"])
+                             for item in rejected_cases(settled["critique"]))
+                probe=settled["critique"].get("claim_probe")
+                if probe:
+                    outcomes=[item["outcome"] for item in probe["cases"]]
+                    lines.append("- Claim-only answers: "+str(outcomes.count("reached"))+" of "+str(len(outcomes))
+                                 +" cases reached their key from the claim alone"
+                                 +"".join("; "+str(outcomes.count(name))+" "+name for name in ("missed","unmeasured")
+                                          if outcomes.count(name))+".")
                 lines.append("")
             else:
                 lines.extend(["No independent critique ran for this plan; no grade is assigned.",""])

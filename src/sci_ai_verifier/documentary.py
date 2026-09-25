@@ -1,6 +1,6 @@
-"""Fresh no-tool Claude sessions: documentary assessment and evidence-grade critique.
+"""Fresh no-tool Claude sessions: documentary assessment, evidence-grade critique, claim-only answers.
 
-Both use the same boundary. A new session receives one immutable bounded packet,
+All use the same boundary. A new session receives one immutable bounded packet,
 has no tools and no planning history, and must answer inside a fixed rubric. The
 planner cannot see, edit or replace what comes back.
 """
@@ -322,3 +322,83 @@ def critique(adapter,packet,rubric=CRITIQUE_RUBRIC):
     raise Fault("critic_response_invalid",
                 f"The critique returned an unusable shape in {CRITIC_SHAPE_ATTEMPTS} fresh sessions; "
                 "the last: "+attempts[-1].get("detail",attempts[-1]["rejected"]))
+
+
+# "No more" in evidence-rubric.md owns the claim-only rule; select_local_candidate in
+# tool-contracts.md owns these mechanics. The prototype's slowest answer took 42 s.
+CLAIM_PROBE_SAMPLES = 2
+CLAIM_PROBE_WORKERS = 4
+CLAIM_PROBE_TIMEOUT_SECONDS = 120
+CLAIM_PROBE_PROMPT = (
+    "You answer one question using a single claim about a piece of software, and nothing else about that "
+    "software. You may use general reasoning and general scientific knowledge, such as reading a SMILES string "
+    "or counting atoms. For anything about how the software behaves, rely only on the claim as written: not on "
+    "its documentation, its source code, or anything else you may know about it. Apply the claim literally. If "
+    "the claim does not settle the answer, say so: for a question with numbered options choose 'none of these'; "
+    "for an open question reply UNDETERMINED. Follow the question's reply format, with the answer alone on the "
+    "first line and a short reason below it. Do not use tools.")
+CLAIM_PROBE_REF = digest(canonical(CLAIM_PROBE_PROMPT))
+# A stop the caller asked for ends the probe; any other failed session only leaves its case unmeasured.
+STOPPING = {"verification_cancelled", "verification_timeout"}
+
+
+def claim_probe(adapter, claim, candidate, cache=None):
+    """Answer every case from the claim alone, twice each, in fresh no-tool sessions.
+
+    `beyond_scope` is a case that a subject correctly applying the claim as written could
+    answer otherwise. Replayed on the pinned model, critiques asked to imagine that subject
+    counted such cases in five reviews of seven; sessions given only the claim missed each
+    such key at least once in two answers and reached every fair one. A case every answer
+    reaches is `reached`, one any answer misses `missed`, and one with no miss whose sessions
+    did not all complete `unmeasured`, which leaves the critique's verdict standing. An answer
+    another model gave, after a refusal, is not a completed session. `cache` maps a case's
+    `case_ref`, the digest of what it asks, to earlier answers, so an unchanged case is not
+    asked again; an unmeasured case is.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+    from .local_candidates import case_method, compare
+    cache = {} if cache is None else cache
+    known = {"statement": claim["statement"], "expected_behavior": claim["expected_behavior"]}
+    pinned = getattr(adapter, "model", None)
+
+    def key(case):
+        return digest(canonical({"claim": known, "input": case["input"], "expected": case["expected"],
+                                 "method": case_method(candidate, case), "prompt": CLAIM_PROBE_REF}))
+
+    def ask(case):
+        try:
+            response, session = isolated_answer(adapter, {"claim": known, "question": case["input"]},
+                                                role="claim_probe", system_prompt=CLAIM_PROBE_PROMPT,
+                                                timeout=CLAIM_PROBE_TIMEOUT_SECONDS)
+        except (Fault, OSError, AttributeError) as error:
+            if getattr(error, "code", None) in STOPPING:
+                raise
+            return {"error": getattr(error, "code", type(error).__name__)}
+        models = response["observed_model_ids"]
+        if pinned and set(models) != {pinned}:
+            return {"error": "model_changed", "observed_model_ids": models, "session_id": session}
+        text = response["text"]
+        return {"answer": (text.strip().splitlines() or [""])[0][:200],
+                "status": compare(case_method(candidate, case), text, case["expected"]),
+                "session_id": session, "observed_model_ids": models,
+                "total_cost_usd": response["total_cost_usd"]}
+
+    fresh = [case for case in candidate["cases"] if key(case) not in cache]
+    with ThreadPoolExecutor(max_workers=CLAIM_PROBE_WORKERS) as pool:
+        # Each job carries the caller's cancellation and deadline, which live in a context variable.
+        asked = [(case, pool.submit(copy_context().run, ask, case))
+                 for case in fresh for _ in range(CLAIM_PROBE_SAMPLES)]
+        answers = [(case, future.result()) for case, future in asked]
+    results = {}
+    for case in fresh:
+        samples = [answer for item, answer in answers if item is case]
+        missed = any(sample.get("status", "pass") != "pass" for sample in samples)
+        outcome = "missed" if missed else "unmeasured" if any("error" in sample for sample in samples) else "reached"
+        results[key(case)] = {"case_ref": key(case), "expected": case["expected"], "outcome": outcome,
+                              "samples": samples}
+        if outcome != "unmeasured":
+            cache[key(case)] = results[key(case)]
+    return {"kind": "claim-probe", "prompt_ref": CLAIM_PROBE_REF, "samples_per_case": CLAIM_PROBE_SAMPLES,
+            "cases": [{"case_id": case["case_id"], **(results.get(key(case)) or cache[key(case)])}
+                      for case in candidate["cases"]]}

@@ -77,12 +77,15 @@ Run `31b67427` then saw the RDKit image work and critique v6 in force, but nothi
 trial, so the fallback D and the timeout message are **still unobserved**, and a case with
 the fifth leak shape was counted. Run `3b3f3c94`, on the same code, saw `beyond_scope` catch a
 mis-keyed case before any trial ran, but a counted case whose key was finer than its claim
-produced the ring claim's `fail`. Six fixes for what those two runs showed, among them
-critique rubric v7, are tested but **not yet seen live**. Replaying saved critique packets on
-the pinned model showed that the rubric text alone did not make it catch the article tell;
-the new qualification checks catch that tell and the repeated word behind the ring `fail`. The 2026-09-24 entry below has the details.
+produced the ring claim's `fail`. Seven fixes for what those two runs showed, among them
+critique rubric v7, are tested but **not yet seen in a full run**. Replaying saved critique
+packets on the pinned model showed that the rubric text alone did not make it catch the
+article tell; the new qualification checks catch that tell and the repeated word behind the
+ring `fail`. Nor did the claim-only rule reliably change its scope verdicts, so Python now
+measures that rule: fresh sessions that see only the claim answer each case twice, and a case
+they miss does not count. The 2026-09-24 entry below has the details.
 
-Automated suite: **324 passed, 2 skipped, 1 failing on this machine only**. The failing
+Automated suite: **334 passed, 2 skipped, 1 failing on this machine only**. The failing
 `test_runlog.py` preflight test fails the same way on the untouched `2d9f8af` tree: its
 stale-directory sweep finds this machine's leftover `sci-verifier-*` directories in `%TEMP%`
 and logs an event the test does not expect.
@@ -144,7 +147,7 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
   replies, a run the runner closes names who stopped it, and the rubric asks for a spare
   case. Other sessions that day committed `a202146` and `041552c`.
 
-## Claude: 2026-09-24 (runs 3dc02567, 84e90683, 31b67427 and 3b3f3c94; one model per trial, a re-run, a fallback D, an RDKit image, critique rubric v7)
+## Claude: 2026-09-24 (runs 3dc02567, 84e90683, 31b67427 and 3b3f3c94; one model per trial, a re-run, a fallback D, an RDKit image, critique rubric v7, claim-only answers)
 
 ### Current stage and status
 
@@ -266,8 +269,8 @@ Against `31b67427`:
   experiments and that one docstring lookup. The fallback D and the timeout message are still
   unexercised.
 
-The same session then made six fixes for those findings, contracts first. They are tested
-but **have not met a live run**:
+The same session then made seven fixes for those findings, contracts first. They are tested
+but **have not met a full run**:
 
 1. **The critique gets the leak shapes.** Its rubric, now v7, lists the five shapes of "Common
    leaks" in `evidence-rubric.md`. Until now only the planner received them, which is how
@@ -290,6 +293,18 @@ but **have not met a live run**:
    which critiques had counted, `ring-no-lone-ring-atoms` among them. With the leading-word
    check, 11 of the 30 would have been refused at qualification, so expect more rewrites; a
    refusal costs a planner turn, never a session.
+7. **Python measures the claim-only answer**, built at the operator's request after the
+   prototype under open question 12. Before each critique that would start, every case of a
+   design scored by installed methods goes twice to a fresh no-tool session on the pinned
+   model, which sees only the claim's statement and expected behaviour and the case input. A
+   case any answer misses does not count, and is returned as `beyond_scope` from the
+   claim-only answers; a session that fails, or that another model answered after a refusal,
+   leaves its case unmeasured with the critique's verdict standing. An unchanged case reuses
+   its earlier answers from the negotiation history. Sessions run four at a time, two minutes
+   each; the workflow log gained a thread lock so their streams keep one digest chain. The
+   critique judging a design never sees its answers, and the report marks the cases they
+   rejected. `evidence-rubric.md` "No more" owns the rule; `select_local_candidate` in
+   `tool-contracts.md` owns the mechanics.
 
 Not done, and why: making acceptance wait until the replacement rounds are spent (open
 question 9), because acceptance is right when an objection concerns the oracle rather than
@@ -347,6 +362,33 @@ In the session of runs `31b67427` and `3b3f3c94`, started after `d8a71f6`:
     already raised while counting it.
 - Earlier, a blind subagent proxy on a different model had caught the article tell that the
   pinned model then missed. A proxy on another model does not predict the pinned one.
+- After `096273e`, in a new session: the 19 saved designs of the three runs, re-qualified with
+  the committed code against their stored references. Ten that had qualified are refused, each
+  for its flagged leak, among them the two that decided grades; the pIC50 designs still
+  qualify. Rewriting `ring-no-lone-ring-atoms`'s distractors to mention ring atoms, as its
+  message says, clears it. At the four saved revisions `case_gap` states what each design
+  lacked; at `31b67427`'s ring claim it reads "add at least 1 more counting case of either form".
+- Six more replays on `claude-opus-5`, $2.31. `84e90683`'s scope case, whose reviewer wrote that
+  a subject applying the claim "answers 2 to both and fails" and counted both: caught in one v7
+  sample of two, and in the one sample under its original v5. `ring-no-lone-ring-atoms` with
+  the word cue removed counted in all three samples, v6 or v7, the reviewer reading "a ring is
+  matched in full or not at all" broadly; one v7 reviewer wrote that an atom-level reading
+  "would give 2" and counted the case anyway. The claim-only rule does not reliably change
+  this model's scope verdicts, so a case the planner rewrites to pass the new checks can keep
+  a scope problem that nothing catches.
+- Prototyped the claim-only answers on eight saved ring questions ($0.49; open question 12
+  has the results), then built them as fix 7. Verification: suite 327 → 337 tests, with 334
+  passing, 2 skipped and the machine-only failure. The new tests cover the split rule, faults
+  and substituted models, reuse, a requested stop, the caller's deadline in worker threads,
+  counting and the report, and forty concurrent log emits. Fifteen one-line mutations of the
+  probe were each caught. The one removing the log's thread lock was caught only after a test
+  simulated POSIX file locks, which admit every thread of one process; Windows's do not.
+- Ran the built `claim_probe()` live, with the real adapter and a real workflow log, over the
+  whole saved ring designs of `3b3f3c94` (its lone-ring case rewritten as qualification now
+  forces) and `84e90683`: 22 sessions, $0.61, 28 s and 61 s. Missed: `cro-pentane-cyclohexyl`
+  and `cro-aziridine-series` in both answers, `cro-cyclobutyl-cyclohexyl` and the "more
+  intuitive" scaffold in one of two. Reached: all six other cases, among them the rewritten
+  lone-ring case, answered 4 both times. The log kept one unbroken chain of 264 events.
 
 In the `84e90683` session:
 
@@ -432,7 +474,11 @@ leave a shell inside a directory you are moving.
 6. **Grades.** Quote every `case_gap` summary and say what the planner did next. Did it accept
    a settled grade below its proposal while a replacement round remained? Quote its reason.
 7. **Effect-to-setting cases.** Did the planner design any, and did the critique count them?
-8. **The rest.** Any refusal (quote the `model_refusal_*` events), `invalid` still zero, the
+8. **Claim-only answers.** Quote every `missed` case with its answers and key, and say whether
+   it was a scope problem or a slip, from the session's full reply in `workflow.jsonl` (role
+   `claim_probe`). Did any `unmeasured` case occur, and why? What did the answers cost in money
+   and minutes, and how many were reused?
+9. **The rest.** Any refusal (quote the `model_refusal_*` events), `invalid` still zero, the
    claim count and the run time.
 
 ### Reading the results without fooling yourself
@@ -494,6 +540,19 @@ leave a shell inside a directory you are moving.
 11. **The prior-review trigger.** It refused a first proposal for "a reviewer may judge one of
     each pair to add little independent evidence", a sentence about the coming review. It cost
     no session; should it match only references to an earlier review?
+12. **How many claim-only answers per case.** Fix 7 measures the claim-only answer twice. Its
+    prototype, on eight saved ring questions ($0.49), gave the claim as its statement and
+    expected behaviour to fresh no-tool sessions and scored each answer with the question's
+    own method. Over two samples it missed no fair question in 8 answers. It missed the key of
+    all four questions reviewers had counted or disputed: `cro-pentane-cyclohexyl` and
+    `cro-aziridine-series` in both samples, a claim-faithful "2" against the key "3"; the
+    tutorial's "more intuitive" scaffold in both; and `ring-no-lone-ring-atoms`, its word cue
+    removed, in one of two, answering `none of these` because "the claim does not settle that
+    phrasing". Given only the skill's sentence instead of the claim, it passed two of the four.
+    The built code then answered that lone-ring case 4 both times, so it has been missed in one
+    answer of four. Two answers catch a case that faithful readers split on in that proportion
+    about half the time. A third answer would raise the catch rate for about $0.03 a case, and
+    no fair question has been missed in 20 answers. Should it be three?
 
 ### Deferred, and why
 
@@ -531,13 +590,16 @@ Do not change code, commit or push unless I ask.
 
 ### Urgent next steps, if any
 
-Before the next live run, commit the five fixes and start a new session. The session that
-made them still runs a `serve-local` started on `d8a71f6`.
+None for the code, which is committed and pushed with this entry. Before the next live run,
+start a new session: a session started before this commit runs a `serve-local` with older
+code. A run now also spends about $0.03 per case per claim-only answer; the first round of a
+six-case claim adds about a minute.
 
 ### Suggested next move
 
-Run `sar-analysis` once on the v7 code, and read the critiques' `beyond_scope` verdicts, any
-qualification refused for a lone start, and any `case_gap` reply rather than the grades.
+Run `sar-analysis` once on this code, and read the claim-only answers, the critiques'
+`beyond_scope` verdicts, any qualification refusals and any `case_gap` reply rather than the
+grades.
 
 ### Recommended next action
 

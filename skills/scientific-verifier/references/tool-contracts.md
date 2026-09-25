@@ -642,12 +642,27 @@ The Local profile matrix in workflow.md governs their legality.
   `evidence-rubric.md`), with the `field` and `phrase` found — and spends no session.
   Only a proposal that would start a critique is checked. A case's applicability and
   the design's scope and limitations are fixed at qualification, so a note there needs
-  a revised candidate. A permitted proposal starts a
+  a revised candidate. A permitted proposal first measures what a subject knowing only
+  the claim answers, for a design scored by installed methods. Each case goes twice to
+  a fresh no-tool session on the pinned model that sees only the claim's statement and
+  expected behaviour and the case input, four sessions at a time, two minutes each, and
+  each answer is scored by the case's own method. A case every answer reaches is
+  `reached`; a case any answer misses is `missed`; a case with no miss whose sessions did
+  not all complete is `unmeasured`, and the critique's verdict stands for it. A case
+  unchanged since an earlier round of the same claim reuses its answers. The result is
+  recorded on the audit's critique as `claim_probe`. The critique judging that design
+  never sees it; a later round's critique receives a missed case among the cases not
+  counted, like any other. The report lists missed cases as not counted, marked as the
+  claim-only answers' verdict. A design scored by a generated evaluator is not probed,
+  because free output needs the sandbox to be scored. The proposal then starts a
   fresh independent critique session, which sees every case with its `case_id` and
   answer form, receives earlier reviewers' objections and the cases they did not count
   (verdict, reason, suggested replacement) but never their grades, and may only lower
-  the grade. Python then recomputes the ceiling over the cases the critique
-  counted; the audit records `counted_cases`, that `case_ceiling`, and a settled
+  the grade. A `missed` case does not count whatever the critique says: unless the
+  critique already rejected it, Python returns it as `beyond_scope`, with the claim-only
+  answers as the reason. Python then recomputes the ceiling over the cases the critique
+  counted and the claim-only answers did not miss; the audit records `counted_cases`,
+  that `case_ceiling`, and a settled
   ceiling that is the weakest of the proposal, the case ceiling and the critique's grade.
   `local_plan_fixed` freezes the plan, its settled ceiling and that critique, and
   enters local_ready; accepting the grade an unchanged design already settled at

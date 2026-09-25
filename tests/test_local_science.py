@@ -416,5 +416,117 @@ class GeneratedEvaluatorTests(unittest.TestCase):
             validate_spec(spec,{"b"*64:{"text":"0 1 2"}})
 
 
+class ClaimProbeTests(unittest.TestCase):
+    """The claim-only answers, with each Claude Code session replaced by a scripted reply."""
+
+    def setUp(self):
+        self.claim={"statement":"Setting X prevents partial rings.","expected_behavior":"Rings are whole.",
+                    "scope":"X only"}
+        self.closed="Which?\n1. a\n2. b\n3. c\n4. d\n5. none of these"
+        self.candidate={"method":"mixed","cases":[
+            {"case_id":"open","method":"numeric","input":"How many atoms?","expected":"3"},
+            {"case_id":"closed","method":"choice","input":self.closed,"expected":"2",
+             "options":["a","b","c","d","none of these"]}]}
+        self.adapter=type("Pinned",(),{"model":"pinned-model"})()
+
+    def probe(self,table,cache=None):
+        """Each question pops its next scripted reply; an exception is raised instead of answered,
+        and a (text, models) pair names who answered."""
+        from threading import Lock
+        from sci_ai_verifier.documentary import claim_probe
+        lock,seen=Lock(),[]
+        def answer(adapter,packet,*,role,system_prompt,timeout,limit=64000):
+            with lock:
+                seen.append(packet)
+                reply=table[packet["question"]].pop(0)
+            if isinstance(reply,Exception):
+                raise reply
+            text,models=reply if isinstance(reply,tuple) else (reply,["pinned-model"])
+            return {"text":text,"observed_model_ids":models,"total_cost_usd":0.01},"session-"+str(len(seen))
+        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=answer):
+            return claim_probe(self.adapter,self.claim,self.candidate,cache=cache),seen
+
+    def outcomes(self,probe):
+        return {item["case_id"]:item["outcome"] for item in probe["cases"]}
+
+    def test_a_case_counts_only_when_every_claim_only_answer_reaches_its_key(self):
+        """Run 3b3f3c94: faithful readers of one claim split on "lone ring atoms", once on the
+        key and once on none of these. A split is the sign that the claim does not settle it."""
+        probe,seen=self.probe({"How many atoms?":["3","2\n\nThe claim keeps whole rings only."],
+                               self.closed:["2","**2**"]})
+        self.assertEqual(self.outcomes(probe),{"open":"missed","closed":"reached"})
+        self.assertEqual(len(seen),4)
+        # Each session saw the claim and one question, never the skill or the key.
+        self.assertTrue(all(set(packet)=={"claim","question"} for packet in seen))
+        self.assertEqual(seen[0]["claim"],{"statement":self.claim["statement"],
+                                           "expected_behavior":self.claim["expected_behavior"]})
+        missed=next(item for item in probe["cases"] if item["case_id"]=="open")
+        self.assertEqual(sorted(sample["answer"] for sample in missed["samples"]),["2","3"])
+
+    def test_a_failed_or_substituted_session_leaves_its_case_unmeasured_and_asked_again(self):
+        """A provider fault, or a refusal another model answered, says nothing about the claim."""
+        cache={}
+        probe,_=self.probe({"How many atoms?":[Fault("claude_timeout","slow"),"3"],
+                            self.closed:[("2",["other-model","pinned-model"]),"2"]},cache)
+        self.assertEqual(self.outcomes(probe),{"open":"unmeasured","closed":"unmeasured"})
+        self.assertEqual(cache,{})
+        # Asked again, and an answer that misses is still a miss beside a fault.
+        probe,seen=self.probe({"How many atoms?":[Fault("claude_timeout","slow"),"4"],self.closed:["2","2"]},cache)
+        self.assertEqual(len(seen),4)
+        self.assertEqual(self.outcomes(probe),{"open":"missed","closed":"reached"})
+
+    def test_an_unchanged_case_is_not_asked_again(self):
+        cache={}
+        self.probe({"How many atoms?":["3","3"],self.closed:["2","2"]},cache)
+        self.assertEqual(len(cache),2)
+        probe,seen=self.probe({},cache)
+        self.assertEqual(seen,[])
+        self.assertEqual(self.outcomes(probe),{"open":"reached","closed":"reached"})
+        # A changed key is a different question.
+        self.candidate["cases"][0]["expected"]="4"
+        probe,seen=self.probe({"How many atoms?":["3","3"]},cache)
+        self.assertEqual(len(seen),2)
+        self.assertEqual(self.outcomes(probe)["open"],"missed")
+
+    def test_a_stop_the_caller_asked_for_ends_the_probe(self):
+        with self.assertRaises(Fault) as caught:
+            self.probe({"How many atoms?":[Fault("verification_cancelled","stop"),"3"],self.closed:["2","2"]})
+        self.assertEqual(caught.exception.code,"verification_cancelled")
+
+    def test_each_session_carries_the_callers_deadline(self):
+        """Worker threads start with empty context variables, so the probe copies the caller's."""
+        from sci_ai_verifier.documentary import claim_probe
+        from sci_ai_verifier.execution_control import CURRENT,Control
+        control,observed=Control(60),[]
+        def answer(adapter,packet,*,role,system_prompt,timeout,limit=64000):
+            observed.append(CURRENT.get())
+            return {"text":"3" if "atoms" in packet["question"] else "2","observed_model_ids":["pinned-model"],
+                    "total_cost_usd":0},"session"
+        token=CURRENT.set(control)
+        try:
+            with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=answer):
+                claim_probe(self.adapter,self.claim,self.candidate)
+        finally:
+            CURRENT.reset(token)
+        self.assertEqual(observed,[control]*4)
+
+    def test_counting_follows_the_claim_only_answers_and_keeps_the_critiques_verdicts(self):
+        from sci_ai_verifier.local_science import counted_cases,rejected_cases
+        critique={"case_verdicts":[{"case_id":"open","verdict":"counts","reason":"r","replacement":""},
+                                   {"case_id":"closed","verdict":"leaked","reason":"stem","replacement":"x"}],
+                  "claim_probe":{"cases":[{"case_id":"open","outcome":"missed","expected":"3",
+                                           "samples":[{"answer":"2"},{"error":"claude_timeout"}]},
+                                          {"case_id":"closed","outcome":"missed","expected":"2","samples":[]}]}}
+        self.assertEqual(counted_cases(critique),[])
+        rejected=rejected_cases(critique)
+        self.assertEqual([(item["case_id"],item["verdict"],item.get("source")) for item in rejected],
+                         [("open","beyond_scope","claim_probe"),("closed","leaked",None)])
+        self.assertEqual(rejected[0]["reason"],"Fresh sessions given only the claim answered '2' where the key is "
+                                               "'3', so a subject applying the claim as written could answer otherwise.")
+        # Without claim-only answers, counting is the critique's alone, as before.
+        del critique["claim_probe"]
+        self.assertEqual(counted_cases(critique),["open"])
+
+
 if __name__=="__main__":
     unittest.main()
