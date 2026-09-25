@@ -348,9 +348,9 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
 
 def select(store, state, claim_id, work, args, subject):
     """Freeze one plan and settle its grade: propose, critique, then fix or ask for a revision."""
-    from .local_science import (MAX_ROUNDS, PLANNER_JUSTIFICATION, REPLACEMENT_ROUNDS, audit,
-                                environment_digest, evidence_ceiling, fingerprint, proposal_problem,
-                                rejected_cases)
+    from .local_science import (MAX_ROUNDS, PLANNER_JUSTIFICATION, REPLACEMENT_ROUNDS, audit, case_gap,
+                                counted_cases, environment_digest, evidence_ceiling, fingerprint,
+                                proposal_problem, rejected_cases)
     key = args["candidate_ref"]
     allowed = {value["candidate_ref"] for value in store.get_json(work["lookup_ref"])["candidates"]}
     if key not in allowed | set(work["candidate_refs"]):
@@ -472,7 +472,9 @@ def select(store, state, claim_id, work, args, subject):
                 "required_revisions": critique["required_revisions"],
                 "case_replacements": rejected,
                 "rounds_remaining": MAX_ROUNDS - rounds,
-                "replacement_rounds_remaining": REPLACEMENT_ROUNDS - replacements_used - bool(rejected)}
+                "replacement_rounds_remaining": REPLACEMENT_ROUNDS - replacements_used - bool(rejected),
+                "case_gap": case_gap(candidate, counted_cases(critique), args["target_grade"],
+                                     critique["supported_grade"])}
     state["claim_states"][claim_id] = "local_ready"
     return {"outcome": "local_plan_fixed", "candidate": candidate,
             "selection_ref": work["selection_ref"], "audit": audit_record}

@@ -32,7 +32,13 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # v6 widened `beyond_scope` to a key a subject correctly applying the claim could miss, and
 # added `verdict_consistency`. Run 84e90683's reviewer wrote that such a subject "answers 2
 # ... and fails", counted the case anyway, and six trials out of six then failed it.
-CRITIQUE_RUBRIC={"id":"local-evidence-critique-v6","criteria":[
+# v7 gave the critique the leak shapes, which until then only the planner received, a
+# claim-only answer as the test for `beyond_scope`, and said that a case asking which
+# setting produces a described effect is not `naming`. Run 31b67427's reviewer counted a key
+# that was the one option without a leading "the"; run 3b3f3c94's counted an atom-level case
+# whose narrower key a subject applying the claim answered "none of these" to.
+# `leak_shapes` copies "Common leaks" in evidence-rubric.md, which owns them.
+CRITIQUE_RUBRIC={"id":"local-evidence-critique-v7","criteria":[
         "Whether the expected answers are a fit-for-purpose oracle for this exact claim, independent of the submitted skill",
         "Whether the selected cases and trial count cover the claim's stated scope well enough for the proposed grade",
         "Whether the comparison rule, tolerance and stated uncertainty match what the claim actually asserts",
@@ -52,10 +58,13 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v6","criteria":[
         "instruction":"Return the strongest grade this evidence actually supports. Do not approve the proposal to be agreeable and do not lower it to be safe.",
         # v4: every case gets a verdict, and Python enforces the case table on the ones that count.
         "case_verdicts":{"counts":"Tests what the claim asserts, no less and no more, without giving the answer away",
-        "naming":"Only recites what something is called, for a claim about what it does",
+        "naming":"Only recites what something is called, for a claim about what it does. A case that gives only an "
+        "effect and asks which setting produces it tests what the setting does and is not naming; that the "
+        "setting's name hints at its effect bears on strength only",
         "beyond_scope":"Asks a consequence or fact the claim never states, including a key that turns on a finer "
         "fact than the claim asserts, so that a subject correctly applying the claim as written could answer otherwise",
-        "leaked":"The answer can be read from the question itself",
+        "leaked":"The answer can be read from the question or its options without knowing the claim; "
+        "rubric.leak_shapes lists the forms that recur",
         "duplicate":"Turns on the same fact or rule as an earlier case in this design, so a subject that answers "
         "one will answer the other and it adds no independent evidence. This covers near-copies, such as the same "
         "convention asked at another position or the same value from the other side, not only exact repeats. "
@@ -75,7 +84,20 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v6","criteria":[
         "or less than the claim asserts takes that verdict, never counts; an objection about a counting case may "
         "question only how strong it is. Judge each case against the claim's statement and expected behaviour: its "
         "scope line narrows them and never widens them. The claim's wording is fixed; judge the cases against it as "
-        "written, and do not ask for it to be restated."}
+        "written, and do not ask for it to be restated.",
+        "leak_shapes":["the question states the property under test, so every option but one is ruled out by the "
+        "question's own wording",
+        "the question prints the value and asks for a conversion of it, such as 0.8 asked for as a percentage",
+        "only the correct option repeats a word from the question",
+        "the question quotes or paraphrases the source's own description of the answer, so the answer follows by "
+        "naming convention",
+        "only the correct option keeps the source's wording or style while the others are written fresh, such as "
+        "the one option without the others' leading word or article, or with a different capitalisation or tense"],
+        "claim_only_answer":"Before you give a case counts, answer it yourself from the claim alone, as a subject who "
+        "knows nothing else would. If another option, none of these included, is as defensible as the key, the "
+        "verdict is beyond_scope. That is the usual result when the key is a narrower special case of what the "
+        "claim says, or the documented behaviour of a sibling setting or level the claim never names: a subject "
+        "applying the claim finds no option saying what the claim says and can defensibly choose none of these."}
 CRITIQUE_REF=digest(canonical(CRITIQUE_RUBRIC))
 CRITIC_SHAPE_ATTEMPTS = 2
 # Every case of a twelve-case design, with its full options, plus the justification and

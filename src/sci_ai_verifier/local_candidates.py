@@ -25,8 +25,10 @@ REPLY_TEXT_BYTES = 40 * 1024
 # rules out of a later run. -2 added the answer-form rule; -3 replaced its string-matched
 # closed choice with the indexed `choice` method; -4 reads numeric replies through
 # reply_number() and adds the controls that prove it; -5 reads exact replies from their
-# first line and requires a design's choice answers to vary in position.
-METHOD_VERSION = "local-reference-comparison-5"
+# first line and requires a design's choice answers to vary in position; -6 rejects a
+# correct option that alone starts differently from the others or alone repeats a word
+# from the question.
+METHOD_VERSION = "local-reference-comparison-6"
 # Reserved final option. Never the answer, so scoring stays ungameable, but a case whose
 # trials all select it is far more likely to have a broken option set than a wrong subject.
 NONE_OF_THESE = "none of these"
@@ -38,11 +40,74 @@ QUALIFICATION_LIMITS = [
     "Mechanical qualification only; source authority and input/reference applicability are planner assertions.",
     "Cases are illustrative, not a representative scientific benchmark.",
     "Qualification alone carries no scientific verdict or evidence grade; the grade is settled separately.",
-    "Choice options are checked for distinctness, count, presence in the prompt and a varied "
-    "answer position across the design, not for being genuinely wrong or plausible; a subject "
-    "that recognises the conventional-looking option can pass without knowing, and distractor "
-    "quality remains a planner assertion.",
+    "Choice options are checked for distinctness, count, presence in the prompt, a correct "
+    "option that neither alone starts differently from the others nor alone repeats a word of "
+    "the question, and a varied answer position across the design, not for being genuinely "
+    "wrong or plausible; a subject that recognises the conventional-looking option can pass "
+    "without knowing, and distractor quality remains a planner assertion.",
 ]
+# Words too common to mark an option when the question shares them: function words and the
+# reply instructions every choice case carries ("Reply with the number of the correct option
+# on the first line, and nothing else on that line").
+COMMON_WORDS = {"about", "above", "after", "also", "answer", "before", "being", "below", "been", "both",
+                "correct", "could", "does", "each", "else", "every", "first", "following", "from", "have",
+                "into", "line", "more", "most", "must", "none", "nothing", "number", "once", "only",
+                "option", "other", "reply", "same", "should", "some", "such", "than", "that", "their",
+                "them", "then", "there", "these", "they", "this", "those", "were", "what", "when", "where",
+                "which", "will", "with", "would", "your"}
+
+
+def content_words(text):
+    """The words of four letters or more, one form per word: `CompleteRingsOnly` gives
+    complete and ring, `queries` gives query, so a question and an option compare as a
+    reader matching them would."""
+    found = set()
+    for word in re.findall(r"[A-Za-z]+", re.sub(r"([a-z])([A-Z])", r"\1 \2", text)):
+        word = word.lower()
+        if len(word) < 4 or word in COMMON_WORDS:
+            continue
+        if word.endswith("ies") and len(word) > 4:
+            word = word[:-3] + "y"
+        elif word.endswith(("sses", "shes", "ches", "xes", "zes")):
+            word = word[:-2]
+        elif word.endswith("s") and not word.endswith("ss") and len(word) > 4:
+            word = word[:-1]
+        found.add(word)
+    return found
+
+
+def lone_echo(text, options, index):
+    """The question's words that only the correct option repeats, sorted; empty when none.
+
+    Run 3b3f3c94 keyed "results cannot include lone ring atoms" to a question naming
+    `CompleteRingsOnly`, the only option mentioning rings, and its critique counted it.
+    """
+    question = text
+    for value in sorted(options, key=len, reverse=True):
+        question = question.replace(value, " ")
+    others = set().union(*(content_words(value) for number, value in enumerate(options[:-1], 1)
+                           if number != index))
+    return sorted((content_words(options[index - 1]) & content_words(question)) - others)
+
+
+def lone_start(options, index):
+    """How the correct option alone starts differently from every other one, or `None`.
+
+    Run 84e90683's key was the one option without a leading "the", and run 31b67427's
+    critique counted another such key. A reader spots the answer without knowing the claim.
+    """
+    def first(value):
+        return (value.split() or [""])[0]
+    key = options[index - 1]
+    others = [value for number, value in enumerate(options[:-1], 1) if number != index]
+    words = {first(value).lower() for value in others}
+    if len(words) == 1 and first(key).lower() not in words:
+        return ("starts with " + repr(first(key)) + " where every other option starts with "
+                + repr(first(others[0])))
+    capitals = {value[:1].isupper() for value in others}
+    if len(capitals) == 1 and key[:1].isupper() not in capitals:
+        return "is the only option " + ("capitalised" if key[:1].isupper() else "not capitalised")
+    return None
 
 
 def safe_payload(value):
@@ -303,6 +368,18 @@ def qualify(proposal, references):
             absent = [value for value in options if value not in case["input"]]
             if absent:
                 problems.append("Every option must appear verbatim in the case input.")
+                continue
+            style = lone_start(options, index)
+            if style:
+                problems.append("In case " + case["case_id"] + " the correct option " + style + ", so its "
+                                "style marks it as the answer. Write every option in the style of the quoted key.")
+                continue
+            echoed = lone_echo(case["input"], options, index)
+            if echoed:
+                problems.append("In case " + case["case_id"] + " only the correct option repeats "
+                                + ", ".join(repr(word) for word in echoed) + " from the question, so a reader can "
+                                "match words instead of knowing the claim. Use the word in other options too, or "
+                                "keep it out of the question.")
                 continue
             answer = options[index - 1]
         if (not reference or case["source_quote"] not in reference["text"]

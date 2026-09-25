@@ -237,6 +237,38 @@ def rejected_cases(critique):
     return [item for item in (critique or {}).get("case_verdicts") or [] if item["verdict"] != "counts"]
 
 
+def case_gap(candidate, counted, grade, supported):
+    """What `grade`'s case requirement still lacks over the counted cases, in numbers and words.
+
+    Run 31b67427's planner accepted B one counting case short of A, believing it lacked
+    an open case it already had. Python holds the count, so it states it, and says when the
+    critique's own grade is a limit as well.
+    """
+    need = POLICY["cases"][grade]
+    cases = [case for case in candidate["cases"] if counted is None or case["case_id"] in counted]
+    generated = sum(answer_form(candidate, case) == "generated" for case in cases)
+    more_generated = max(0, need["generated"] - generated)
+    more = max(need["counting"] - len(cases), more_generated)
+    have = (str(len(cases)) + " counted case" + ("" if len(cases) == 1 else "s") + ", "
+            + str(generated) + " generated")
+    critique_limits = weaker(grade, supported) != grade
+    if more:
+        kind = (", " + str(more_generated) + " of them generated") if more_generated else " of either form"
+        summary = (grade + " needs at least " + str(need["counting"]) + " counting cases, " + str(need["generated"])
+                   + " of them generated. This design has " + have + ": add at least " + str(more)
+                   + " more counting case" + ("" if more == 1 else "s") + kind + ".")
+        if critique_limits:
+            summary += (" The critique's own grade is " + str(supported or "none")
+                        + ", so its objections need answering as well.")
+    else:
+        summary = ("This design's " + have + " meet " + grade + "'s case requirement. The critique's own grade, "
+                   + str(supported or "none") + ", is what holds the settled grade down, so its objections are "
+                   "what to answer.")
+    return {"grade": grade, "counting_required": need["counting"], "counting_counted": len(cases),
+            "generated_required": need["generated"], "generated_counted": generated,
+            "counting_needed": more, "generated_needed": more_generated, "summary": summary}
+
+
 def audit(candidate, claim, settings, selection, references, *, critique=None, rounds=1):
     """Freeze the plan, its evidence ceiling and the critique that settled the grade."""
     problems = []

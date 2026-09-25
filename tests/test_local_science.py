@@ -62,6 +62,29 @@ class CeilingTests(unittest.TestCase):
         self.assertIn("insufficient_distinct_cases",reasons)
         self.assertIsNone(self.ceiling(counted=[])[0])
 
+    def test_the_case_gap_counts_what_a_grade_still_needs(self):
+        """Run 31b67427: A was one counting case of either form away, and the planner, thinking
+        it lacked an open case, accepted B. The gap is Python's count, not the planner's."""
+        from sci_ai_verifier.local_science import case_gap
+        options=["alpha","beta","gamma","delta","none of these"]
+        mixed={**self.candidate,"method":"mixed",
+               "cases":[{**case,"method":"numeric"} for case in self.candidate["cases"][:2]]
+                      +[{**case,"method":"choice","expected":"1","options":options} for case in self.candidate["cases"][2:]]}
+        # Four counted, two of them open: one more case of either form reaches A.
+        gap=case_gap(mixed,["0","1","2","3"],"A","A")
+        self.assertEqual((gap["counting_needed"],gap["generated_needed"]),(1,0))
+        self.assertIn("add at least 1 more counting case of either form.",gap["summary"])
+        # Four counted, one of them open: the one more case must be generated, and a critique
+        # grade below the proposal is named as a second limit.
+        gap=case_gap(mixed,["0","2","3","4"],"A","B")
+        self.assertEqual((gap["counting_needed"],gap["generated_needed"]),(1,1))
+        self.assertIn("add at least 1 more counting case, 1 of them generated.",gap["summary"])
+        self.assertIn("The critique's own grade is B",gap["summary"])
+        # Enough counted cases: the critique's grade is the only limit, including no grade at all.
+        gap=case_gap(mixed,None,"B",None)
+        self.assertEqual((gap["counting_needed"],gap["generated_needed"]),(0,0))
+        self.assertIn("The critique's own grade, none, is what holds the settled grade down",gap["summary"])
+
     def test_operator_dataset_and_generated_scorer_cap_at_b(self):
         self.references["r0"]={**RETRIEVED,"origin":"operator_local_resource"}
         grade,reasons=self.ceiling()

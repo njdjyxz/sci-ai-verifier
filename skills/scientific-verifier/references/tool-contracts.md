@@ -592,7 +592,21 @@ The Local profile matrix in workflow.md governs their legality.
   design's `choice` cases the correct answers may not all sit at the same option
   position, or a subject that always picks that position passes every one of them:
   all eleven `choice` cases of run 0a243b7e answered option 1. A design with a single
-  `choice` case has nothing to vary.
+  `choice` case has nothing to vary. Nor may the correct option alone start
+  differently: when every other option begins with the same word, or every other
+  option is capitalised the same way, and the correct one is not, its style marks it
+  as the answer. Runs 84e90683 and 31b67427 had three keys that were the only option
+  without a leading "the", and critiques counted all three. Nor may the correct
+  option alone repeat a word from the question: a content word of four letters or more
+  that the question uses, outside its options and reply instructions, and no other
+  option uses. Singular and plural count as one word, and `CompleteRingsOnly` or
+  `application-side` count as their parts. In the saved choice cases of runs 84e90683,
+  31b67427 and 3b3f3c94 this flags nine keys, and critiques had counted six of them,
+  among them "lone ring atoms" after `CompleteRingsOnly` and "application point of view"
+  after "application-side". Using the word in another option, or keeping it out of the
+  question, clears the check. These are the mechanical parts of the third and fifth
+  shapes under "Common leaks" in `evidence-rubric.md`; the rest stays the critique's to
+  judge.
 
   A `choice` or `numeric` reply is read from its **first non-empty line, with
   surrounding whitespace and markdown emphasis (`*`, `_`, a backtick) removed from
@@ -641,7 +655,13 @@ The Local profile matrix in workflow.md governs their legality.
   grade. `local_grade_revision_required` keeps the claim in local_discovery with the
   critique's supported grade, the settled grade, objections, required revisions,
   `case_replacements` (each rejected case with its verdict, reason and described
-  replacement), remaining rounds and `replacement_rounds_remaining`.
+  replacement), remaining rounds, `replacement_rounds_remaining`, and `case_gap`: the
+  proposal's case requirement against the cases the critique counted, as the counting
+  and generated cases required, counted and still needed, with a `summary` sentence.
+  The summary also names the critique's own grade whenever it is below the proposal;
+  when the counted cases already meet the requirement, that grade is the only limit.
+  Run 31b67427's planner accepted B one counting case short of A, believing it lacked
+  an open case it already had.
   `local_design_unchanged` refuses a repeated proposal on a design already critiqued,
   spending neither a session nor a round, so only real revisions consume the budget.
   `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round,

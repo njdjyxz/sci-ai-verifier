@@ -396,6 +396,129 @@ class LocalTests(unittest.TestCase):
         self.candidate(lookup=False, method="mixed", cases=self.mixed_cases()[:3])
         self.assertEqual(self.data["outcome"], "qualified_local")
 
+    def test_a_correct_option_that_alone_starts_differently_is_rejected(self):
+        """Runs 84e90683 and 31b67427: the key was the one option without a leading "the",
+        and the second run's critique counted it. The style gives the answer away, so a
+        reader picks it without knowing the claim."""
+        self.reference()
+        lone = ["alpha is 1.0", "the beta is 2.0", "the delta is 4.0", "the epsilon is 5.0", "none of these"]
+        capital = ["alpha is 1.0", "Beta is 2.0", "Delta is 4.0", "Epsilon is 5.0", "none of these"]
+        # "The" and "the" are one word, so a capitalised sentence among them hides nothing.
+        mixed = ["alpha is 1.0", "The beta is 2.0", "the delta is 4.0", "the epsilon is 5.0", "none of these"]
+        for options, told in ((lone, "starts with 'alpha' where every other option starts with 'the'"),
+                              (capital, "is the only option not capitalised"),
+                              (mixed, "starts with 'alpha' where every other option starts with 'The'")):
+            with self.subTest(options=options):
+                cases = self.rows("1", options=options, prompt=self.menu(options))
+                self.candidate(lookup=False, method="choice", cases=cases)
+                self.assertEqual(self.data["outcome"], "rejected")
+                problems = self.data["candidate"]["qualification_problems"]
+                self.assertTrue(any("In case case-0 the correct option " + told in problem for problem in problems))
+        # Written in the key's own style, or with starts that vary, the options qualify.
+        for options in (["alpha is 1.0", "alpha is 2.0", "alpha is 4.0", "alpha is 5.0", "none of these"],
+                        self.OPTIONS):
+            with self.subTest(options=options):
+                cases = self.rows("1", options=options, prompt=self.menu(options))
+                moved = [options[1], options[0], *options[2:]]  # the same key at position 2
+                cases[1].update(expected="2", options=moved, input=self.menu(moved)(1))
+                self.candidate(lookup=False, method="choice", cases=cases)
+                self.assertEqual(self.data["outcome"], "qualified_local")
+
+    def test_the_leading_word_check_on_option_sets_from_real_runs(self):
+        """Every key a real run gave away by its first word is caught, and counted option
+        sets from run 3b3f3c94, written in their keys' style, pass."""
+        from sci_ai_verifier.local_candidates import lone_start
+        leaked = {
+            "84e90683 thr-closed-quantity": (["the maximum time in seconds allowed for the MCS calculation",
+                "the minimum number of bonds that the returned MCS must contain",
+                "fraction of the dataset that must contain the MCS",
+                "the minimum Tanimoto similarity required between any two input molecules", "none of these"], 3),
+            "84e90683 thr-closed-outliers": (["some molecules were now left out due to the set threshold",
+                "the threshold argument raises the number of candidate seeds the algorithm is allowed to enumerate before it stops",
+                "the threshold argument switches the algorithm from maximising the number of atoms to maximising the number of bonds",
+                "the threshold argument makes ring bonds match only other ring bonds, which keeps whole rings in the result",
+                "none of these"], 1),
+            "31b67427 which-object-is-the-query": (["the parameters object that was configured",
+                "the original fragment, exactly as the decomposition produced it",
+                "a copy of a molecule with query properties adjusted",
+                "the parent molecule the fragment came from", "none of these"], 3)}
+        passed = {
+            "3b3f3c94 th-molecules-left-out": (["every analogue still had to contain the returned substructure",
+                "the molecules were all trimmed to their largest fragment before the search",
+                "the molecules were weighted by how much of the substructure they contained",
+                "some molecules were now left out due to the set threshold", "none of these"], 4),
+            "3b3f3c94 dummy-plain-match-fails": (["returns the atom indices of the whole parent molecule",
+                "fails to produce any matches", "raises an exception about unsanitized query atoms",
+                "matches only the fragments that contain a ring", "none of these"], 2),
+            "3b3f3c94 pic50-definition-wording": (["the negative natural logarithm of the IC50 value in molar",
+                "the negative log of the IC50 value in molar", "the base-10 logarithm of the IC50 value in nanomolar",
+                "the reciprocal of the IC50 value in molar", "none of these"], 2)}
+        for name, (options, index) in leaked.items():
+            with self.subTest(name):
+                self.assertIsNotNone(lone_start(options, index))
+        for name, (options, index) in passed.items():
+            with self.subTest(name):
+                self.assertIsNone(lone_start(options, index))
+
+    def test_a_correct_option_that_alone_repeats_a_word_of_the_question_is_rejected(self):
+        """Run 3b3f3c94: the question named CompleteRingsOnly, the key was the only option
+        mentioning rings, and its critique counted it. A reader matches the word instead of
+        knowing the claim."""
+        self.reference()
+        asked = lambda options: lambda index: "Which row concerns alpha? " + self.menu(options)(index)
+        cases = self.rows("1", options=self.OPTIONS, prompt=asked(self.OPTIONS))
+        self.candidate(lookup=False, method="choice", cases=cases)
+        self.assertEqual(self.data["outcome"], "rejected")
+        self.assertTrue(any("In case case-0 only the correct option repeats 'alpha' from the question" in problem
+                            for problem in self.data["candidate"]["qualification_problems"]))
+        # Used in the other options too, the word no longer marks the key.
+        shared = ["alpha is 1.0", "alpha is 2.0", "alpha is 4.0", "alpha is 5.0", "none of these"]
+        cases = self.rows("1", options=shared, prompt=asked(shared))
+        moved = [shared[1], shared[0], *shared[2:]]  # the same key at position 2
+        cases[1].update(expected="2", options=moved, input=asked(moved)(1))
+        self.candidate(lookup=False, method="choice", cases=cases)
+        self.assertEqual(self.data["outcome"], "qualified_local")
+
+    def test_the_repeated_word_check_on_questions_from_real_runs(self):
+        """The two stem-word leaks a replay on the pinned model found are caught; the reply
+        instructions every case carries, and words every option shares, are not."""
+        from sci_ai_verifier.local_candidates import content_words, lone_echo
+        rings = ["results cannot include atoms that carry a formal charge",
+                 "results cannot include atoms whose valences differ between molecules",
+                 "results cannot include atoms outside the largest fragment",
+                 "results cannot include lone ring atoms", "none of these"]
+        reasons = ["Often from a runtime point of view, we want to skip ring perception",
+                   "Often from a reporting point of view, we want to hide ring fusion",
+                   "Often from a diversity point of view, we want to allow larger ring systems",
+                   "Often from an application point of view, we want to retain rings", "none of these"]
+        partial = ["results cannot include rings that are only partly aromatic", "results cannot include partial rings",
+                   "results cannot include rings that are fused to another ring",
+                   "results cannot include rings larger than six atoms", "none of these"]
+        units = ["IC50 is in nanomolar concentration", "IC50 is in micromolar concentration",
+                 "IC50 is in molar concentration", "IC50 is in milligrams per millilitre", "none of these"]
+        listed = lambda options: "\n".join("%d. %s" % (number, value) for number, value in enumerate(options, 1))
+        instruction = " Reply with the number of the correct option on the first line, and nothing else on that line.\n"
+        questions = {
+            "3b3f3c94 ring-no-lone-ring-atoms": ("In RDKit's FMCS implementation the atom-level comparison parameters "
+                "also expose `CompleteRingsOnly`. What does enabling it exclude from the returned result?"
+                + instruction + listed(rings), rings, 4, ["ring"]),
+            "31b67427 application-reason-retain-rings": ("A medicinal chemist running an MCS search over a congeneric "
+                "series switches on the ring-matching restriction instead of leaving the search at its defaults. "
+                "Which statement gives the application-side reason for doing so?\n\n" + listed(reasons)
+                + "\n\nReply with the option number on the first line, and put nothing else on that line.",
+                reasons, 4, ["application"]),
+            "3b3f3c94 ring-no-partial-rings": ("In RDKit's FMCS implementation, the bond-level `CompleteRingsOnly` "
+                "parameter is enabled (`completeRingsOnly=True`). What does enabling it impose on the common "
+                "substructure that is returned?" + instruction + listed(partial), partial, 2, []),
+            "3b3f3c94 pic50-required-units": ("The pIC50 of a compound is to be computed with the formula pIC50 = "
+                "-log(IC50). In which units must the IC50 value be expressed for that formula to give the correct "
+                "result?" + instruction + listed(units), units, 3, [])}
+        for name, (text, options, index, echoed) in questions.items():
+            with self.subTest(name):
+                self.assertEqual(lone_echo(text, options, index), echoed)
+        self.assertEqual(content_words("CompleteRingsOnly queries application-side matches"),
+                         {"complete", "ring", "query", "application", "side", "match"})
+
     def test_a_mixed_design_names_a_method_on_every_case_and_only_there(self):
         self.reference()
         self.candidate(lookup=False, method="mixed", cases=self.mixed_cases())

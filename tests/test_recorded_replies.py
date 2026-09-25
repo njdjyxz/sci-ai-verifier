@@ -45,13 +45,22 @@ OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl", "plan
 # had asked them. Criteria are append-only and v4 only added keys, so each earlier rubric is
 # reconstructed from the live one, and the digests below were taken before the later
 # versions existed: they prove each reconstruction is the exact rubric those sessions saw.
-# v5 as runs b0955d2f, 3dc02567 and 84e90683 recorded it. v6 added one key and widened the
-# `beyond_scope` definition, so removing the key and restoring that definition gives v5,
-# and every earlier rubric is rebuilt from v5 rather than from the live one.
-V6_KEYS = ("verdict_consistency",)
-V5 = {**{key: value for key, value in CRITIQUE_RUBRIC.items() if key not in V6_KEYS},
-      "id": "local-evidence-critique-v5",
+# v6 as runs 31b67427 and 3b3f3c94 recorded it. v7 added two keys and rewrote the `naming`
+# and `leaked` definitions, so removing the keys and restoring those definitions gives v6,
+# and every earlier rubric is rebuilt from v6 rather than from the live one.
+V7_KEYS = ("leak_shapes", "claim_only_answer")
+V6 = {**{key: value for key, value in CRITIQUE_RUBRIC.items() if key not in V7_KEYS},
+      "id": "local-evidence-critique-v6",
       "case_verdicts": {**CRITIQUE_RUBRIC["case_verdicts"],
+                        "naming": "Only recites what something is called, for a claim about what it does",
+                        "leaked": "The answer can be read from the question itself"}}
+V6_REF = "9dc8fd5d3510504e4bf49ee3b06600eb2e2cf0315df8c474f695a4dbca2864f9"
+# v5 as runs b0955d2f, 3dc02567 and 84e90683 recorded it. v6 added one key and widened the
+# `beyond_scope` definition, so removing the key and restoring that definition gives v5.
+V6_KEYS = ("verdict_consistency",)
+V5 = {**{key: value for key, value in V6.items() if key not in V6_KEYS},
+      "id": "local-evidence-critique-v5",
+      "case_verdicts": {**V6["case_verdicts"],
                         "beyond_scope": "Asks a consequence or fact the claim never states"}}
 V5_REF = "bf9442695413d32d8e95cb7f9786f638071f9d037eeff9db4a3a682fe718ef56"
 V4_KEYS = ("case_verdicts", "case_requirements", "case_replacement")
@@ -185,6 +194,25 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertEqual(digest(canonical(V3)), V3_REF)
         self.assertEqual(digest(canonical(V4)), V4_REF)
         self.assertEqual(digest(canonical(V5)), V5_REF)
+        self.assertEqual(digest(canonical(V6)), V6_REF)
+
+    def test_the_live_rubric_gives_the_critique_what_runs_31b67427_and_3b3f3c94_lacked(self):
+        """v7 is the first rubric a critique can use to reject a style tell among options,
+        a narrower key a subject applying the claim could meet with "none of these", and an
+        effect-to-setting case mistaken for naming. Each rule is the mirror of an
+        evidence-rubric.md passage, which owns it."""
+        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v7")
+        shapes = CRITIQUE_RUBRIC["leak_shapes"]
+        self.assertEqual(len(shapes), 5)
+        self.assertIn("leading word or article", shapes[-1])
+        self.assertIn("leak_shapes", CRITIQUE_RUBRIC["case_verdicts"]["leaked"])
+        self.assertIn("beyond_scope", CRITIQUE_RUBRIC["claim_only_answer"])
+        self.assertIn("none of these", CRITIQUE_RUBRIC["claim_only_answer"])
+        self.assertIn("sibling setting", CRITIQUE_RUBRIC["claim_only_answer"])
+        self.assertIn("is not naming", CRITIQUE_RUBRIC["case_verdicts"]["naming"])
+        # Every case verdict is still one of the five the validator accepts.
+        self.assertEqual(set(CRITIQUE_RUBRIC["case_verdicts"]),
+                         {"counts", "naming", "beyond_scope", "leaked", "duplicate"})
 
     def test_the_live_rubric_refuses_real_replies_that_never_judged_case_scope(self):
         """The scope criterion is enforced, not advisory. These three real critiques answered

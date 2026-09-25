@@ -378,6 +378,9 @@ class GradeNegotiationTests(unittest.TestCase):
             # Run 84e90683's reviewer counted a case its own objection placed outside the claim.
             self.assertIn("never counts",packet["rubric"]["verdict_consistency"])
             self.assertIn("correctly applying the claim as written",packet["rubric"]["case_verdicts"]["beyond_scope"])
+            # Runs 31b67427 and 3b3f3c94: the reviewer lacked the leak shapes and a claim-only test.
+            self.assertEqual(len(packet["rubric"]["leak_shapes"]),5)
+            self.assertIn("none of these",packet["rubric"]["claim_only_answer"])
         h.call("execute_local_claim",claim_id=h.claim_id)
         result=h.data["result"]
         self.assertEqual(result["evidence_grade"],"C")
@@ -394,6 +397,10 @@ class GradeNegotiationTests(unittest.TestCase):
         with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("C")):
             h.select(self.key,target_grade="A")
             self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            # Every case counted, so the count is not what holds the grade down; the reply says so.
+            gap=h.data["case_gap"]
+            self.assertEqual((gap["counting_needed"],gap["generated_needed"]),(0,0))
+            self.assertIn("The critique's own grade, C, is what holds the settled grade down",gap["summary"])
             for _ in range(3):
                 h.select(self.key,target_grade="A")
                 self.assertEqual(h.data["outcome"],"local_design_unchanged")
@@ -453,6 +460,15 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertEqual([item["case_id"] for item in h.data["case_replacements"]],["zeta","eta"])
         self.assertTrue(all(item["replacement"] for item in h.data["case_replacements"]))
         self.assertEqual(h.data["replacement_rounds_remaining"],1)
+        # Run 31b67427's planner accepted B believing it lacked an open case it already had.
+        # Python states what A still needs over the counted cases instead.
+        gap=h.data["case_gap"]
+        self.assertEqual({key:gap[key] for key in ("grade","counting_counted","generated_counted",
+                                                    "counting_needed","generated_needed")},
+                         {"grade":"A","counting_counted":3,"generated_counted":3,
+                          "counting_needed":2,"generated_needed":0})
+        self.assertIn("add at least 2 more counting cases of either form",gap["summary"])
+        self.assertNotIn("critique's own grade",gap["summary"])
         # The critique saw every case, each with its ID and the design's answer form.
         self.assertEqual([case["case_id"] for case in self.packets[0]["evidence"]["cases"]],list(fixture.FIVE_ROWS))
         self.assertEqual({case["answer_form"] for case in self.packets[0]["evidence"]["cases"]},{"generated"})
