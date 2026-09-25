@@ -488,6 +488,22 @@ class ClaimProbeTests(unittest.TestCase):
         self.assertEqual(len(seen),2)
         self.assertEqual(self.outcomes(probe)["open"],"missed")
 
+    def test_a_reused_answer_is_reported_under_the_cases_current_id(self):
+        """Run d416f79d: a case renamed between rounds kept its old ID on its reused answers, and
+        counting matches misses by ID, so a renamed miss would still have counted."""
+        from sci_ai_verifier.local_science import counted_cases
+        first,_=self.probe({"How many atoms?":["3","2"],self.closed:["2","2"]})
+        # As local.py builds it from the critiques earlier in the negotiation.
+        earlier={item["case_ref"]:item for item in first["cases"] if item["outcome"]!="unmeasured"}
+        self.candidate["cases"][0]["case_id"]="open-renamed"
+        probe,seen=self.probe({},earlier)
+        self.assertEqual(seen,[])
+        self.assertEqual(self.outcomes(probe),{"open-renamed":"missed","closed":"reached"})
+        critique={"case_verdicts":[{"case_id":"open-renamed","verdict":"counts","reason":"r","replacement":""},
+                                   {"case_id":"closed","verdict":"counts","reason":"r","replacement":""}],
+                  "claim_probe":probe}
+        self.assertEqual(counted_cases(critique),["closed"])
+
     def test_a_stop_the_caller_asked_for_ends_the_probe(self):
         with self.assertRaises(Fault) as caught:
             self.probe({"How many atoms?":[Fault("verification_cancelled","stop"),"3"],self.closed:["2","2"]})

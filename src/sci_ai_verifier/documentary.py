@@ -353,7 +353,7 @@ def claim_probe(adapter, claim, candidate, cache=None):
     did not all complete `unmeasured`, which leaves the critique's verdict standing. An answer
     another model gave, after a refusal, is not a completed session. `cache` maps a case's
     `case_ref`, the digest of what it asks, to earlier answers, so an unchanged case is not
-    asked again; an unmeasured case is.
+    asked again, whatever it is called now; an unmeasured case is.
     """
     from concurrent.futures import ThreadPoolExecutor
     from contextvars import copy_context
@@ -399,6 +399,8 @@ def claim_probe(adapter, claim, candidate, cache=None):
                               "samples": samples}
         if outcome != "unmeasured":
             cache[key(case)] = results[key(case)]
+    # An earlier round's answers carry that round's case ID; counting matches misses by ID, so
+    # the current one must win. Run d416f79d reported a renamed case under its old name.
     return {"kind": "claim-probe", "prompt_ref": CLAIM_PROBE_REF, "samples_per_case": CLAIM_PROBE_SAMPLES,
-            "cases": [{"case_id": case["case_id"], **(results.get(key(case)) or cache[key(case)])}
+            "cases": [{**(results.get(key(case)) or cache[key(case)]), "case_id": case["case_id"]}
                       for case in candidate["cases"]]}

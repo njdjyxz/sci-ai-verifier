@@ -649,7 +649,10 @@ The Local profile matrix in workflow.md governs their legality.
   each answer is scored by the case's own method. A case every answer reaches is
   `reached`; a case any answer misses is `missed`; a case with no miss whose sessions did
   not all complete is `unmeasured`, and the critique's verdict stands for it. A case
-  unchanged since an earlier round of the same claim reuses its answers. The result is
+  unchanged since an earlier round of the same claim, meaning the same input, key and
+  answer form under any ID, reuses its answers, recorded under its current ID. In run
+  d416f79d a case renamed between rounds kept its old ID on its reused answers; had they
+  missed, counting, which matches misses by ID, would still have counted it. The result is
   recorded on the audit's critique as `claim_probe`. The critique judging that design
   never sees it; a later round's critique receives a missed case among the cases not
   counted, like any other. The report lists missed cases as not counted, marked as the

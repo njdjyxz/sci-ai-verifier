@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -141,6 +142,26 @@ class RunnerTests(unittest.TestCase):
                                            env=dict(os.environ), prompt="", timeout=10)
         self.assertEqual(code, 0)
         self.assertIn(b"COMPLETE-OUTPUT", out)
+
+    def test_a_slow_observer_leaves_no_output_unread(self):
+        """Run d416f79d: the readers logged as they read, a log write took about a second, and
+        two finished claim-only answers were still unread when the drain grace expired."""
+        child = ("import sys,time; sys.stdout.buffer.write(b'first\\n'); sys.stdout.flush(); time.sleep(0.2); "
+                 "sys.stdout.buffer.write(b'second\\nthird\\n'); sys.stdout.flush()")
+        seen, callers = [], set()
+        def slow(name, chunk):
+            callers.add(threading.get_ident())
+            seen.append((name, chunk))
+            time.sleep(1)
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch("sci_ai_verifier.claude_runner.DRAIN_GRACE_SECONDS", 0.3):
+                code, out, _ = run_process([sys.executable, "-c", child], cwd=temporary,
+                                           env=dict(os.environ), prompt="", timeout=20, observer=slow)
+        self.assertEqual(code, 0)
+        self.assertEqual(out, b"first\nsecond\nthird\n")
+        # The observer saw exactly what was returned, on the thread that waited for the process.
+        self.assertEqual(b"".join(chunk for name, chunk in seen if name == "stdout"), out)
+        self.assertEqual(callers, {threading.get_ident()})
 
     def test_a_safety_refusal_is_recognised_and_an_ordinary_stream_is_not(self):
         refusal = canonical({"type": "system", "subtype": "model_refusal_no_fallback",

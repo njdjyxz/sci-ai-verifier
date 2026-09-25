@@ -47,7 +47,14 @@ DRAIN_GRACE_SECONDS = 5
 
 
 def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, observer=None):
-    """Bound both output pipes while draining; kill descendants on interruption."""
+    """Bound both output pipes while draining; kill descendants on interruption.
+
+    The readers only read. `observer` gets each stream's new bytes on the calling thread,
+    while it waits and again once the child has exited, so however slow it is it can
+    neither leave output unread nor race the caller's own close. In run d416f79d the
+    readers logged as they read, a log write took about a second, and two finished
+    claim-only answers were still unread when the grace expired.
+    """
     from .execution_control import checkpoint
     checkpoint()
     options = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
@@ -63,22 +70,29 @@ def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, ob
         for stream in (process.stdin, process.stdout, process.stderr):
             stream.close()
         raise
-    buffers, overflow, observer_errors = [bytearray(), bytearray()], threading.Event(), []
+    buffers, overflow = [bytearray(), bytearray()], threading.Event()
+    observed, observing = [0, 0], [observer is not None]
 
-    def drain(stream, buffer, name):
+    def drain(stream, buffer):
         try:
             while chunk := stream.read1(8192):
                 if len(buffer) + len(chunk) > max_bytes:
                     overflow.set()
                 elif not overflow.is_set():
                     buffer.extend(chunk)
-                if observer and not observer_errors:
-                    try:
-                        observer(name, chunk)
-                    except BaseException as error:
-                        observer_errors.append(error)
         except (OSError, ValueError):
             pass
+
+    def observe():
+        # Advances even without an observer: what is returned is exactly what was observed.
+        for index, name in enumerate(("stdout", "stderr")):
+            start, observed[index] = observed[index], len(buffers[index])
+            if observing[0] and observed[index] > start:
+                try:
+                    observer(name, bytes(buffers[index][start:observed[index]]))
+                except BaseException:
+                    observing[0] = False
+                    raise
 
     def supply():
         try:
@@ -87,8 +101,8 @@ def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, ob
         except (BrokenPipeError, OSError, ValueError):
             pass
 
-    threads = [threading.Thread(target=drain, args=(stream, buffer, name), daemon=True)
-               for stream, buffer, name in zip((process.stdout, process.stderr), buffers, ("stdout", "stderr"))]
+    threads = [threading.Thread(target=drain, args=(stream, buffer), daemon=True)
+               for stream, buffer in zip((process.stdout, process.stderr), buffers)]
     threads.append(threading.Thread(target=supply, daemon=True))
     for thread in threads:
         thread.start()
@@ -96,8 +110,7 @@ def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, ob
     try:
         while process.poll() is None:
             checkpoint()
-            if observer_errors:
-                raise observer_errors[0]
+            observe()
             if overflow.is_set():
                 raise Fault("claude_output_limit", "Claude Code exceeded its output byte limit.")
             if time.monotonic() >= deadline:
@@ -111,8 +124,7 @@ def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, ob
             pass
         for thread in threads:
             thread.join(timeout=DRAIN_GRACE_SECONDS)
-        if observer_errors:
-            raise observer_errors[0]
+        observe()
         if overflow.is_set():
             raise Fault("claude_output_limit", "Claude Code exceeded its output byte limit.")
         # A thread still parked here says nothing about whether the child finished speaking: a
@@ -120,10 +132,15 @@ def run_process(command, *, cwd, env, prompt, timeout, max_bytes=4*1024*1024, ob
         # Code, holds it open however complete the output is. Completeness is a property of the
         # bytes, and parse_events already requires exactly one terminal result event, so hand
         # back what arrived rather than discarding a finished answer on a cleanup race.
-        return process.returncode, bytes(buffers[0]), bytes(buffers[1])
+        return process.returncode, bytes(buffers[0][:observed[0]]), bytes(buffers[1][:observed[1]])
     except BaseException:
         close_job()
         terminate_tree(process)
+        # Output that arrived before a stop is still recorded, unless the observer is what failed.
+        try:
+            observe()
+        except BaseException:
+            pass
         raise
     finally:
         close_job()

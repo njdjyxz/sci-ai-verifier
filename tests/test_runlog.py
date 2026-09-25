@@ -12,7 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/"src"))
 
 from sci_ai_verifier.claude_runner import ClaudeCode, run_process
-from sci_ai_verifier.common import Fault, canonical
+from sci_ai_verifier.common import Fault, canonical, digest
 from sci_ai_verifier.local_entry import verify
 from sci_ai_verifier.runlog import WorkflowLog, StreamLog
 
@@ -113,6 +113,49 @@ class LogTests(unittest.TestCase):
             with self.assertRaises(Fault) as caught:
                 log.emit("finished")
             self.assertEqual(caught.exception.code, "workflow_log_corrupted")
+
+    def test_an_event_changed_after_it_was_verified_is_still_detected(self):
+        """A write reads back only new or changed files, so a verified one is read again once it changes."""
+        with tempfile.TemporaryDirectory() as directory:
+            for rehashed in (False, True):
+                log = WorkflowLog(directory)
+                for index in range(4):
+                    log.emit("event", index=index)
+                event = log.directory/"events/00000001.json"
+                data = json.loads(event.read_bytes())
+                data["event"] = "forged-event"
+                if rehashed:
+                    # A forged event with a correct digest of its own still breaks the next one's link.
+                    data["digest"] = digest(canonical({key: value for key, value in data.items() if key != "digest"}))
+                event.write_bytes(canonical(data))
+                with self.assertRaises(Fault) as caught:
+                    log.emit("finished")
+                self.assertEqual(caught.exception.code, "workflow_log_corrupted")
+
+    def test_a_write_reads_back_only_events_it_has_not_verified(self):
+        """Run d416f79d re-read every earlier event on every write, and a write took 0.94 s by the 2,100th."""
+        import sci_ai_verifier.runlog as runlog
+        with tempfile.TemporaryDirectory() as directory:
+            log = WorkflowLog(directory)
+            for index in range(30):
+                log.emit("event", index=index)
+            read, check = [], runlog.no_links
+            def counting(path):
+                if Path(path).parent.name == "events":
+                    read.append(Path(path).name)
+                return check(path)
+            with patch("sci_ai_verifier.runlog.no_links", counting):
+                log.emit("next")
+                self.assertEqual(read, ["00000030.json"])
+                # Another writer, like a child process, verifies the whole chain once.
+                WorkflowLog(directory, attempt_id=log.attempt_id).emit("other")
+                self.assertEqual(len(read), 1+31)
+                del read[:]
+                log.emit("after")
+                self.assertEqual(read, ["00000031.json", "00000032.json"])
+            records = [json.loads(line) for line in Path(log.paths["jsonl_path"]).read_text().splitlines()]
+            self.assertEqual([item["sequence"] for item in records], list(range(1, 34)))
+            self.assertEqual([item["previous_digest"] for item in records[1:]], [item["digest"] for item in records[:-1]])
 
     def test_log_write_failure_stops_child_process(self):
         def observer(name, chunk):

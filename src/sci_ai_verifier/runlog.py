@@ -1,6 +1,7 @@
 """Durable, redacted observable workflow events, separate from scientific state."""
 
 import errno
+import fnmatch
 import json
 import os
 import re
@@ -73,6 +74,14 @@ def locked(path):
             release()
 
 
+def timeline(item):
+    """One event's lines in the JSONL and Markdown projections, and its digest."""
+    detail = json.dumps(item["data"], ensure_ascii=False, sort_keys=True)
+    # Indented JSON stays inert even if untrusted output contains Markdown fences/HTML.
+    return {"digest": item["digest"], "jsonl": canonical(item)+b"\n",
+            "markdown": [f'{item["sequence"]}. {item["created_at"]} - {item["event"]}', "", "       "+detail, ""]}
+
+
 class WorkflowLog:
     def __init__(self, workspace, *, attempt_id=None):
         create = attempt_id is None
@@ -97,6 +106,9 @@ class WorkflowLog:
                                if SENSITIVE.search(key) and len(value) >= 4}, key=len, reverse=True)
         from .execution_control import CURRENT
         self.control=CURRENT.get()
+        # Each event file already verified, in sequence, with the size and modification time it
+        # had then and its timeline lines. Only a new or changed file is read back.
+        self.verified = []
 
     @property
     def paths(self):
@@ -104,28 +116,45 @@ class WorkflowLog:
                 "jsonl_path": str(self.directory/"workflow.jsonl"),
                 "markdown_path": str(self.directory/"workflow.md")}
 
+    def verify(self):
+        """The chain's last digest and byte total, reading back only event files not verified yet
+        or changed since. Run d416f79d re-read all of them on every write, checking each path's
+        every parent for links, until one write took 0.94 s."""
+        events = no_links(self.directory/"events")
+        with os.scandir(events) as listing:
+            found = sorted((entry for entry in listing if fnmatch.fnmatch(entry.name, "[0-9]*.json")),
+                           key=lambda entry: entry.name)
+        if len(found) >= MAX_EVENTS:
+            raise Fault("workflow_log_limit", "The workflow event limit was reached.")
+        del self.verified[len(found):]
+        previous, total_bytes = None, 0
+        for sequence, entry in enumerate(found, 1):
+            info = entry.stat(follow_symlinks=False)
+            total_bytes += info.st_size
+            if total_bytes>MAX_LOG_BYTES:
+                raise Fault("workflow_log_limit","The attempt event byte limit was reached.")
+            if entry.name != f"{sequence:08d}.json":
+                raise Fault("workflow_log_corrupted", "The workflow event chain failed validation.")
+            stamp = (info.st_size, info.st_mtime_ns)
+            known = self.verified[sequence-1] if sequence <= len(self.verified) else None
+            if known is None or known["stamp"] != stamp or known["previous"] != previous:
+                item = json.loads(no_links(Path(entry.path)).read_bytes())
+                content = {key: value for key, value in item.items() if key != "digest"}
+                if (item.get("sequence") != sequence or item.get("attempt_id") != self.attempt_id
+                        or item.get("previous_digest") != previous
+                        or item.get("digest") != digest(canonical(content))):
+                    raise Fault("workflow_log_corrupted", "The workflow event chain failed validation.")
+                known = {**timeline(item), "stamp": stamp, "previous": previous}
+                self.verified[sequence-1:sequence] = [known]
+            previous = known["digest"]
+        return previous, total_bytes
+
     def emit(self, event, **data):
         try:
             with EMIT_LOCK, locked(self.directory/".lock"):
-                files = sorted(no_links(self.directory/"events").glob("[0-9]*.json"))
-                if len(files) >= MAX_EVENTS:
-                    raise Fault("workflow_log_limit", "The workflow event limit was reached.")
-                records, previous, total_bytes = [], None, 0
-                for sequence, path in enumerate(files, 1):
-                    raw=no_links(path).read_bytes()
-                    total_bytes+=len(raw)
-                    if total_bytes>MAX_LOG_BYTES:
-                        raise Fault("workflow_log_limit","The attempt event byte limit was reached.")
-                    item = json.loads(raw)
-                    content = {key: value for key, value in item.items() if key != "digest"}
-                    if (path.name != f"{sequence:08d}.json" or item.get("sequence") != sequence
-                            or item.get("attempt_id") != self.attempt_id or item.get("previous_digest") != previous
-                            or item.get("digest") != digest(canonical(content))):
-                        raise Fault("workflow_log_corrupted", "The workflow event chain failed validation.")
-                    records.append(item)
-                    previous = item["digest"]
+                previous, total_bytes = self.verify()
                 record = {"schema_version": 1, "attempt_id": self.attempt_id,
-                          "sequence": len(files)+1, "created_at": utc_now(), "event": event,
+                          "sequence": len(self.verified)+1, "created_at": utc_now(), "event": event,
                           "previous_digest": previous, "data": redact(data, self.secrets)}
                 record["digest"] = digest(canonical(record))
                 payload = canonical(record)
@@ -135,15 +164,13 @@ class WorkflowLog:
                 if target.exists():
                     raise Fault("workflow_log_corrupted", "A workflow sequence already exists.")
                 atomic_write(target, payload)
-                records.append(record)
-                atomic_write(self.directory/"workflow.jsonl", b"".join(canonical(item)+b"\n" for item in records))
+                # The next write verifies this file as it is on disk, like any other.
+                entries = [*self.verified, timeline(record)]
+                atomic_write(self.directory/"workflow.jsonl", b"".join(entry["jsonl"] for entry in entries))
                 lines = ["# Verification workflow", "", "Attempt: "+self.attempt_id, "",
                          "Observable activity only. Scientific state and results remain in the run journal.", ""]
-                for item in records:
-                    detail = json.dumps(item["data"], ensure_ascii=False, sort_keys=True)
-                    # Indented JSON stays inert even if untrusted output contains Markdown fences/HTML.
-                    lines += [f'{item["sequence"]}. {item["created_at"]} - {item["event"]}', "",
-                              "       "+detail, ""]
+                for entry in entries:
+                    lines += entry["markdown"]
                 atomic_write(self.directory/"workflow.md", "\n".join(lines).encode("utf-8"))
                 if self.control:
                     self.control.notify(event)
@@ -153,7 +180,10 @@ class WorkflowLog:
 
 
 class StreamLog:
-    """Log complete public stream messages; never retain partial thinking deltas."""
+    """Log complete public stream messages; never retain partial thinking deltas.
+
+    `run_process` feeds it only from the thread waiting for the process, the thread that then
+    calls `close()`, so a pending line is never flushed while another is still being logged."""
     def __init__(self, log, role, session_id):
         self.log, self.role, self.session_id = log, role, session_id
         self.pending = {"stdout": bytearray(), "stderr": bytearray()}

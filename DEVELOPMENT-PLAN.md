@@ -38,6 +38,7 @@ deterministic tools, bounded processes and saved evidence.
 | `84e90683` (2026-09-24) | sar-analysis | 1 at A, 1 at B, 1 at D with no trials, 1 voided by two timeouts; 27 of 27 counted trials passed |
 | `31b67427` (2026-09-24) | sar-analysis | 1 at A, 2 at B; 42 of 42 trials passed, 0 invalid, 0 faults |
 | `3b3f3c94` (2026-09-24) | sar-analysis | 1 at A, 2 at B, 1 at C with status fail; 44 of 45 counted trials passed, 0 invalid, 0 faults |
+| `d416f79d` (2026-09-24) | sar-analysis | 4 at B; 39 of 39 counted trials passed, 0 invalid, 0 faults |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -78,14 +79,15 @@ trial, so the fallback D and the timeout message are **still unobserved**, and a
 the fifth leak shape was counted. Run `3b3f3c94`, on the same code, saw `beyond_scope` catch a
 mis-keyed case before any trial ran, but a counted case whose key was finer than its claim
 produced the ring claim's `fail`. Seven fixes for what those two runs showed, among them
-critique rubric v7, are tested but **not yet seen in a full run**. Replaying saved critique
-packets on the pinned model showed that the rubric text alone did not make it catch the
-article tell; the new qualification checks catch that tell and the repeated word behind the
-ring `fail`. Nor did the claim-only rule reliably change its scope verdicts, so Python now
-measures that rule: fresh sessions that see only the claim answer each case twice, and a case
-they miss does not count. The 2026-09-24 entry below has the details.
+critique rubric v7 and claim-only answers that Python measures, then met run `d416f79d`,
+which settled all four claims at B. The claim-only answers kept a case finer than its claim
+out of a design before any trial ran; neither new qualification check fired, and the fallback
+D and the timeout message are **still unobserved**. That run exposed two defects in the
+verifier's own plumbing: a workflow log slow enough to lose two finished claim-only answers,
+and reused answers filed under a case's old ID. Both are fixed and **not yet seen live**. The
+2026-09-24 entry is in the archive; the 2026-09-25 entry below has the details.
 
-Automated suite: **334 passed, 2 skipped, 1 failing on this machine only**. The failing
+Automated suite: **338 passed, 2 skipped, 1 failing on this machine only**. The failing
 `test_runlog.py` preflight test fails the same way on the untouched `2d9f8af` tree: its
 stale-directory sweep finds this machine's leftover `sci-verifier-*` directories in `%TEMP%`
 and logs an event the test does not expect.
@@ -146,307 +148,151 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
   critique earlier outcomes are refused before a session, pages may hold 2 MiB with 40 KiB
   replies, a run the runner closes names who stopped it, and the rubric asks for a spare
   case. Other sessions that day committed `a202146` and `041552c`.
+- **Claude 2026-09-24** — Runs `3dc02567` (six claims, one voided by a refusal fallback),
+  `84e90683`, `31b67427` and `3b3f3c94`, the last with the first settled C and a `fail` that
+  measured its case rather than the skill. One model per trial, a disclosed end-of-run re-run,
+  a startup model probe, a fallback D, an honest timeout message, an RDKit sandbox image,
+  critique rubric v7 with the leak shapes, two leak checks at qualification, the case gap in
+  revision replies, and claim-only answers measured by Python.
 
-## Claude: 2026-09-24 (runs 3dc02567, 84e90683, 31b67427 and 3b3f3c94; one model per trial, a re-run, a fallback D, an RDKit image, critique rubric v7, claim-only answers)
+## Claude: 2026-09-25 (run d416f79d; a log that keeps up with its readers, reused answers under their case's ID)
 
 ### Current stage and status
 
-Version 0.7.0, local workflow. Four sar-analysis runs today.
-
-Run `3dc02567`, on `18ef2b9`, completed six claims: A, A, A, B and A, and one voided by a
-refusal fallback; 95 of 95 scored trials passed. It led to commit `2d9f8af`: one model per
-trial, one disclosed re-run at the end, a narrower prior-review trigger, the leak shapes in
-the rubric, the 40 KiB limit on section and resource-preview replies, and a startup model
-probe.
-
-Run `84e90683`, on `2d9f8af`, completed four claims:
+Version 0.7.0, local workflow. Run `d416f79d`, on `da7605b`, ran from 22:58 to 23:50 PDT on
+2026-09-24 and completed four claims, all passing at B:
 
 | Claim | Status | Grade | Accuracy | Note |
 | --- | --- | --- | --- | --- |
-| FindMCS `threshold` | pass | B | 12 of 12 | four counting cases |
-| `completeRingsOnly` / `ringMatchesRingOnly` | withheld | none | not obtained | `claude_timeout`, and again on the re-run |
-| pIC50 | pass | A | 15 of 15 | one `duplicate` case not counted |
-| dummy atoms / `makeDummiesQueries` | inconclusive | D | n/a | documentary, no trials |
+| FindMCS `threshold` | pass | B | 12 of 12 | four counting cases, two open |
+| `completeRingsOnly` / `ringMatchesRingOnly` | pass | B | 9 of 9 | round 1 lost `ring-atom-count` to the claim-only answers; one `duplicate` |
+| pIC50 | pass | B | 9 of 9 | three counting cases, one open |
+| dummy atoms / `makeDummiesQueries` | pass | B | 9 of 9 | one `leaked`; one case `unmeasured` |
 
-It used 2,762 s of the 5,400 s limit, cost about $16, and had no `invalid` and no model
-change. Of `2d9f8af`'s fixes, the probe worked (4.6 s), the re-run fired with time to spare
-and repeated the timeout, and the section limit cut the planner's end-of-run report re-read.
-No refusal occurred, so the one-model rule and the fallback switches are still unobserved;
-the prior-review trigger never fired; `leaked` was two of the three rejections.
+It used 3,096 s of the 5,400 s limit and cost about $18.90: planner $12.21, 45 subject
+sessions $4.69, six critiques $1.56 and 40 claim-only sessions $0.42. All 39 counted trials
+passed, with no `invalid`, fault, refusal, timeout, fallback, re-run or model change. It is the
+first full run of the 2026-09-24 fixes, and the claim-only answers did what they were built
+for: both answers to the ring claim's `ring-atom-count` gave `2` against RDKit's `3`, the split
+behind `84e90683`'s failure, and the case left the design before any trial ran.
 
-It exposed three problems:
+It exposed two defects in the verifier, fixed in this session with contracts first. Neither
+changed a counted case or a grade. **The fixes are tested and pushed to `main` in the commit
+that carries this entry, but have not met a live run.**
 
-1. **A critique counted cases its own objection placed outside the claim.** It wrote that "a
-   subject applying the claim as worded answers 2 to both and fails", counted both cases, and
-   all six trials of one of them failed. Had the claim finished it would have read A with
-   status fail. Two of `3dc02567`'s critiques made the same contradiction.
-2. **The ring-option claim reported nothing.** Both attempts stopped at the 120 s subject
-   limit, and the report never named the limit.
-3. **The sandbox had no RDKit.** Every ring-option trial first tried to import and install
-   it. Two ran out of time working an MCS out by hand, and six worked one out wrongly. In the
-   new image RDKit returns every expected answer.
+1. **The workflow log starved its pipe readers.** Every write re-read and re-verified every
+   earlier event file, and the path check behind each read lstat'ed every parent directory. A
+   write took about 0.09 s around the 350th event and 0.94 s by the 2,100th. The readers logged
+   as they read, so with four claim-only sessions sharing the lock a reader fell more than the
+   5 s drain grace behind its exited process. Two finished claim-only sessions were read as
+   `claude_incomplete`, leaving two cases `unmeasured`. Four more kept their answers but lost
+   their last lines from `workflow.jsonl`: `StreamLog.close()`, called on another thread,
+   flushed the unread remainder as one unparseable line. The gap between a trial's wall time and
+   the CLI's own time grew from 2.0 s in claim 1 to 6.1 s in claim 4. Now the readers only read,
+   the thread waiting for the process logs its stream and returns exactly what it logged, and a
+   write reads back only event files it has not verified or whose size or modification time
+   changed. `local-contract.md` "Acceptance" owns the rule.
+2. **Reused claim-only answers kept an earlier round's case ID.** The planner renamed
+   `ring-which-argument` to `ring-prevent-argument` without changing it, and its reused answers
+   were reported under the old name. Counting matches misses by ID, so a renamed miss would still
+   have counted. The answers now carry the current ID. `select_local_candidate` in
+   `tool-contracts.md` owns the rule.
 
-The `84e90683` session's fixes, contracts first, are tested and pushed to `main` in
-`d8a71f6`. Their first live run is `31b67427`, below:
-
-1. **Fallback D.** A claim that a subject-trial fault still stops after the re-run gets a
-   documentary assessment Python assembles from its cases' reference quotes, and the fault
-   stays on the record. "Independent documentary path" in `local-contract.md` owns the rule.
-2. **An honest timeout.** A `claude_timeout` names the case, the trial and the
-   `subject_timeout_seconds` it reached, and says the limit is the verifier's.
-3. **Critique rubric v6.** `beyond_scope` covers a key that a subject correctly applying the
-   claim could miss, and `verdict_consistency` says objections and verdicts must agree.
-4. **A fifth leak shape**: the correct option in the source's wording among options written
-   fresh.
-5. **The subject's command tool says nothing can be installed.**
-6. **An RDKit image**, [images/rdkit/](images/rdkit/Dockerfile), pinned in
-   `.verifier/local-settings.json`.
-
-Run `31b67427`, on `d8a71f6` with the RDKit image, completed three claims:
-
-| Claim | Status | Grade | Accuracy | Note |
-| --- | --- | --- | --- | --- |
-| FindMCS `threshold` | pass | A | 15 of 15 | five counting cases, two open |
-| `completeRingsOnly` / `ringMatchesRingOnly` | pass | B | 12 of 12 | one `leaked`; B accepted with a replacement round unused |
-| dummy atoms / `makeDummiesQueries` | pass | B | 9 of 9 | one `duplicate`; three counting cases, one open |
-
-It used 2,383 s of the 5,400 s limit, cost about $17, and passed 42 of 42 trials with no
-`invalid`, fault, refusal or model change. Against the six fixes:
-
-- **The RDKit image works.** `import rdkit` printed `2026.03.6`. Five trials ran seven
-  commands; all succeeded in under a second and none tried to install anything. The longest
-  subject session took 33 s. No ring trial ran a command, so `84e90683`'s failing ring cases
-  were not retried.
-- **Critique v6 was in force but not tested.** All four critiques carry its digest. None gave
-  `beyond_scope`, every objection to a counted case questioned only its strength, and no
-  counted case failed.
-- **The fallback D and the timeout message were not exercised**: nothing stopped a trial.
-- **The fifth leak shape was missed once.** In `which-object-is-the-query` the key, quoted from
-  MolOps.h, was "a copy of a molecule with query properties adjusted", and the three other
-  options began with "the", the tell of `84e90683`. The critique counted it, and the claim's B
-  rests on it: without it two cases count, which allows no execution grade.
-- **The no-install wording was not tested**, since nothing needed installing.
-
-Two more findings. With RDKit present a subject can look an answer up: two of three trials of
-a documented-phrase case printed `rdFMCS.MCSParameters.Threshold.__doc__`, which is the key
-word for word. And the planner accepted B for the ring claim because "no second independent
-open case is available from documentation alone", though that design already had two open
-cases and A needed only one more counting case of either form.
-
-Run `3b3f3c94` repeated the skill on the same code and completed four claims:
-
-| Claim | Status | Grade | Accuracy | Note |
-| --- | --- | --- | --- | --- |
-| FindMCS `threshold` | pass | B | 9 of 9 | one open case; one `duplicate` |
-| `completeRingsOnly` / `ringMatchesRingOnly` | fail | C | 8 of 9, split | no open case; one `duplicate`, one `beyond_scope` |
-| dummy atoms / `makeDummiesQueries` | pass | B | 12 of 12 | one open case; one `duplicate` |
-| pIC50 | pass | A | 15 of 15 | redesigned after its first critique found a mis-keyed case |
-
-It used 2,606 s and cost about $19, with no `invalid`, fault, refusal, timeout or model change.
-Against `31b67427`:
-
-- **`beyond_scope` worked twice.** Before any trial, the first pIC50 critique found that "30 nM
-  is 3e-8 M and -log10(3e-8) = 7.522879, not 7.5", a key a correct subject would miss at the
-  1e-6 tolerance; the planner rebuilt the design and the second critique supported A. A
-  tutorial's "more intuitive representation of the scaffold" was ruled outside the ring claim.
-- **A counted case finer than its claim gave the run's only `fail`.** `ring-no-lone-ring-atoms`
-  keyed on RDKit's atom-level docstring "results cannot include lone ring atoms", which the
-  planner itself called "a different exclusion from the bond-level partial-ring restriction".
-  The failing trial answered `5`, "none of these": "`completeRingsOnly` excludes **partial
-  rings** from the MCS … option 4's "lone ring atoms" describes only one narrow case". One
-  passing trial had printed that docstring. The `fail` measures the case, not the skill.
-- **No `leaked` verdict and no article tell.** The critiques rejected five `duplicate`s and two
-  `beyond_scope`s. Three counted keys still carry a trace of their source, unflagged: the only
-  option repeating the stem's "threshold", the only "log" among "logarithm"s, and an
-  "actually".
-- **Weaker designs for two claims.** For the ring claim the planner judged a
-  symptom-to-option-name `exact` case recitation, the kind `31b67427` counted, so no open case
-  was left and C was the ceiling; the threshold design had one open case, not two. On the same
-  code the same claims settled A then B, and B then C.
-- **The prior-review refusal fired falsely once**, on "a reviewer may judge one of each pair to
-  add little independent evidence", a sentence about the coming review. No session was spent.
-- **Subjects ran 14 commands**: ten pIC50 logarithms, three `AdjustQueryProperties`
-  experiments and that one docstring lookup. The fallback D and the timeout message are still
-  unexercised.
-
-The same session then made seven fixes for those findings, contracts first. They are tested
-but **have not met a full run**:
-
-1. **The critique gets the leak shapes.** Its rubric, now v7, lists the five shapes of "Common
-   leaks" in `evidence-rubric.md`. Until now only the planner received them, which is how
-   `31b67427`'s critique counted the article tell.
-2. **Qualification refuses the article tell.** A correct option whose first word or
-   capitalisation alone differs from every other option's is rejected, as
-   `local-reference-comparison-6`. Over the saved choice cases of `84e90683`, `31b67427` and
-   `3b3f3c94` it flags the three known tells and none of the other 27.
-3. **A claim-only answer tests `beyond_scope`.** Before counting a case the critique answers
-   it from the claim alone; if another option, `none of these` included, is as defensible as
-   the key, the case does not count. `ring-no-lone-ring-atoms` is the worked example.
-4. **An effect-to-setting case is not naming.** Asking which setting produces a described
-   effect tests what the setting does; a name that hints at the effect bears on strength only.
-5. **The revision reply states the case gap.** `case_gap` gives the counting and generated
-   cases the proposal needs, has and lacks, and names the critique's own grade when that
-   limits the settled grade too.
-6. **Qualification refuses a lone repeated word**, added after the replay below at the
-   operator's request. A correct option that alone repeats a content word of the question is
-   rejected, in the same `-6`. Over the same 30 saved choice cases it flags nine keys, six of
-   which critiques had counted, `ring-no-lone-ring-atoms` among them. With the leading-word
-   check, 11 of the 30 would have been refused at qualification, so expect more rewrites; a
-   refusal costs a planner turn, never a session.
-7. **Python measures the claim-only answer**, built at the operator's request after the
-   prototype under open question 12. Before each critique that would start, every case of a
-   design scored by installed methods goes twice to a fresh no-tool session on the pinned
-   model, which sees only the claim's statement and expected behaviour and the case input. A
-   case any answer misses does not count, and is returned as `beyond_scope` from the
-   claim-only answers; a session that fails, or that another model answered after a refusal,
-   leaves its case unmeasured with the critique's verdict standing. An unchanged case reuses
-   its earlier answers from the negotiation history. Sessions run four at a time, two minutes
-   each; the workflow log gained a thread lock so their streams keep one digest chain. The
-   critique judging a design never sees its answers, and the report marks the cases they
-   rejected. `evidence-rubric.md` "No more" owns the rule; `select_local_candidate` in
-   `tool-contracts.md` owns the mechanics.
-
-Not done, and why: making acceptance wait until the replacement rounds are spent (open
-question 9), because acceptance is right when an objection concerns the oracle rather than
-the count; and narrowing the prior-review trigger (open question 11), because its false
-positive costs one planner turn while a false negative would carry a grade to the critique.
-
-Operator decisions today: D stays pure AI judgment and needs no trials, so every claim gives
-the reader something to refer to; a re-run claim's first attempt stays out of the report,
-being the product of a runner fault; `subject_timeout_seconds` stays at 120 s until a large
-skill needs more; RDKit belongs in the image; an effect-to-setting case counts, as this
-session recommended.
-
-Superseded today: "a safety refusal is never retried", replaced by the one disclosed re-run;
-the reading of `subject_model_changed` as random fallback, which was a refusal fallback; my
-recommendation that D follow an execution, declined; a stopped ungraded plan ending with
-nothing, since it is still not re-run but now gets the fallback; the pinned image
-`78387bc3…`, now `12771144…`; checking the server's start time, replaced by the run's own
-code digest below; critique rubric v6, now v7; and the fifth leak shape as planner guidance
-only, now also in the critique's rubric and, in part, a qualification check.
+Why neither touched the result: a slow reader loses only the end of a session's output, and an
+answer is recorded only once the final `result` line has arrived, so nothing partial was scored.
+All 45 subject sessions, the six critiques and the planner have complete logs. The two lost
+answers belonged to cases the critique had ruled `leaked`, and a claim-only answer can only drop
+a case from the count. The renamed case asks the same question, with the same input, key and
+method, and its answers were `reached`; only a `missed` answer affects counting.
 
 ### What has been done
 
-In the session of runs `31b67427` and `3b3f3c94`, started after `d8a71f6`:
+In the session of run `d416f79d`, started at 22:55 PDT on 2026-09-24 after `da7605b`:
 
-- Cleaned `84e90683` into the session scratchpad and ran `31b67427`. Report
-  `.verifier/runs/31b67427-6db9-4e0e-ac8b-ae15aba4b21c/report-card.md`, workflow log
-  `.verifier/attempts/6f0bb1b2-cfa7-4ac1-8d81-80853d68baa0/workflow.md`. Cost: planner
-  $11.08, 42 subject sessions $4.80, four critiques $0.91.
-- Cleaned `31b67427` the same way and ran `3b3f3c94` on unchanged code. Report
-  `.verifier/runs/3b3f3c94-6892-4de7-a09e-a37f2092ef00/report-card.md`, workflow log
-  `.verifier/attempts/7deed1ed-05b8-46d3-b919-0b22c1035c31/workflow.md`. Cost: planner
-  $11.00, 60 subject sessions $6.60, five critiques $1.10.
-- Checked both item by item against "What to check in the run"; the results are above.
-- Implemented the six fixes in `evidence-rubric.md`, `tool-contracts.md`, `documentary.py`,
-  `local_candidates.py`, `local_science.py` and `local.py`. Verification: suite 321 → 327 tests,
-  with 324 passing, 2 skipped and the machine-only failure under "Current state". Seventeen
-  one-line mutations of the fixes were each caught, with the tests run from `tests/` as
-  discovery runs them. A first count of twelve had named the integration tests in a way that
-  cannot import them, so it proved nothing and was redone. `test_recorded_replies.py` rebuilds
-  v6 from v7 and pins its digest, `9dc8fd5d…`.
-- Replayed saved critique packets through `critique()` on `claude-opus-5`: nine sessions, $2.39,
-  the token passed as the MCP registration passes it, `CLAUDE_CODE_OAUTH_TOKEN` from
-  `SCI_VERIFIER_OAUTH_TOKEN`. The replay script is in the session scratchpad.
-  - `which-object-is-the-query` still counted under v7, in two samples of two, and neither
-    reply mentioned the article tell. The rubric text did not carry the fifth shape to this
-    model; qualification's check (fix 2) is what now stops that case.
-  - `ring-no-lone-ring-atoms` counted in no fresh sample, v7 or v6: all three called it
-    `leaked`, as the only option mentioning rings. The original count was one reviewer's miss,
-    and none gave the claim-only test as the reason.
-  - v7 newly called `application-reason-retain-rings` leaked, its key the only option echoing
-    the stem's "application-side"; the original v6 critique counted it.
-  - The effect-to-setting cases still counted, "so it is not mere naming". The pIC50 control
-    kept A with every verdict unchanged. The threshold control fell from A to B:
-    `molecules-left-out-below-one` became a duplicate, the objection its v6 critique had
-    already raised while counting it.
-- Earlier, a blind subagent proxy on a different model had caught the article tell that the
-  pinned model then missed. A proxy on another model does not predict the pinned one.
-- After `096273e`, in a new session: the 19 saved designs of the three runs, re-qualified with
-  the committed code against their stored references. Ten that had qualified are refused, each
-  for its flagged leak, among them the two that decided grades; the pIC50 designs still
-  qualify. Rewriting `ring-no-lone-ring-atoms`'s distractors to mention ring atoms, as its
-  message says, clears it. At the four saved revisions `case_gap` states what each design
-  lacked; at `31b67427`'s ring claim it reads "add at least 1 more counting case of either form".
-- Six more replays on `claude-opus-5`, $2.31. `84e90683`'s scope case, whose reviewer wrote that
-  a subject applying the claim "answers 2 to both and fails" and counted both: caught in one v7
-  sample of two, and in the one sample under its original v5. `ring-no-lone-ring-atoms` with
-  the word cue removed counted in all three samples, v6 or v7, the reviewer reading "a ring is
-  matched in full or not at all" broadly; one v7 reviewer wrote that an atom-level reading
-  "would give 2" and counted the case anyway. The claim-only rule does not reliably change
-  this model's scope verdicts, so a case the planner rewrites to pass the new checks can keep
-  a scope problem that nothing catches.
-- Prototyped the claim-only answers on eight saved ring questions ($0.49; open question 12
-  has the results), then built them as fix 7. Verification: suite 327 → 337 tests, with 334
-  passing, 2 skipped and the machine-only failure. The new tests cover the split rule, faults
-  and substituted models, reuse, a requested stop, the caller's deadline in worker threads,
-  counting and the report, and forty concurrent log emits. Fifteen one-line mutations of the
-  probe were each caught. The one removing the log's thread lock was caught only after a test
-  simulated POSIX file locks, which admit every thread of one process; Windows's do not.
-- Ran the built `claim_probe()` live, with the real adapter and a real workflow log, over the
-  whole saved ring designs of `3b3f3c94` (its lone-ring case rewritten as qualification now
-  forces) and `84e90683`: 22 sessions, $0.61, 28 s and 61 s. Missed: `cro-pentane-cyclohexyl`
-  and `cro-aziridine-series` in both answers, `cro-cyclobutyl-cyclohexyl` and the "more
-  intuitive" scaffold in one of two. Reached: all six other cases, among them the rewritten
-  lone-ring case, answered 4 both times. The log kept one unbroken chain of 264 events.
+- Preflight as the 2026-09-24 entry lists it: Docker 29.8.0 with the pinned image; this
+  session's own `serve-local` started six minutes after `da7605b`; `claude-opus-5`; a clean
+  tree; 27 % of the five-hour window used.
+- Cleaned `3b3f3c94` into the session scratchpad: 2,458 files, counts and bytes matched.
+- Ran `d416f79d`. Report `.verifier/runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8/report-card.md`,
+  workflow log `.verifier/attempts/2275addb-174d-4ac5-9db8-325bf15593bb/workflow.md`.
+- Checked it against "What to check in the run"; the answers are below.
+- Traced both defects to the code and measured the log on a copy of the run's 2,430 events: a
+  write took 2.34 s there, of which 2.00 s path checks, 0.23 s reads, 0.06 s rewriting the two
+  timelines and 0.04 s parsing and digests.
+- Fixed both in `local-contract.md`, `tool-contracts.md`, `claude_runner.py`, `runlog.py` and
+  `documentary.py`. Verification: suite 337 → 341 tests, with 338 passing, 2 skipped and the
+  machine-only failure under "Current state". Three of the four new tests fail on `da7605b`'s
+  code: a slow observer loses a finished process's output and runs on the reader thread; a write
+  re-reads every file; a reused answer keeps the old ID and its miss counts. The fourth, a
+  changed event still detected, guards the new cache; the old code passed it by reading
+  everything. Six one-line mutations of
+  the fixes were each caught. Each test run compiled into its own bytecode cache: a same-size
+  mutation restored within the same second had left a `.pyc` that still looked current.
+- On the same copy the fixed log writes in 0.034 s. A process opening a 2,430-event log for the
+  first time verifies it once, in 2.5 s.
+- Not verified: either fix live. The two timelines are still rewritten whole on every write,
+  0.06 s at 2,430 events.
 
-In the `84e90683` session:
+Against "What to check in the run" of the 2026-09-24 entry:
 
-- Cleaned `3dc02567` into the session scratchpad and ran `84e90683`. Report
-  `.verifier/runs/84e90683-1e8f-4712-bf32-a8754c0322e7/report-card.md`, workflow log
-  `.verifier/attempts/74972df6-1d0d-46d6-b341-05fd8f918e70/workflow.md`. Cost: planner
-  $10.74, 36 subject sessions $4.21, four critiques $0.96, assessor $0.14; the two timed-out
-  sessions are unpriced.
-- Checked the failure against its source. RDKit's own `test4RingMatches` asserts 3 atoms for
-  `completeRingsOnly=True` on `CCCCC` and `CCC1CCCCC1`, so the key was right and the
-  subject's `2` wrong. The timed-out trials ran `import rdkit` and `pip install rdkit`, then
-  thought until they were killed.
-- Implemented the six fixes in `local-contract.md`, `tool-contracts.md`,
-  `artifact-contracts.md`, `evidence-rubric.md`, `LOCAL-CONFIG.md`, `local.py`,
-  `documentary.py`, `subject_server.py` and `images/rdkit/`.
-- Verification: suite 315 → 319 tests, with 318 passing, 2 skipped and the one machine-only
-  failure under "Current state". Twelve one-line mutations of the fixes were each caught.
-  `test_recorded_replies.py` rebuilds v5 from v6 and pins its digest, `bf944269…`. The image
-  was checked through the verifier's own `DockerSandbox` and subject tool, as user 65534
-  with no network. RDKit 2026.03.6 and pandas 3.0.6 import, the six ring-option questions
-  return 3, 2, 3, 2, 3 and 5 as RDKit's tests assert, and an ACS1996 SVG draws.
-- Not verified: any of the six fixes live, and still the effect of
-  `CLAUDE_CODE_NO_MODEL_FALLBACK` and `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK`.
-- Considered and not done: requiring execution before D (declined); a Python check that
-  objections agree with verdicts, since 26 of the two runs' 92 objections and revisions name
-  a counted case legitimately; reporting the first attempt's answers (declined); a longer
-  subject limit (deferred by the operator).
-
-Earlier today, in the `3dc02567` session: `2d9f8af`'s six fixes, with the suite 301 → 315,
-seventeen mutations caught and two new recordings replayed through the real subject adapter.
-That run took 90 minutes, 8 s inside the limit.
+1. **The new code ran.** `local_method_ref` matched the tree's `98882e6b…`, all six critiques
+   carried v7's `58b2509c…`, and all six candidates were at `local-reference-comparison-6`.
+2. **RDKit.** No subject ran it, or any command: all 45 trials used only the Skill tool, in
+   three turns each. No `claude_timeout`.
+3. **The fallback.** Not exercised; nothing stopped a claim.
+4. **Critique v7.** One `beyond_scope`, the ring claim's first-round `ring-atom-count`, which
+   the claim-only answers also missed. No critique counted a case its own objection placed
+   outside the claim: every objection to a counted case questioned its strength. No counted
+   case failed a trial.
+5. **Leaks.** No qualification was refused, so the leading-word and repeated-word checks cost
+   no rewrite and did not fire. Two `leaked` verdicts, both claim 4's. One counted key stands
+   alone among its options: `thr-proportion-of-what`'s "the dataset" is the only option naming
+   the molecule set. Its critique objected to exactly that and counted it; claim 4's critique
+   ruled the same shape `leaked`.
+6. **Grades.** Two `case_gap` replies. The ring claim's first round: "This design has 1 counted
+   case, 1 generated: add at least 2 more counting cases of either form. The critique's own
+   grade is none, so its objections need answering as well." The dummy claim's: "This design
+   has 2 counted cases, 1 generated: add at least 1 more counting case of either form." Both
+   times the planner replaced the rejected cases and the next critique supported B. It never
+   accepted a grade below its proposal. It proposed B for all four claims, and each
+   `stronger_grade_considered` names why no further independent case with a quotable key
+   existed. The dummy claim's critique did not accept that reason: "rdkit.Chem.rdmolops
+   documents AdjustQueryProperties as a module function on the same page", so a second
+   generated case "appears to have been available"; with four counting cases it would still
+   have been B.
+7. **Effect-to-setting cases.** Three designed, all counted: `thr-which-property`,
+   `ring-prevent-argument` and `dummy-which-field`.
+8. **Claim-only answers.** One miss, `ring-atom-count`, answered `2` twice against the key `3`
+   that RDKit's test asserts: a scope problem, not a slip. One reply: "The claim, applied
+   literally, bars any partial-ring fragment from the MCS. … any single ring carbon would be a
+   partial-ring fragment". Two `unmeasured`, both from the log defect. 40 sessions, $0.42 for
+   the 38 that returned, about 2.3 minutes over six rounds; six answers reused.
+9. **The rest.** No `model_refusal_*` event, `invalid` zero, four claims, 3,096 s.
 
 ### Before the next run
 
 1. **Docker Desktop is running** and the pinned image is present:
    `sha256:127711447fe5260556ae724850ef4186a79ea774ec119ebb01c3775240f5264e`
    (`sci-verifier-rdkit:2026.3.6`, built from `images/rdkit/` as `LOCAL-CONFIG.md` says).
-2. **A new Code-tab session after the commit that carries these fixes.** Every session, new
-   or resumed, starts its own `serve-local`, and a resumed one keeps the code it started
-   with; restarting the app is not needed. After the run, the run itself settles it:
-   `run.json`'s `local_method_ref` must equal the tree's digest, printed by
+2. **A new Code-tab session after the commit that carries these fixes.** Every session, new or
+   resumed, starts its own `serve-local`, and a resumed one keeps the code it started with.
+   After the run, `run.json`'s `local_method_ref` must equal the tree's digest, printed by
    `python -c "import sys; sys.path.insert(0, 'src'); from sci_ai_verifier.storage import implementation_bytes; from sci_ai_verifier.common import digest; print(digest(implementation_bytes()))"`.
 3. **The model is `claude-opus-5`.** The probe stops a run the CLI cannot serve.
 4. **The working tree is clean** at that commit, or at a later one that did not touch `src/`.
-5. **The plan's 5-hour window has room**; `3b3f3c94` cost about $19, `31b67427` $17,
-   `84e90683` $16 and `3dc02567` $35.
-6. **The timeout.** The app passes 5,400 s; three claims took 40 minutes, four took 43 to 46 and
-   six took 90. A fallback needs up to nine minutes of the time left.
+5. **The plan's 5-hour window has room**; `d416f79d` cost about $19, `3dc02567` $35.
+6. **The timeout.** The app passes 5,400 s; three claims took 40 minutes, four took 43 to 52 and
+   six took 90. The log fix removes most of the late-run overhead; by how much is unmeasured.
 
 ### Cleaning the previous sar-analysis run
 
-Move, do not delete, into the session scratchpad. The previous run is `3b3f3c94`:
+Move, do not delete, into the session scratchpad. The previous run is `d416f79d`:
 
-- `.verifier/runs/3b3f3c94-6892-4de7-a09e-a37f2092ef00`
-- `.verifier/attempts/7deed1ed-05b8-46d3-b919-0b22c1035c31`
-- `.verifier/subject-runs/3b3f3c94-6892-4de7-a09e-a37f2092ef00`
-- the **seven** candidates in `.verifier/candidates/` at `local-reference-comparison-5`, one of
-  them a rejected qualification
+- `.verifier/runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8`
+- `.verifier/attempts/2275addb-174d-4ac5-9db8-325bf15593bb`
+- `.verifier/subject-runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8`
+- the **six** candidates in `.verifier/candidates/` at `local-reference-comparison-6`, all
+  qualified
 
 **Keep** the glycoengineering run `76ce4af1-…`, its attempt `a1ec3e49-…`, its subject-runs, and
 the five candidates at `local-reference-comparison-1`. Leave `.verifier/store/` alone. Do not
@@ -458,26 +304,25 @@ leave a shell inside a directory you are moving.
 `.verifier/runs/<run>/report-card.json` on disk.
 
 1. **The new code ran.** `run.json`'s `local_method_ref` matches the tree, every critique's
-   `rubric_ref` is v7,
-   `58b2509c3e8799cf55cf60033edcb7e2d550d4ce8821295cb4daeddbeaba7aa9`, and every candidate is
-   at `local-reference-comparison-6`.
-2. **RDKit.** Which subjects ran it, and did they compute an answer or print documentation?
-   Any `claude_timeout`, and what was the subject doing? Quote the events.
-3. **The fallback.** Did any claim carry `fallback`? Its status and reason, and the record's
-   first limitation line.
-4. **Critique v7.** Did any critique still count a case its own objection placed outside the
-   claim? Quote every `beyond_scope` verdict, and say which rest on the claim-only answer.
-   Did any counted case fail a trial whose reply applied the claim? Quote the reply.
-5. **Leaks.** Quote every qualification refused for a correct option that starts alone or
-   alone repeats a word of the question, and count the rewrites they cost. In every counted
-   `choice` case, is the key written like its options? The `leaked` count.
-6. **Grades.** Quote every `case_gap` summary and say what the planner did next. Did it accept
-   a settled grade below its proposal while a replacement round remained? Quote its reason.
-7. **Effect-to-setting cases.** Did the planner design any, and did the critique count them?
-8. **Claim-only answers.** Quote every `missed` case with its answers and key, and say whether
-   it was a scope problem or a slip, from the session's full reply in `workflow.jsonl` (role
-   `claim_probe`). Did any `unmeasured` case occur, and why? What did the answers cost in money
-   and minutes, and how many were reused?
+   `rubric_ref` is v7, `58b2509c3e8799cf55cf60033edcb7e2d550d4ce8821295cb4daeddbeaba7aa9`, and
+   every candidate is at `local-reference-comparison-6`.
+2. **The log keeps up.** Every subject, critique and claim-only session has its `result` event
+   in `workflow.jsonl`; no `process_unparsed_output`; no claim-only sample `claude_incomplete`.
+   Late in the run, the gap between a trial's wall time and the CLI's `duration_ms` should stay
+   near claim 1's 2 s, not reach `d416f79d`'s 6 s.
+3. **Reused answers.** A claim-only case reused under a new name shows its current ID.
+4. **Claim-only answers.** Quote every `missed` case with its answers and key, and say whether it
+   was a scope problem or a slip, from the full reply in `workflow.jsonl` (role `claim_probe`).
+   Any `unmeasured` case, and why. Cost, minutes and reused answers.
+5. **Critique v7 and leaks.** Quote every `beyond_scope` verdict. Did any critique count a case
+   its own objection placed outside the claim? Quote every qualification refused for a leak
+   and count the rewrites; both checks have yet to fire live. The `leaked` count.
+6. **Grades.** Quote every `case_gap` summary and what the planner did next. Did it accept a
+   settled grade below its proposal while a replacement round remained? For each grade below
+   A, did the critique accept the planner's `stronger_grade_considered`?
+7. **RDKit and timeouts.** Which subjects ran commands, and did they compute or look up? Any
+   `claude_timeout`, with the subject's events quoted.
+8. **The fallback.** Did any claim carry `fallback`? Its status and reason.
 9. **The rest.** Any refusal (quote the `model_refusal_*` events), `invalid` still zero, the
    claim count and the run time.
 
@@ -492,81 +337,72 @@ leave a shell inside a directory you are moving.
   workflow log (`model_refusal_*`) before advising anything. A refusal may or may not recur.
 - **A `claude_timeout` can come from the case itself.** Trace the subject's commands and
   thinking before promising that a re-run or a longer limit fixes it.
+- **A `claude_incomplete` from a session that exited 0** was the log starving its reader until
+  this fix. On the fixed code, it means this diagnosis was incomplete.
+- **Trial wall times before this fix include log overhead** that grew through a run. Compare
+  runs with the CLI's own `duration_ms`.
 - **A run the runner closed should say `agent_unavailable`** with the planner's own reason; one
   that still says "The operator cancelled this run." for a stop nobody made means old code.
 - **`workflow.jsonl` truncates long tool results** at about 16 KB; every tool call's whole
   request and result, including every critique round, is in `.verifier/runs/<run>/events/`.
-- **With RDKit in the image, a subject can compute an answer instead of recalling it, or look
-  it up.** A pass then says the skill-guided subject ran RDKit correctly, a different statement
-  from knowing it. In `31b67427` two trials printed `rdFMCS.MCSParameters.Threshold.__doc__`,
-  their case's key word for word.
-- **A counted case can still turn on a finer fact than its claim.** In `3b3f3c94` the only
-  failing trial applied the skill's "partial rings" and rejected the atom-level docstring
-  "lone ring atoms". Compare such a reply with the claim's wording before calling it a finding.
+- **With RDKit in the image, a subject can compute an answer instead of recalling it, or look it
+  up.** In `31b67427` two trials printed a docstring that was their case's key word for word.
+- **A counted case can still turn on a finer fact than its claim.** Compare a failing reply with
+  the claim's wording before calling it a finding.
 - **A fallback D rests on its cases' quotes alone.** Read it as documentary, never as behaviour.
 - **A clean run is not proof of a fix** if the model never produced the case the fix handles.
 
 ### Open questions for the operator
 
 1. **Should the aggregation rule become a plan field?** Still `unanimity`, still correct.
-2. **Claim coverage.** `3dc02567` extracted six claims, `84e90683` four, and `74eadedd` and
-   `31b67427` three.
+2. **Claim coverage.** `3dc02567` extracted six claims, `84e90683`, `3b3f3c94` and `d416f79d`
+   four, and `74eadedd` and `31b67427` three.
 3. **A narrow capitalization residue, by choice.** Tokens carrying both cases — `Core`,
-   `Threshold`, `Fuc` — stay open answers. Their case is semantic, but a subject could still
-   lowercase one.
+   `Threshold`, `Fuc` — stay open answers. It now costs evidence: `d416f79d`'s threshold planner
+   named it as the reason `Threshold` could not be a fifth, open case.
 4. **Recognition.** The fifth leak shape covers one tell; a subject can still pick the
-   conventional-looking option.
-5. **Reviewers and planners disagree across runs.** Spare cases absorbed two rejections in
-   `3dc02567` and five `duplicate`s in `3b3f3c94`. Whether an effect-to-setting case counts is
-   now decided: it does. Planners still differ elsewhere, as on whether "8 of 10 → 0.8" is the
-   reference's value or the planner's arithmetic.
+   conventional-looking option. `thr-proportion-of-what` counted although its critique wrote
+   that the key could be reached "on general plausibility".
+5. **Reviewers and planners disagree across runs.** In `d416f79d` one critique counted a key that
+   alone names what the stem is about and another ruled that shape `leaked`. The threshold and
+   pIC50 claims settled at B after reaching A in earlier runs.
 6. **A claim Opus 5 refuses cannot be verified on Opus 5.** If the re-run is refused too, the
    report says so, and that is the finding: a provider limitation, not the skill's.
 7. **Other operational endings.** Only subject-trial faults get a fallback D; a claim ended by
    `critic_unavailable` or by the planner still reports nothing. Should they get one?
-8. **Knowledge or execution.** With RDKit available, should some cases stay questions a
-   subject must answer without running code? In `31b67427` a documented-phrase case was
-   answered by printing the docstring that is its key.
-9. **Accepting a lower grade.** The rubric lets the planner accept a settled grade. In
-   `31b67427` it accepted B one counting case short of A, with a replacement round unused, on a
-   misreading of what A needs. Should acceptance wait until the replacement rounds are spent?
-   `3b3f3c94` did not repeat it: its pIC50 claim was redesigned to A rather than accepted at B.
-   Not changed; the revision reply now states the case gap instead.
-10. **How strict qualification should be.** It now refuses a correct option that alone starts
-    differently or alone repeats a word of the question, which would have refused 11 of the
-    last three runs' 30 choice cases. If rewrites start to cost more than the leaks did,
-    should the repeated-word check drop to a warning the critique sees? The "log" among
-    "logarithm"s trace stays with the critique.
-11. **The prior-review trigger.** It refused a first proposal for "a reviewer may judge one of
-    each pair to add little independent evidence", a sentence about the coming review. It cost
-    no session; should it match only references to an earlier review?
-12. **How many claim-only answers per case.** Fix 7 measures the claim-only answer twice. Its
-    prototype, on eight saved ring questions ($0.49), gave the claim as its statement and
-    expected behaviour to fresh no-tool sessions and scored each answer with the question's
-    own method. Over two samples it missed no fair question in 8 answers. It missed the key of
-    all four questions reviewers had counted or disputed: `cro-pentane-cyclohexyl` and
-    `cro-aziridine-series` in both samples, a claim-faithful "2" against the key "3"; the
-    tutorial's "more intuitive" scaffold in both; and `ring-no-lone-ring-atoms`, its word cue
-    removed, in one of two, answering `none of these` because "the claim does not settle that
-    phrasing". Given only the skill's sentence instead of the claim, it passed two of the four.
-    The built code then answered that lone-ring case 4 both times, so it has been missed in one
-    answer of four. Two answers catch a case that faithful readers split on in that proportion
-    about half the time. A third answer would raise the catch rate for about $0.03 a case, and
-    no fair question has been missed in 20 answers. Should it be three?
+8. **Knowledge or execution.** With RDKit available, should some cases stay questions a subject
+   must answer without running code? In `d416f79d` every B rested on sources that quote only
+   three or four independent facts, and the ring planner wrote that "Executing RDKit to measure
+   a fresh consequence is not available to this verifier for this claim".
+   `qualify_local_evaluator` has never run. Is an executed key the route to A for narrow API
+   claims?
+9. **Accepting a lower grade.** In `31b67427` the planner accepted B one counting case short of
+   A with a replacement round unused. Neither later run repeated it. Not changed; the revision
+   reply states the case gap instead.
+10. **How strict qualification should be.** Its two leak checks would have refused 11 of the 30
+    choice cases before them, yet refused none of `d416f79d`'s designs. If rewrites start to
+    cost more than the leaks did, should the repeated-word check drop to a warning?
+11. **The prior-review trigger.** It refused a first proposal in `3b3f3c94` for a sentence about
+    the coming review, and did not fire in `d416f79d`. Should it match only references to an
+    earlier review?
+12. **How many claim-only answers per case.** Two answers caught `d416f79d`'s one miss, which both
+    answers made. A case missed in one answer of four, as `3b3f3c94`'s lone-ring case was, slips
+    past two answers about half the time; a third answer cost about $0.01 a case in `d416f79d`.
+    Should it be three?
 
 ### Deferred, and why
 
 - **Parallel trials** — the operator agreed it is a good design. It is not built: the sandbox is
   configured with one CPU, and parallel sessions spend the usage window faster, so both need a
-  decision first. Running a case's three trials at once would cut about 29 minutes of trials to
-  about 10.
-- **Opus 5.5** — until WinGet offers Claude Code 2.1.280; the startup probe now catches a
-  premature switch.
+  decision first.
+- **Appending to the timelines** instead of rewriting them on every write — 0.06 s per write at
+  2,430 events. Rewriting keeps each projection rebuilt from verified events.
+- **Opus 5.5** — until WinGet offers Claude Code 2.1.280; the startup probe catches a premature
+  switch.
 - **A longer subject limit** — the operator will raise `subject_timeout_seconds` when a large
-  skill needs it; the report now names the limit whenever it stops a trial.
+  skill needs it; the report names the limit whenever it stops a trial.
 - **The case-level contract** — flagged do-not-implement until four or five case-type rules
-  accumulate; `a202146`'s answer forms and case verdicts overlap it, unreviewed. Design in the
-  archive, 2026-09-22.
+  accumulate. Design in the archive, 2026-09-22.
 - **Automatic dependency resolution** — flagged do-not-implement, design in the archive,
   2026-09-18. `images/rdkit/` is the manual path it would automate.
 
@@ -574,7 +410,7 @@ leave a shell inside a directory you are moving.
 
 ```text
 Before anything else, read the latest entry in DEVELOPMENT-PLAN.md
-("Claude: 2026-09-24"). Follow its preflight, clean the previous run as it
+("Claude: 2026-09-25"). Follow its preflight, clean the previous run as it
 describes, and use scientific-verifier-local to verify this skill:
 "D:\Su Lab\verifier-submissions\examples\sar-analysis"
 
@@ -591,17 +427,15 @@ Do not change code, commit or push unless I ask.
 ### Urgent next steps, if any
 
 None for the code, which is committed and pushed with this entry. Before the next live run,
-start a new session: a session started before this commit runs a `serve-local` with older
-code. A run now also spends about $0.03 per case per claim-only answer; the first round of a
-six-case claim adds about a minute.
+start a new session: a session started before this commit runs a `serve-local` with older code.
 
 ### Suggested next move
 
-Run `sar-analysis` once on this code, and read the claim-only answers, the critiques'
-`beyond_scope` verdicts, any qualification refusals and any `case_gap` reply rather than the
-grades.
+Run `sar-analysis` once on the fixed code and read the log's completeness and timing, and any
+claim-only answers reused under a new name, before the grades. Separately, decide open question
+8: whether an executed key is the route to A for narrow API claims.
 
 ### Recommended next action
 
-In a new session after the commit, clean `3b3f3c94` as above and run once. It is finished when
+In a new session after the commit, clean `d416f79d` as above and run once. It is finished when
 every item under "What to check in the run" has a recorded answer.

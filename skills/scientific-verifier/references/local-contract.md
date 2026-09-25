@@ -357,6 +357,12 @@ or claim to capture private model reasoning. Failures return the attempt/log
 location when storage is available; inability to record required events stops
 execution rather than silently claiming a complete log. Live Claude streams and
 internal tool operations must both be captured, including partial failed runs.
+Logging never delays reading a process's output: the pipe readers only read, and the
+thread waiting for the process logs its stream, so a slow log costs time, never output.
+A write reads back only event files it has not verified or whose size or modification
+time has changed, and those must still verify. In run d416f79d every write re-read
+every earlier event, a write took 0.94 s by the 2,100th, and readers that logged as they
+read left two finished claim-only answers unread.
 A run the runner closes early records who stopped it and why, in the categories of
 `artifact-contracts.md`: `cancelled` only for the operator's cancellation, `timeout`
 for the attempt deadline, and otherwise `agent_unavailable` with the planner's own
