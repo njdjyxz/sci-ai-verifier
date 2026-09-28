@@ -390,7 +390,10 @@ The local profile uses the existing content-addressed journal and snapshot/claim
 records. `local_work` binds each claim to fetched reference objects, candidate and
 selection digests, and a terminal result or limitation. Candidate records include
 method version, scope, fixed cases, exact reference objects, positive/negative
-controls, qualification limitations and license metadata. Subject request and
+controls, qualification limitations and license metadata. A candidate with calculated
+answers also holds its `calculation` and `calculation_receipts`: the program's digest,
+the image, every output and whether each anchor was reproduced. A calculated case keeps
+its `arguments` and `decimals`, and so does its report row. Subject request and
 response receipts are published before advancing to another trial. Reports expose
 synthetic/live provenance, actual observed model/session identities when supplied
 by the CLI, and distinguish local comparison status from scientific grades.

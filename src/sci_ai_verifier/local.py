@@ -54,8 +54,15 @@ def schemas(base, obj, string):
               "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000),
               "options": {"type": "array", "minItems": MINIMUM_OPTIONS, "maxItems": 9, "items": string(4000)},
               # Only in a `mixed` design, where each case names its own installed method.
-              "method": choice(("exact", "numeric", "choice"), 20)}
-    case = obj(fields, required=[key for key in fields if key not in ("options", "method")])
+              "method": choice(("exact", "numeric", "choice"), 20),
+              # A calculated case gives these, and Python supplies its expected answer and quote.
+              "arguments": string(4000), "decimals": {"type": "integer", "minimum": 0, "maximum": 6}}
+    # Python requires the answer and its quote of every case it does not calculate.
+    case = obj(fields, required=["case_id", "input", "applicability"])
+    anchor = obj({"arguments": string(4000), "expected": string(100), "reference_ref": string(64),
+                  "source_quote": string(8000)})
+    calculation = obj({"code": string(32000), "reference_ref": string(64), "formula_quote": string(8000),
+                       "anchors": {"type": "array", "minItems": 1, "maxItems": 8, "items": anchor}})
     return {
         "list_local_candidates": obj(claim),
         "fetch_local_reference": obj({**claim, "url": string(4096), "version": string(200), "license": string(2000)}),
@@ -67,7 +74,9 @@ def schemas(base, obj, string):
                 "items":obj({"reference_ref":string(64),"quote":string(6000)})},"limitations":string(8000)}),
         "record_local_unverified":obj({**claim,"search_account":string(8000),"missing_evidence":string(8000)}),
         "qualify_local_candidate": obj({**claim, "name": string(200), "scope": string(8000), "method": string(20),
-            "limitations": string(8000), "cases": {"type": "array", "minItems": 3, "maxItems": 12, "items": case}}),
+            "limitations": string(8000), "cases": {"type": "array", "minItems": 3, "maxItems": 12, "items": case},
+            "calculation": calculation},
+            required=[*claim, "name", "scope", "method", "limitations", "cases"]),
         "select_local_candidate": obj({**claim, "candidate_ref": string(64), "applicability": string(8000),
             "target_grade": choice(("A", "B", "C"), 1),
             **{key: string(4000) for key in PLANNER_JUSTIFICATION}}),
@@ -97,8 +106,7 @@ def pin_candidate(store, state, key):
     if candidate.get("status") != "qualified_local" or candidate.get("method_version") not in {catalog.METHOD_VERSION,local_evaluators.METHOD_VERSION}:
         raise Fault("candidate_not_qualified", "Select an installed, mechanically qualified local candidate.")
     refs = {}
-    for case in candidate["cases"]:
-        ref = case["reference_ref"]
+    for ref in catalog.reference_refs(candidate):
         resource = store.get_json(ref)
         store.get(resource["raw_ref"])
         refs[ref] = resource
@@ -112,7 +120,9 @@ def pin_candidate(store, state, key):
             raise Fault("candidate_integrity","Evaluator specification or control receipts changed.",fatal=True)
         check=candidate
     else:
-        check = catalog.qualify({name: candidate[name] for name in ("name", "scope", "method", "limitations", "cases")}, refs)
+        fields = ("name", "scope", "method", "limitations", "cases", "calculation")
+        check = catalog.qualify({name: candidate[name] for name in fields if name in candidate}, refs,
+                                catalog.recorded(candidate))
     if check["status"] != "qualified_local":
         raise Fault("candidate_integrity", "Candidate no longer passes qualification.", fatal=True)
     if key not in state["objects"]:
@@ -235,9 +245,17 @@ def operate(store, state, name, args, subject):
         work["candidate_refs"].append(key)
         return {"outcome":candidate["status"],"candidate_ref":key,"candidate":candidate}
     if name == "qualify_local_candidate":
-        proposal = {key: args[key] for key in ("name", "scope", "method", "limitations", "cases")}
+        proposal = {key: args[key] for key in ("name", "scope", "method", "limitations", "cases", "calculation")
+                    if key in args}
         refs = {key: store.get_json(key) for key in work["reference_refs"]}
-        candidate = catalog.qualify(proposal, refs)
+        settings = settings_for(store, state)
+        calculate = None
+        if settings.get("sandbox_image"):
+            from .local_evaluators import calculate as run_calculation
+
+            def calculate(code, inputs):
+                return run_calculation(code, inputs, settings, log=getattr(subject, "log", None))
+        candidate = catalog.qualify(proposal, refs, calculate)
         key = keep(store, state, candidate)
         catalog.save_candidate(store, candidate)
         work["candidate_refs"].append(key)
@@ -331,12 +349,27 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                                        if case.get("options") else {}),
                                     "expected": clip(case["expected"]),
                                     "source_quote": clip(case["source_quote"]),
+                                    **({"calculated": True, "arguments": clip(case["arguments"]),
+                                        "decimals": case["decimals"]} if "arguments" in case else {}),
                                     "applicability": clip(case["applicability"])}
-                                   for case in candidate["cases"]]},
+                                   for case in candidate["cases"]],
+                         # The program is shown whole: whether it implements the quoted formula is
+                         # the critique's to judge (rubric.calculated_answers).
+                         **({"calculation": {"code": candidate["calculation"]["code"],
+                                             "formula_quote": clip(candidate["calculation"]["formula_quote"], 2000),
+                                             "formula_url": references[candidate["calculation"]["reference_ref"]]["url"],
+                                             "anchors": [{"arguments": clip(item["arguments"]),
+                                                          "expected": item["expected"], "output": item["output"],
+                                                          "source_quote": clip(item["source_quote"]),
+                                                          "url": references[item["reference_ref"]]["url"]}
+                                                         for item in candidate["calculation_receipts"]["anchors"]]}}
+                            if candidate.get("calculation") else {})},
             "justification": {key: clip(args[key], 2000) for key in PLANNER_JUSTIFICATION},
             "python_checked": {"evidence_ceiling": ceiling, "evidence_limits": limits,
                                "note": "Python already verified that every expected answer is quoted exactly "
-                                       "from the pinned reference bytes. Judge whether that evidence is "
+                                       "from the pinned reference bytes, or, for a case marked calculated, that "
+                                       "evidence.calculation's program produced it after reproducing every "
+                                       "quoted anchor. Judge whether that evidence is "
                                        "fit for this claim at the proposed grade. Python counts cases and "
                                        "cannot weigh them: a function name, a scientific value and a fact "
                                        "the claim never states are the same shape once quoted, so whether "
@@ -357,7 +390,7 @@ def select(store, state, claim_id, work, args, subject):
         raise Fault("candidate_not_returned", "Select a candidate returned by this claim's lookup or qualification.")
     candidate = pin_candidate(store, state, key)
     settings = settings_for(store, state)
-    references = {case["reference_ref"]: store.get_json(case["reference_ref"]) for case in candidate["cases"]}
+    references = {ref: store.get_json(ref) for ref in catalog.reference_refs(candidate)}
     trials = settings["trial_count"]
     ceiling, limits = evidence_ceiling(candidate, references, trials)
     history = [store.get_json(item) for item in work.setdefault("negotiation_refs", [])]
@@ -827,13 +860,17 @@ def case_quotes(store, candidate_ref, limit=8):
     Qualification already proved every one exact, so a packet built from them needs no planner.
     """
     evidence = []
-    for case in store.get_json(candidate_ref)["cases"]:
-        if not case.get("reference_ref") or not case.get("source_quote"):
+    candidate = store.get_json(candidate_ref)
+    # A calculated case is keyed to its formula's quote; the worked examples it reproduced follow.
+    anchors = (candidate.get("calculation") or {}).get("anchors", [])
+    for ref, quote in [*((case.get("reference_ref"), case.get("source_quote")) for case in candidate["cases"]),
+                       *((anchor["reference_ref"], anchor["source_quote"]) for anchor in anchors)]:
+        if not ref or not quote:
             continue
-        reference = store.get_json(case["reference_ref"])
-        item = {"reference_ref": case["reference_ref"], "quote": case["source_quote"], "url": reference["url"],
+        reference = store.get_json(ref)
+        item = {"reference_ref": ref, "quote": quote, "url": reference["url"],
                 "version": reference["version"], "license": reference["license"]}
-        if item not in evidence and case["source_quote"] in reference["text"]:
+        if item not in evidence and quote in reference["text"]:
             evidence.append(item)
     return evidence[:limit]
 
@@ -848,7 +885,7 @@ def fallback_documentary(store, state, subject):
     """
     import os
     import time
-    from .documentary import ASSESSOR_SHAPE_ATTEMPTS, ASSESSOR_TIMEOUT_SECONDS
+    from .documentary import ASSESSOR_TIMEOUT_SECONDS
     settings = settings_for(store, state)
     deadline = os.environ.get(DEADLINE_ENV)
     for claim_id in sorted(state["claim_states"]):
@@ -868,7 +905,7 @@ def fallback_documentary(store, state, subject):
         elif not evidence:
             reason = "The claim has no qualified candidate whose reference quotes could be assessed."
         elif (deadline and float(deadline) - time.time()
-              < ASSESSOR_SHAPE_ATTEMPTS * ASSESSOR_TIMEOUT_SECONDS + RETRY_REPORT_SECONDS):
+              < ASSESSOR_TIMEOUT_SECONDS + RETRY_REPORT_SECONDS):
             reason = "Too little time remains before the attempt deadline for an assessment and the report."
         elif assessor_changed(state, subject):
             reason = "Runtime or assessor settings changed after bootstrap."
@@ -951,15 +988,18 @@ def report(store, state):
         counted = (audit_record or {}).get("counted_cases")
         if candidate:
             trials=store.get_json(work["selection_ref"])["trials_per_case"] if work.get("selection_ref") else 1
+            for ref in catalog.reference_refs(candidate):
+                reference = store.get_json(ref)
+                sources[ref] = {key: reference[key] for key in ("url", "version", "license", "raw_ref", "retrieved_at", "authority", "redistribution")}
             for case,trial in ((case,trial) for case in candidate["cases"] for trial in range(1,trials+1)):
-                reference = store.get_json(case["reference_ref"])
-                sources[case["reference_ref"]] = {key: reference[key] for key in ("url", "version", "license", "raw_ref", "retrieved_at", "authority", "redistribution")}
                 observed = answers.get((case["case_id"],trial))
                 tests.append({"case_id": case["case_id"],"trial":trial, "input": case["input"], "expected": case["expected"],
                               "artifacts":observed.get("artifacts",[]) if observed else [],
                               "observed": observed["text"] if observed else None,
                               "comparison_status": next((item["comparison_status"] for item in responses if item.get("case_id")==case["case_id"] and item.get("trial",1)==trial and "comparison_status" in item),"not_obtained"),
                               "reference_ref": case["reference_ref"], "reference_quote": case["source_quote"],
+                              **({"calculated": {"arguments": case["arguments"], "decimals": case["decimals"]}}
+                                 if "arguments" in case else {}),
                               "applicability": case["applicability"],
                               "counted": counted is None or case["case_id"] in counted,
                               "session_id": observed.get("session_id") if observed else None,
@@ -980,7 +1020,9 @@ def report(store, state):
                      "required_grade":required_grade,"meets_required_grade":meets_required,
                      "audit":audit_record,
                      "documentary_assessment":store.get_json(work["assessment_ref"]) if work.get("assessment_ref") else None,
-                     "candidate_scope": candidate["scope"] if candidate else None})
+                     "candidate_scope": candidate["scope"] if candidate else None,
+                     "calculation": {**candidate["calculation"], "receipts": candidate["calculation_receipts"]}
+                     if candidate and candidate.get("calculation") else None})
         lines.extend(["## " + cell(claim["statement"]), "",
                       "Outcome: " + terminal.get("comparison_status", terminal.get("documentary_status",terminal.get("code",terminal.get("scientific_status") or "unavailable"))), "",
                       "Scientific status: "+cell(terminal.get("scientific_status") or "unassigned")+"; evidence grade: "+cell(terminal.get("evidence_grade") or "unassigned"),""])
@@ -1016,6 +1058,16 @@ def report(store, state):
             for label,field in (("Coverage","coverage"),("Uncertainty","uncertainty"),
                                 ("Oracle independence","oracle_independence")):
                 lines.extend([label+": "+cell(justification.get(field,"unrecorded")),""])
+            if candidate and candidate.get("calculation"):
+                calculation=candidate["calculation"]
+                lines.extend(["Calculated answers: "+str(sum("arguments" in case for case in candidate["cases"]))
+                              +" expected answers were calculated in the sandbox by the planner's program (SHA256 "
+                              +candidate["calculation_receipts"]["code_sha256"]+") from the formula quoted from "
+                              +cell(sources[calculation["reference_ref"]]["url"])+": "+cell(calculation["formula_quote"])
+                              +". Before any case was keyed it reproduced "
+                              +"; ".join(cell(item["expected"])+" (it gave "+cell(item["output"])+") from "
+                                         +cell(sources[item["reference_ref"]]["url"])
+                                         for item in candidate["calculation_receipts"]["anchors"])+".",""])
             if settled.get("critique"):
                 lines.extend(["Independent critique supported grade "
                               +cell(settled["critique"]["supported_grade"] or "none")+":",""])

@@ -89,6 +89,33 @@ def score(spec,case,actual,settings,*,log=None,sandbox_factory=DockerSandbox,art
                     "packet_sha256":digest(canonical(packet))}
 
 
+def calculate(code,inputs,settings,*,log=None,sandbox_factory=DockerSandbox):
+    """Run a planner's calculation once per input, in one new container of the pinned image.
+
+    `qualify_local_candidate` in tool-contracts.md owns the rule. The program reads one
+    input on standard input and prints one number; an input whose run fails or prints
+    anything else maps to `None`.
+    """
+    if not settings.get("sandbox_image"):
+        raise Fault("sandbox_configuration_required","Calculated answers require a pinned computational environment.")
+    from .local_candidates import number
+    outputs={}
+    with tempfile.TemporaryDirectory(prefix="sci-verifier-calculation-") as temporary:
+        source=Path(temporary)
+        atomic_write(source/"calculation.py",code.encode("utf-8"))
+        with sandbox_factory(source,settings,timeout=120,log=log) as sandbox:
+            for value in inputs:
+                result=sandbox.command("python3 -I /work/calculation.py",stdin=value,timeout=30)
+                printed=result["stdout"].strip()
+                try:
+                    number(printed)
+                    outputs[value]=None if result["exit_code"] else printed
+                except ValueError:
+                    outputs[value]=None
+            image=sandbox.image
+    return {"code_sha256":digest(code.encode("utf-8")),"image_id":image,"outputs":outputs}
+
+
 def qualify(spec,references,settings,*,log=None,scorer=None):
     validate_spec(spec,references)
     receipts=[]

@@ -16,7 +16,8 @@ returns is the key set the real function returns, so report fields derived from 
 records are exercised rather than silently absent.
 
 Replies a real session actually sent live in `tests/recorded/`; see
-`test_recorded_replies.py`.
+`test_recorded_replies.py`. A double gives its reply in the reply schema's shape, case
+verdicts keyed by case ID, exactly as Claude Code returns it.
 """
 
 import sys
@@ -46,15 +47,15 @@ def critic_reply(packet, supported, *, findings=None, objections=(), required_re
     """
     rejected = rejected or {}
     case_ids = [case["case_id"] for case in packet["evidence"]["cases"]]
-    verdicts = [{"case_id": key, "verdict": rejected.get(key, "counts"), "reason": "Fixture case verdict.",
-                 "replacement": "Fixture replacement: ask what the claim states." if key in rejected else ""}
-                for key in case_ids]
+    verdicts = {key: {"verdict": rejected.get(key, "counts"), "reason": "Fixture case verdict.",
+                      "replacement": "Fixture replacement: ask what the claim states." if key in rejected else ""}
+                for key in case_ids}
     value = validate_critique({
         "supported_grade": supported,
         "findings": list(findings) if findings else ["Fixture critique finding."] * len(CRITIQUE_RUBRIC["criteria"]),
         "objections": list(objections), "required_revisions": list(required_revisions),
-        "case_verdicts": verdicts}, case_ids=case_ids)
-    return {**value, **_envelope(packet, CRITIQUE_REF, "critic"), "attempts": [{"attempt": 1, "session_id": "fixture-critic"}]}
+        "case_verdicts": verdicts}, case_ids)
+    return {**value, **_envelope(packet, CRITIQUE_REF, "critic")}
 
 
 def assessor_reply(packet, status, citations, *, findings=None, limitations="Fixture documentary check only."):

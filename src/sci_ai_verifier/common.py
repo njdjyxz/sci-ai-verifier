@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 
 
@@ -29,7 +30,18 @@ def normalize(text):
 
 
 def validate(value, schema, field="arguments"):
-    """Validate only the JSON Schema vocabulary used by our published tools."""
+    """Validate only the JSON Schema vocabulary used by our published tools and reply schemas.
+
+    Objects never take keys their schema does not name, so a reply schema states
+    `additionalProperties: false` for Claude Code and means the same thing here.
+    """
+    if "anyOf" in schema:
+        for option in schema["anyOf"]:
+            try:
+                return validate(value, option, field)
+            except Fault:
+                continue
+        raise Fault("invalid_arguments", f"{field} matches none of its allowed forms.", [field])
     kind = schema["type"]
     types = {"object": dict, "array": list, "string": str, "integer": int}
     if type(value) is not types[kind]:
@@ -51,5 +63,8 @@ def validate(value, schema, field="arguments"):
     elif kind == "string":
         if not schema.get("minLength", 0) <= len(value) <= schema["maxLength"]:
             raise Fault("invalid_arguments", f"{field} has an invalid length.", [field])
+        # JSON Schema patterns search rather than match, as re.search does.
+        if "pattern" in schema and not re.search(schema["pattern"], value):
+            raise Fault("invalid_arguments", f"{field} does not match its pattern.", [field])
     elif not schema["minimum"] <= value <= schema["maximum"]:
         raise Fault("invalid_arguments", f"{field} is outside its bounds.", [field])

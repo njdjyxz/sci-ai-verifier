@@ -4,6 +4,7 @@ import json
 import sys
 import unittest
 from copy import deepcopy
+from math import log10 as math_log10
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -15,7 +16,7 @@ from sci_ai_verifier.local_science import (GRADES,MAX_ROUNDS,POLICY_REF,audit,de
 from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC,RUBRIC,assess,critique,validate_assessment,
                                          validate_critique)
 from sci_ai_verifier.local_evaluators import qualify,validate_spec
-from sci_ai_verifier.local_candidates import METHOD_VERSION
+from sci_ai_verifier.local_candidates import METHOD_VERSION,qualify as qualify_candidate
 
 RETRIEVED={"origin":"retrieved_public_https","url":"https://example.org/r","version":"1","license":"unknown"}
 
@@ -298,96 +299,85 @@ class IndependentSessionTests(unittest.TestCase):
         reply={"status":"inconclusive","findings":["Evidence bounded"]*len(RUBRIC["criteria"]),
                "citations":[{"reference_ref":"b"*64,"quote":"Known source"}],
                "limitations":"Documentary only."}
-        return packet,json.dumps(reply)
+        return packet,reply
 
-    def _replies(self,*texts):
-        """Stand in for the fresh assessor sessions, one reply each, in order."""
-        calls=iter(texts)
-        def isolated(adapter,packet,*,role,system_prompt):
-            return ({"text":next(calls),"observed_model_ids":["fixture-model"],
+    def _replies(self,*values,calls):
+        """Stand in for the fresh sessions: each returns its next structured reply, in order."""
+        values=iter(values)
+        def isolated(adapter,packet,*,role,system_prompt,schema,**limits):
+            calls.append({"role":role,"schema":schema,**limits})
+            return ({"structured_output":next(values),"observed_model_ids":["fixture-model"],
                      "usage":{},"total_cost_usd":0.0},str(uuid4()))
         return isolated
 
-    def test_unusable_assessor_shape_is_retried_once_then_accepted(self):
+    def test_one_assessor_session_is_asked_and_its_reply_is_checked_again(self):
         packet,good=self._assessor_packet_and_reply()
-        with patch("sci_ai_verifier.documentary.isolated_answer",
-                   side_effect=self._replies("not json at all",good)):
+        calls=[]
+        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=self._replies(good,calls=calls)):
             result=assess(object(),packet)
         self.assertEqual(result["assessment"]["status"],"inconclusive")
-        self.assertEqual(len(result["attempts"]),2)
-        self.assertEqual(result["attempts"][0]["rejected"],"reply_not_parseable")
-        self.assertNotIn("rejected",result["attempts"][1])
-
-    def test_a_second_unusable_shape_is_an_operational_failure(self):
-        packet,_=self._assessor_packet_and_reply()
+        # The schema lets the assessor cite the packet's own references and nothing else.
+        citation=calls[0]["schema"]["properties"]["citations"]["items"]["properties"]["reference_ref"]
+        self.assertEqual(citation["enum"],["b"*64])
+        # Claude Code corrects a reply outside the schema inside the session, so one that still
+        # reaches Python is an operational failure and no second session is asked.
+        calls.clear()
         with patch("sci_ai_verifier.documentary.isolated_answer",
-                   side_effect=self._replies("not json","{\"status\":\"pass\"}")):
+                   side_effect=self._replies({"status":"pass"},good,calls=calls)):
             with self.assertRaises(Fault) as caught:
                 assess(object(),packet)
         self.assertEqual(caught.exception.code,"assessor_response_invalid")
+        self.assertEqual(len(calls),1)
 
     def test_bad_citations_are_never_retried(self):
         """Re-rolling a parsed judgement until it is acceptable would be grade shopping."""
-        packet,_=self._assessor_packet_and_reply()
-        invented=json.dumps({"status":"pass","findings":["f"]*len(RUBRIC["criteria"]),
-                             "citations":[{"reference_ref":"b"*64,"quote":"Invented source"}],
-                             "limitations":"Documentary only."})
+        packet,good=self._assessor_packet_and_reply()
+        invented={**good,"status":"pass","citations":[{"reference_ref":"b"*64,"quote":"Invented source"}]}
         calls=[]
-        def counting(adapter,packet,*,role,system_prompt):
-            calls.append(role)
-            return ({"text":invented,"observed_model_ids":[],"usage":{},"total_cost_usd":0.0},str(uuid4()))
-        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=counting):
+        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=self._replies(invented,good,calls=calls)):
             with self.assertRaises(Fault) as caught:
                 assess(object(),packet)
         self.assertEqual(caught.exception.code,"assessor_citation_invalid")
         self.assertEqual(len(calls),1)
 
+    def valid_critique(self):
+        return {"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
+                "objections":[],"required_revisions":["Add cases covering the rest of the scope."],
+                "case_verdicts":{"c":{"verdict":"counts","reason":"in scope","replacement":""}}}
+
     def test_critique_must_answer_inside_its_rubric(self):
-        # `required_revisions` is a list beside `objections`, which is what a real session
-        # emits. Recorded replies and the exhaustive refusal cases live in
-        # tests/test_recorded_replies.py; this guards the shape the science path consumes.
-        valid={"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
-               "objections":[],"required_revisions":["Add cases covering the rest of the scope."],
-               "case_verdicts":[{"case_id":"c","verdict":"counts","reason":"in scope","replacement":""}]}
-        self.assertEqual(validate_critique(valid)["supported_grade"],"B")
-        self.assertEqual(validate_critique(valid)["required_revisions"],valid["required_revisions"])
-        self.assertIsNone(validate_critique({**valid,"supported_grade":"none"})["supported_grade"])
+        valid=self.valid_critique()
+        self.assertEqual(validate_critique(valid,["c"])["supported_grade"],"B")
+        self.assertEqual(validate_critique(valid,["c"])["required_revisions"],valid["required_revisions"])
+        # Keyed by case ID in the reply, a list in packet order afterwards.
+        self.assertEqual(validate_critique(valid,["c"])["case_verdicts"],
+                         [{"case_id":"c","verdict":"counts","reason":"in scope","replacement":""}])
+        self.assertIsNone(validate_critique({**valid,"supported_grade":"none"},["c"])["supported_grade"])
         for broken in ({**valid,"supported_grade":"A+"},{**valid,"findings":["only one"]},
                        {**valid,"objections":"not a list"},{**valid,"required_revisions":0},
                        {**valid,"extra":"field"}):
             with self.subTest(broken=sorted(broken)),self.assertRaises(Fault):
-                validate_critique(broken)
+                validate_critique(broken,["c"])
 
-    def test_unusable_critique_shape_is_retried_once_and_a_verdict_never_is(self):
+    def test_one_critique_session_is_asked_and_a_verdict_is_never_re_rolled(self):
         packet={"evidence":{"cases":[{"case_id":"c"}]}}
-        good=json.dumps({"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
-                         "objections":[],"required_revisions":[],
-                         "case_verdicts":[{"case_id":"c","verdict":"counts","reason":"r","replacement":""}]},
-                        separators=(",",":"))
+        good=self.valid_critique()
         calls=[]
-        def replies(*texts):
-            texts=iter(texts)
-            def isolated(adapter,packet,*,role,system_prompt,limit,timeout):
-                # A critique gets five minutes; two killed one in run 74eadedd.
-                self.assertEqual(timeout,300)
-                calls.append(role)
-                return ({"text":next(texts),"observed_model_ids":[],"usage":{},"total_cost_usd":0.0},str(uuid4()))
-            return isolated
-        # A case verdict naming a case the packet does not hold is a shape failure.
-        wrong_case=good.replace('"case_id":"c"','"case_id":"x"')
-        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=replies(wrong_case,good)):
-            result=critique(object(),packet)
-        self.assertEqual(result["supported_grade"],"B")
-        self.assertEqual([item.get("rejected") for item in result["attempts"]],["critic_response_invalid",None])
-        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=replies("not json","not json")):
+        # A valid reply is kept at once, whatever grade it gives.
+        with patch("sci_ai_verifier.documentary.isolated_answer",
+                   side_effect=self._replies({**good,"supported_grade":"none"},good,calls=calls)):
+            self.assertIsNone(critique(object(),packet)["supported_grade"])
+        self.assertEqual(len(calls),1)
+        # A critique gets five minutes; two killed one in run 74eadedd.
+        self.assertEqual(calls[0]["timeout"],300)
+        # The schema asks for exactly the packet's cases.
+        self.assertEqual(calls[0]["schema"]["properties"]["case_verdicts"]["required"],["c"])
+        calls.clear()
+        wrong_case={**good,"case_verdicts":{"x":good["case_verdicts"]["c"]}}
+        with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=self._replies(wrong_case,good,calls=calls)):
             with self.assertRaises(Fault) as caught:
                 critique(object(),packet)
         self.assertEqual(caught.exception.code,"critic_response_invalid")
-        # A valid reply is kept at once, whatever grade it gives: one session, no re-roll.
-        calls.clear()
-        with patch("sci_ai_verifier.documentary.isolated_answer",
-                   side_effect=replies(good.replace('"B"','"none"',1),good)):
-            self.assertIsNone(critique(object(),packet)["supported_grade"])
         self.assertEqual(len(calls),1)
 
 
@@ -435,14 +425,15 @@ class ClaimProbeTests(unittest.TestCase):
         from threading import Lock
         from sci_ai_verifier.documentary import claim_probe
         lock,seen=Lock(),[]
-        def answer(adapter,packet,*,role,system_prompt,timeout,limit=64000):
+        def answer(adapter,packet,*,role,system_prompt,schema,timeout,limit=64000):
             with lock:
                 seen.append(packet)
                 reply=table[packet["question"]].pop(0)
             if isinstance(reply,Exception):
                 raise reply
             text,models=reply if isinstance(reply,tuple) else (reply,["pinned-model"])
-            return {"text":text,"observed_model_ids":models,"total_cost_usd":0.01},"session-"+str(len(seen))
+            return ({"structured_output":{"answer":text,"reason":"From the claim."},"observed_model_ids":models,
+                     "total_cost_usd":0.01},"session-"+str(len(seen)))
         with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=answer):
             return claim_probe(self.adapter,self.claim,self.candidate,cache=cache),seen
 
@@ -452,8 +443,7 @@ class ClaimProbeTests(unittest.TestCase):
     def test_a_case_counts_only_when_every_claim_only_answer_reaches_its_key(self):
         """Run 3b3f3c94: faithful readers of one claim split on "lone ring atoms", once on the
         key and once on none of these. A split is the sign that the claim does not settle it."""
-        probe,seen=self.probe({"How many atoms?":["3","2\n\nThe claim keeps whole rings only."],
-                               self.closed:["2","**2**"]})
+        probe,seen=self.probe({"How many atoms?":["3","2"],self.closed:["2","**2**"]})
         self.assertEqual(self.outcomes(probe),{"open":"missed","closed":"reached"})
         self.assertEqual(len(seen),4)
         # Each session saw the claim and one question, never the skill or the key.
@@ -514,10 +504,10 @@ class ClaimProbeTests(unittest.TestCase):
         from sci_ai_verifier.documentary import claim_probe
         from sci_ai_verifier.execution_control import CURRENT,Control
         control,observed=Control(60),[]
-        def answer(adapter,packet,*,role,system_prompt,timeout,limit=64000):
+        def answer(adapter,packet,*,role,system_prompt,schema,timeout,limit=64000):
             observed.append(CURRENT.get())
-            return {"text":"3" if "atoms" in packet["question"] else "2","observed_model_ids":["pinned-model"],
-                    "total_cost_usd":0},"session"
+            return {"structured_output":{"answer":"3" if "atoms" in packet["question"] else "2","reason":"r"},
+                    "observed_model_ids":["pinned-model"],"total_cost_usd":0},"session"
         token=CURRENT.set(control)
         try:
             with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=answer):
@@ -542,6 +532,250 @@ class ClaimProbeTests(unittest.TestCase):
         # Without claim-only answers, counting is the critique's alone, as before.
         del critique["claim_probe"]
         self.assertEqual(counted_cases(critique),["open"])
+
+
+class ReplySchemaSessionTests(unittest.TestCase):
+    """isolated_answer with only the child process replaced: what it asks Claude Code for and what it
+    accepts back. Replies real sessions sent are in tests/recorded/, driven by test_recorded_replies.py."""
+
+    SCHEMA={"type":"object","additionalProperties":False,"required":["answer"],
+            "properties":{"answer":{"type":"string","minLength":1,"maxLength":10}}}
+
+    def ask(self,*,code=0,tool="StructuredOutput",subtype="success",structured=True):
+        from sci_ai_verifier.claude_runner import ClaudeCode
+        from sci_ai_verifier.common import canonical
+        from sci_ai_verifier.documentary import isolated_answer
+        seen={}
+
+        def process(command,**kwargs):
+            seen["command"]=command
+            session=command[command.index("--session-id")+1]
+            reply={"answer":"9"}
+            result={"type":"result","subtype":subtype,"is_error":subtype!="success","session_id":session,
+                    "result":canonical(reply).decode()}
+            if structured:
+                result["structured_output"]=reply
+            events=[{"type":"assistant","session_id":session,"message":{"model":"m","role":"assistant","content":[
+                        {"type":"tool_use","id":"toolu_1","name":tool,"input":reply}]}},result]
+            return code,b"".join(canonical(event)+b"\n" for event in events),b""
+
+        import os
+        with patch.dict(os.environ,{"CLAUDE_CODE_OAUTH_TOKEN":"fake-oauth-for-boundary-test"}):
+            response,_=isolated_answer(ClaudeCode(auth="subscription",process=process),{"question":"q"},
+                                       role="probe",system_prompt="Answer.",schema=self.SCHEMA)
+        return response,seen["command"]
+
+    def test_the_session_gets_the_schema_room_to_correct_and_no_other_tool(self):
+        from sci_ai_verifier.common import canonical
+        response,command=self.ask()
+        self.assertEqual(response["structured_output"],{"answer":"9"})
+        self.assertEqual(command[command.index("--json-schema")+1],canonical(self.SCHEMA).decode())
+        self.assertEqual(command[command.index("--tools")+1],"")
+        self.assertEqual(command[command.index("--max-turns")+1],"4")
+
+    def test_any_other_tool_call_is_a_boundary_violation(self):
+        with self.assertRaises(Fault) as caught:
+            self.ask(tool="Bash")
+        self.assertEqual(caught.exception.code,"probe_boundary_violation")
+
+    def test_a_session_whose_replies_never_met_the_schema_is_an_invalid_reply(self):
+        """Probed live on 2026-09-28: a session whose replies the schema refused twice ended as
+        error_max_turns, exit code 1."""
+        for subtype in ("error_max_turns","error_max_structured_output_retries"):
+            with self.subTest(subtype),self.assertRaises(Fault) as caught:
+                self.ask(code=1,subtype=subtype,structured=False)
+            self.assertEqual(caught.exception.code,"probe_response_invalid")
+        with self.assertRaises(Fault) as caught:
+            self.ask(structured=False)
+        self.assertEqual(caught.exception.code,"probe_response_invalid")
+        # Any other failed session is simply unavailable.
+        with self.assertRaises(Fault) as caught:
+            self.ask(code=1,subtype="error_during_execution",structured=False)
+        self.assertEqual(caught.exception.code,"probe_unavailable")
+
+
+class CalculatedAnswerTests(unittest.TestCase):
+    """Expected answers Python calculates from a quoted formula ("qualify_local_candidate" in
+    tool-contracts.md). The pIC50 quotes are ChEMBL's, as run d416f79d retrieved them."""
+
+    FORMULA="-Log(molar IC50, XC50, EC50, AC50, Ki, Kd or Potency)"
+    WORKED="an IC50 measurement of 1nM would have a pChEMBL value of 9"
+    PROGRAM="import math, sys\nprint(repr(-math.log10(float(sys.stdin.read()))))\n"
+
+    def setUp(self):
+        self.references={"f":{**RETRIEVED,"text":"pChEMBL is "+self.FORMULA+". For example, "+self.WORKED+"."}}
+        self.runs=[]
+
+    def calculate(self,code,inputs,log=math_log10):
+        from sci_ai_verifier.common import digest
+        self.runs.append(list(inputs))
+        return {"code_sha256":digest(code.encode("utf-8")),"image_id":"sha256:"+"0"*64,
+                "outputs":{value:repr(-log(float(value))) for value in inputs}}
+
+    def proposal(self,**changes):
+        cases=[{"case_id":"c"+str(index),"input":"An IC50 is "+molar+" M. Give its pIC50 rounded to two decimal places.",
+                "arguments":molar,"decimals":2,"applicability":"fixture"}
+               for index,molar in enumerate(("2.5e-4","3.2e-9","9.5e-10","6e-12","3e-8"))]
+        return {"name":"pIC50 calculated","scope":"fixture","method":"numeric","limitations":"fixture","cases":cases,
+                "calculation":{"code":self.PROGRAM,"reference_ref":"f","formula_quote":self.FORMULA,
+                               "anchors":[{"arguments":"1e-9","expected":"9","reference_ref":"f",
+                                           "source_quote":self.WORKED}]},**changes}
+
+    def with_calculation(self,**changes):
+        return self.proposal(calculation={**self.proposal()["calculation"],**changes})
+
+    def problems(self,candidate):
+        return " ".join(candidate["qualification_problems"])
+
+    def test_python_keys_every_case_from_the_quoted_formula_and_the_design_can_reach_a(self):
+        candidate=qualify_candidate(self.proposal(),self.references,self.calculate)
+        self.assertEqual(candidate["status"],"qualified_local",candidate["qualification_problems"])
+        self.assertEqual([case["expected"] for case in candidate["cases"]],["3.60","8.49","9.02","11.22","7.52"])
+        self.assertTrue(all(case["source_quote"]==self.FORMULA and case["reference_ref"]=="f"
+                            for case in candidate["cases"]))
+        self.assertTrue(candidate["calculation_receipts"]["anchors"][0]["reproduced"])
+        # One run per distinct input, the anchor's included.
+        self.assertEqual(self.runs,[["1e-9","2.5e-4","3.2e-9","9.5e-10","6e-12","3e-8"]])
+        self.assertEqual(evidence_ceiling(candidate,self.references,3),("A",[]))
+
+    def test_a_wrong_formula_fails_on_the_quoted_worked_example_before_any_case_is_keyed(self):
+        """A natural logarithm gives 20.7 for 1 nM where the page prints 9."""
+        import math
+        candidate=qualify_candidate(self.proposal(),self.references,
+                                    lambda code,inputs:self.calculate(code,inputs,log=math.log))
+        self.assertEqual(candidate["status"],"rejected")
+        self.assertIn("where its reference prints '9'",self.problems(candidate))
+        self.assertFalse(candidate["calculation_receipts"]["anchors"][0]["reproduced"])
+        self.assertTrue(all("expected" not in case for case in candidate["cases"]))
+
+    def test_an_anchor_is_compared_at_the_precision_its_page_prints(self):
+        """Run 3b3f3c94 keyed 30 nM to a page's "which is pIC50 = 7.5"; the exact value is 7.522879."""
+        from decimal import Decimal
+        from sci_ai_verifier.local_candidates import at_precision
+        self.references["f"]["text"]+=" A 30 nM compound, which is pIC50 = 7.5."
+        candidate=qualify_candidate(self.with_calculation(anchors=[
+            {"arguments":"3e-8","expected":"7.5","reference_ref":"f","source_quote":"which is pIC50 = 7.5"}]),
+            self.references,self.calculate)
+        self.assertEqual(candidate["status"],"qualified_local",candidate["qualification_problems"])
+        self.assertEqual(at_precision("7.522879","7.5"),Decimal("7.5"))
+        # Half away from zero, not to even, and a page's integer is compared as an integer.
+        self.assertEqual(at_precision("7.55","7.5"),Decimal("7.6"))
+        self.assertEqual(at_precision("0.125","0.01"),Decimal("0.13"))
+        self.assertEqual(at_precision("8.999999999999998","9"),Decimal("9"))
+
+    def test_a_worked_example_from_a_page_python_did_not_retrieve_lowers_the_ceiling(self):
+        self.references["o"]={**RETRIEVED,"origin":"operator_local_resource","text":self.WORKED}
+        candidate=qualify_candidate(self.with_calculation(anchors=[
+            {"arguments":"1e-9","expected":"9","reference_ref":"o","source_quote":self.WORKED}]),
+            self.references,self.calculate)
+        self.assertEqual(candidate["status"],"qualified_local",candidate["qualification_problems"])
+        ceiling,limits=evidence_ceiling(candidate,self.references,3)
+        self.assertEqual(ceiling,"B")
+        self.assertIn("expected_answers_not_independently_retrieved",limits)
+
+    def test_the_formula_and_every_anchor_must_be_quoted_exactly(self):
+        anchor={"arguments":"1e-9","expected":"9","reference_ref":"f","source_quote":self.WORKED}
+        for label,changes in (("formula not on the page",{"formula_quote":"-log10(IC50 in M)"}),
+                              ("anchor quote not on the page",{"anchors":[{**anchor,"source_quote":"1 nM gives 9"}]}),
+                              ("anchor value not in its quote",{"anchors":[{**anchor,"expected":"9.0"}]}),
+                              ("anchor reference not fetched",{"anchors":[{**anchor,"reference_ref":"missing"}]})):
+            with self.subTest(label):
+                candidate=qualify_candidate(self.with_calculation(**changes),self.references,self.calculate)
+                self.assertEqual(candidate["status"],"rejected")
+        self.assertEqual(self.runs,[],"nothing runs until the formula and anchors are proved quoted")
+
+    def test_python_supplies_the_answer_and_its_quote(self):
+        first=qualify_candidate(self.proposal(),self.references,self.calculate)
+        # A saved candidate repeats Python's values exactly, so it qualifies again.
+        self.assertEqual(qualify_candidate(self.proposal(cases=first["cases"]),self.references,self.calculate)["status"],
+                         "qualified_local")
+        changed=deepcopy(first["cases"])
+        changed[0]["expected"]="3.61"
+        candidate=qualify_candidate(self.proposal(cases=changed),self.references,self.calculate)
+        self.assertEqual(candidate["status"],"rejected")
+        self.assertIn("Python supplies a calculated case's expected",self.problems(candidate))
+
+    def test_what_may_be_calculated_and_what_it_needs(self):
+        cases=self.proposal()["cases"]
+        quoted=[{"case_id":"q"+str(index),"input":"Question "+str(index),"expected":"9","reference_ref":"f",
+                 "source_quote":self.WORKED,"applicability":"fixture"} for index in range(3)]
+        for label,proposal,calculate in (
+                ("no pinned sandbox",self.proposal(),None),
+                ("arguments without decimals",self.proposal(cases=[{key:value for key,value in cases[0].items()
+                                                                    if key!="decimals"},*cases[1:]]),self.calculate),
+                ("an exact design",self.proposal(method="exact"),self.calculate),
+                ("arguments without a calculation",{key:value for key,value in self.proposal().items()
+                                                    if key!="calculation"},self.calculate),
+                ("a calculation no case uses",self.proposal(cases=quoted),self.calculate),
+                ("a quoted case without its quote",self.proposal(cases=[*cases[:2],{key:value for key,value in quoted[0].items()
+                                                                            if key!="source_quote"}]),self.calculate)):
+            with self.subTest(label):
+                self.assertEqual(qualify_candidate(proposal,self.references,calculate)["status"],"rejected")
+
+    def test_selection_re_checks_a_saved_candidate_from_its_receipts(self):
+        from sci_ai_verifier.local_candidates import recorded
+        candidate=qualify_candidate(self.proposal(),self.references,self.calculate)
+        fields={key:candidate[key] for key in ("name","scope","method","limitations","cases","calculation")}
+        self.assertEqual(qualify_candidate(fields,self.references,recorded(candidate))["status"],"qualified_local")
+        self.assertEqual(len(self.runs),1,"the program is not run again")
+        altered={**fields,"calculation":{**fields["calculation"],"code":self.PROGRAM+"# changed\n"}}
+        with self.assertRaises(Fault) as caught:
+            qualify_candidate(altered,self.references,recorded(candidate))
+        self.assertEqual(caught.exception.code,"candidate_integrity")
+
+    def test_the_critique_sees_the_program_the_anchors_and_every_cases_arguments(self):
+        from sci_ai_verifier.local import critique_packet
+        from sci_ai_verifier.local_science import PLANNER_JUSTIFICATION
+        candidate=qualify_candidate(self.proposal(),self.references,self.calculate)
+        packet=critique_packet({"statement":"s","scope":"s","expected_behavior":"e"},candidate,self.references,
+                               {"target_grade":"A",**{key:"j" for key in PLANNER_JUSTIFICATION}},"A",[],3)
+        shown=packet["evidence"]["calculation"]
+        self.assertEqual(shown["code"],self.PROGRAM)
+        self.assertEqual((shown["anchors"][0]["expected"],shown["anchors"][0]["output"]),("9","9.0"))
+        self.assertTrue(all(case["calculated"] and case["arguments"] for case in packet["evidence"]["cases"]))
+        self.assertIn("calculated_answers",packet["rubric"])
+
+    def test_the_report_says_the_planner_wrote_the_calculation(self):
+        candidate=qualify_candidate(self.proposal(),self.references,self.calculate)
+        audit_record={"settled_ceiling":"A","evidence_ceiling":"A","evidence_limits":[],"case_limits":[],
+                      "policy_ref":POLICY_REF,"proposed_grade":"A"}
+        observations=[{"case_id":case["case_id"],"trial":trial,"comparison_status":"pass","model_ids":["m"]}
+                      for case in candidate["cases"] for trial in (1,2,3)]
+        record=decide(audit_record,observations,candidate["cases"],3)
+        self.assertEqual(record["evidence_grade"],"A")
+        self.assertIn("wrote the program that calculated 5 of the 5",record["ai_involvement"]["evidence_generation"])
+
+    def test_the_program_runs_once_per_input_in_one_pinned_container(self):
+        from sci_ai_verifier.local_evaluators import calculate
+        commands,opened=[],[]
+
+        class Sandbox:
+            image="sha256:"+"1"*64
+
+            def __init__(self,source,settings,*,timeout,log):
+                self.source=source
+                opened.append(timeout)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self,*args):
+                return False
+
+            def command(self,command,*,stdin,timeout):
+                commands.append((command,stdin,(self.source/"calculation.py").read_text(encoding="utf-8")))
+                printed,code={"1e-9":("9.0\n",0),"2":("not a number",0),"3":("1",1)}[stdin]
+                return {"exit_code":code,"stdout":printed,"stderr":""}
+
+        result=calculate("print(1)",["1e-9","2","3"],{"sandbox_image":"img"},sandbox_factory=Sandbox)
+        self.assertEqual(result["outputs"],{"1e-9":"9.0","2":None,"3":None})
+        self.assertEqual(result["image_id"],Sandbox.image)
+        self.assertEqual(len(opened),1)
+        self.assertEqual({(command,program) for command,_,program in commands},
+                         {("python3 -I /work/calculation.py","print(1)")})
+        with self.assertRaises(Fault) as caught:
+            calculate("print(1)",["1"],{},sandbox_factory=Sandbox)
+        self.assertEqual(caught.exception.code,"sandbox_configuration_required")
 
 
 if __name__=="__main__":

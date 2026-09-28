@@ -366,6 +366,53 @@ class GradeNegotiationTests(unittest.TestCase):
         h.call("write_report_card")
         self.assertIn("evidence grade: A",Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
 
+    def test_a_calculated_design_is_keyed_in_the_sandbox_graded_and_reported(self):
+        """Expected answers Python calculated from a quoted formula ("qualify_local_candidate" in
+        tool-contracts.md), through the published tools: keyed at qualification, re-checked from
+        its receipts at selection, shown whole to the critique, graded A and reported."""
+        h,runs=self.h,[]
+        key=self.build(3,name="calculated",sandbox_image="fixture-image")
+
+        def calculate(code,inputs,settings,*,log=None):
+            runs.append(list(inputs))
+            return {"code_sha256":digest(code.encode("utf-8")),"image_id":"sha256:"+"2"*64,
+                    "outputs":{value:str(fixture.FIVE_ROWS.index(value)+1)+".0" for value in inputs}}
+
+        # The worked example sits on its own page, so selection must load the anchors' pages too.
+        worked="Worked example page: alpha is 1.0 exactly."
+        with patch("sci_ai_verifier.local_candidates.fetch_public",return_value=(worked.encode(),worked)):
+            h.call("fetch_local_reference",claim_id=h.claim_id,url="https://example.org/worked",
+                   version="fixture-v1",license="Unknown; private analysis only")
+        calculation={"code":"print('fixture calculation')","reference_ref":h.reference_ref,
+                     "formula_quote":"alpha is 1.0, beta is 2.0","anchors":[
+                         {"arguments":"alpha","expected":"1.0","reference_ref":h.data["reference_ref"],
+                          "source_quote":"alpha is 1.0 exactly"}]}
+        cases=[{"case_id":name,"input":name,"arguments":name,"decimals":1,"applicability":"Fixture table row"}
+               for name in fixture.FIVE_ROWS]
+        with patch("sci_ai_verifier.local_evaluators.calculate",side_effect=calculate):
+            key=h.candidate(lookup=False,name="Fixture table, calculated",cases=cases,calculation=calculation)
+        self.assertEqual(h.data["outcome"],"qualified_local",h.data["candidate"]["qualification_problems"])
+        self.assertEqual([case["expected"] for case in h.data["candidate"]["cases"]],["1.0","2.0","3.0","4.0","5.0"])
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
+            h.select(key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        self.assertEqual(len(runs),1,"selection re-checks the receipts without running the program again")
+        shown=self.packets[-1]["evidence"]
+        self.assertEqual(shown["calculation"]["code"],calculation["code"])
+        self.assertEqual(shown["calculation"]["anchors"][0]["output"],"1.0")
+        self.assertTrue(all(case["calculated"] for case in shown["cases"]))
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        result=h.data["result"]
+        self.assertEqual((result["evidence_grade"],result["scientific_status"]),("A","pass"))
+        self.assertIn("wrote the program that calculated 5 of the 5",result["ai_involvement"]["evidence_generation"])
+        h.call("write_report_card")
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Calculated answers: 5 expected answers were calculated",markdown)
+        self.assertIn("- https://example.org/worked; version: fixture-v1",markdown)
+        row=json.loads(Path(h.data["report_json_path"]).read_bytes())["claims"][0]
+        self.assertEqual(row["calculation"]["receipts"]["anchors"][0]["reproduced"],True)
+        self.assertEqual(row["tests"][0]["calculated"],{"arguments":"alpha","decimals":1})
+
     def test_a_wrong_skill_earns_the_same_grade_with_a_failing_verdict(self):
         h=self.h
         h.subject.mode="wrong"

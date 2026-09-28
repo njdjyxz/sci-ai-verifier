@@ -60,11 +60,16 @@ ceiling, or a grade the last critique of the same design supported, may be propo
 both overclaiming and aiming low are refused before any session is spent:
 
 - **A** needs every expected answer quoted token-exactly from reference bytes Python
-  itself retrieved over public HTTPS, scored by an installed comparison method, with
-  at least three trials of this model subject.
+  itself retrieved over public HTTPS, or calculated by Python from a formula so quoted
+  after reproducing worked examples so quoted, as `qualify_local_candidate` in
+  `tool-contracts.md` specifies; scored by an installed comparison method, with at
+  least three trials of this model subject.
 - **B** allows an operator-imported pinned dataset, or a generated Python evaluator
   whose controls all pass, with the same trial minimum. A planner-authored scorer
-  cannot reach A, because direct validation excludes AI judgment in scoring.
+  cannot reach A, because direct validation excludes AI judgment in scoring. A
+  calculated answer is not a scorer: the planner writes the program that produces a
+  key, the quoted worked examples check it mechanically, scoring stays installed, and
+  the report says the planner wrote it.
 - **C** covers any reproducible comparison, including a single trial, a substring
   rather than token-exact quote, and a candidate reused offline whose reference origin
   was never recorded.
@@ -112,10 +117,10 @@ those are spent, a round that still rejects cases settles the plan. Accepting a 
 ungraded: it still executes and produces comparison evidence, and the claim continues
 to the documentary path. An unavailable critique is an operational limitation.
 
-A critique reply whose *shape* is unusable is retried once in a second fresh session
-against the identical packet, under the same rule as the documentary assessor below. A
-reply that parses and judges the design is never re-rolled, whatever grade it gives.
-The critique session has five minutes; the documentary assessor keeps two; each
+The critique's reply has a fixed shape that Claude Code enforces, as the reply-shape
+paragraph under `select_local_candidate` in `tool-contracts.md` describes: a reply outside
+it goes back to the same session to be corrected, and a reply that judges the design is
+never re-rolled, whatever grade it gives. The critique session has five minutes; the documentary assessor keeps two; each
 claim-only session has two, four running at once. Judging
 every case and describing replacements takes a critique 60 to 120 seconds, and the
 two-minute deadline it used to share with the assessor killed one in run 74eadedd.
@@ -144,18 +149,16 @@ After an execution with no eligible A/B/C grade, the live local workflow enters
 `local_documentary`. The planner either supplies bounded cited evidence for a
 fresh assessor or records searches establishing no acceptable evidence. A new
 Claude session, selected by the host, receives the exact claim, source quotes,
-limitations and fixed rubric only. It has no tools or planning history. Its final
-JSON must contain a status, supported rubric findings and exact citations to the
-pinned packet.
+limitations and fixed rubric only. It has no tools or planning history. Its reply
+must contain a status, supported rubric findings and exact citations to the pinned
+packet.
 
-A reply whose *shape* is unusable — unparseable JSON, wrong keys, a findings list of
-the wrong length — is retried at most once against an identical packet in a second
-fresh session, and both attempts are recorded. A reply that parses but whose citations
-do not quote the pinned packet is never retried: that is a judgement the assessor made
-about the evidence, and re-rolling it until the answer is acceptable is grade shopping.
-Only shape is retried, the packet may not change between attempts, and the first valid
-assessment is the one that counts regardless of the status it carries. A second invalid
-reply, or a missing assessment, is an operational failure.
+Its shape is enforced the same way as the critique's, so a reply outside it is corrected
+in the same session. A reply whose citations do not quote the pinned packet is never
+retried: that is a judgement the assessor made about the evidence, and re-rolling it
+until the answer is acceptable is grade shopping. The first assessment in shape is the
+one that counts, whatever status it carries. A session that ends without one, or a
+missing assessment, is an operational failure.
 
 A completed assessment against the installed rubric is grade D with the assessor's
 status. Grade D is documentary consistency only; execution accuracy remains
@@ -174,7 +177,7 @@ of any D. The record keeps the runner fault in its `fault` field and reads `not_
 for accuracy, consistency and completeness, because execution was attempted and lost. It
 names itself a fallback. It is not attempted, and the reason is recorded, when documentary
 assessment is disabled, when the claim never qualified a candidate, or when less time
-remains before the attempt deadline than two assessor sessions plus five minutes for the
+remains before the attempt deadline than one assessor session plus five minutes for the
 report. An assessor failure leaves the fault record as the claim's outcome. Run 84e90683's
 ring-option claim is why: both attempts timed out, and the claim reported nothing.
 
@@ -198,8 +201,9 @@ and the answer form each one requires are enumerated in `tool-contracts.md` unde
 The planner extracts source-grounded claims, searches for independent primary
 references with WebSearch, and proposes known-answer cases in one of those forms.
 Python retrieves public HTTPS reference bytes itself; agent-authored quotes or
-search summaries alone cannot qualify a candidate. Reference quotes and expected
-values must occur in retrieved material. At least three distinct cases, positive
+search summaries alone cannot qualify a candidate. Reference quotes must occur in
+retrieved material, and so must every expected value except one Python calculated from
+a quoted formula, as `qualify_local_candidate` specifies. At least three distinct cases, positive
 and negative controls, numeric boundary controls, exact resource hashes, source
 URLs, versions, license notes and scope limitations are required.
 
@@ -245,7 +249,8 @@ and the exact internal verifier MCP tools, with no file or shell tools. Separate
 configuration directories outside the subject workspace, disabled hooks/memory,
 explicit system prompts, restricted mode, all-path CLAUDE.md exclusions and a
 fresh empty repository root exclude unrelated local customizations.
-Claude Code v2.1.248 or later is required. Managed enterprise configuration and
+Claude Code v2.1.268 or later is required: it is the earliest version the verifier's
+reply schemas were tested on. Managed enterprise configuration and
 the CLI itself remain part of the trusted host; the text session is not an OS sandbox.
 Before the planner starts, the runner asks the pinned model for a one-word reply in a
 fresh no-tool session. A CLI that cannot serve that model stops the run as

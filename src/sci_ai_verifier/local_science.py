@@ -36,7 +36,7 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v5",
+    "id": "evidence-strength-v6",
     "minimum_cases": MINIMUM_CASES,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
@@ -63,8 +63,9 @@ POLICY = {
             "completeness and status are recorded separately and none overwrites another",
     "ceiling": "strongest grade supported by recorded evidence facts, lowered by the independent critique",
     "grades": {
-        "A": "expected answers independently retrieved by Python, scored by an installed comparison "
-             "method, token-exact traceability, three trials; five counting cases, two generated",
+        "A": "expected answers independently retrieved by Python, token-exact in their source or calculated "
+             "by Python from a formula that is after reproducing its quoted worked examples, scored by an "
+             "installed comparison method, three trials; five counting cases, two generated",
         "B": "expected answers from a pinned retrieved or operator-imported dataset, or scored by a "
              "control-tested generated evaluator; three trials; three counting cases, one generated",
         "C": "reproducible indirect comparison; traceability, independence or trial count is weaker; "
@@ -91,8 +92,9 @@ def weaker(first, second):
 def fingerprint(candidate):
     if candidate["method"] == "python":
         return candidate["specification_ref"]
-    keys = ("name", "scope", "method", "limitations", "cases", "absolute_tolerance", "method_version")
-    return digest(canonical({key: candidate[key] for key in keys}))
+    # A calculation shapes the expected answers, so it is part of the design's identity.
+    keys = ("name", "scope", "method", "limitations", "cases", "absolute_tolerance", "method_version", "calculation")
+    return digest(canonical({key: candidate[key] for key in keys if key in candidate}))
 
 
 def environment_digest(settings, subject):
@@ -116,6 +118,16 @@ def token_exact(case):
     if expected == case["source_quote"].strip():
         return True
     return bool(re.search(r"(?<![\w.+-])" + re.escape(expected) + r"(?!\w|\.\d)", case["source_quote"]))
+
+
+def traceable(candidate, case):
+    """True when an expected answer traces to retrieved bytes exactly: as a complete token of
+    its quote, or calculated from a quoted formula whose program reproduced every quoted
+    anchor (`qualify_local_candidate` in tool-contracts.md)."""
+    if "arguments" in case:
+        anchors = (candidate.get("calculation_receipts") or {}).get("anchors") or []
+        return bool(anchors) and all(item["reproduced"] for item in anchors)
+    return token_exact(case)
 
 
 def answer_text(case):
@@ -168,7 +180,8 @@ def evidence_ceiling(candidate, references, trials, counted=None):
 
     The weaker of what the reference supports and what the counting cases allow.
     """
-    origins = [references.get(case["reference_ref"], {}).get("origin") for case in candidate["cases"]]
+    from .local_candidates import reference_refs
+    origins = [references.get(ref, {}).get("origin") for ref in reference_refs(candidate)]
     pinned = {"retrieved_public_https", "operator_local_resource"}
     # Names the *comparison*, not the subject. The subject of a local run is always a
     # fresh model session and is never deterministic; reading this as a statement about
@@ -186,7 +199,7 @@ def evidence_ceiling(candidate, references, trials, counted=None):
         reasons.append("scoring_code_authored_by_planner")
     if not comparison_deterministic:
         reasons.append("comparison_not_deterministic")
-    if not all(token_exact(case) for case in candidate["cases"]):
+    if not all(traceable(candidate, case) for case in candidate["cases"]):
         reasons.append("expected_value_not_token_exact_in_source")
     if trials < STRONG_TRIALS:
         reasons.append("model_subject_trial_count_below_three")
@@ -400,6 +413,9 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     if not constant:
         execution_reasons.append("observed_model_identity_changed")
     unanimous = sum(1 for row in per_case if row["agreement"] == 1)
+    calculated = sum("arguments" in case for case in cases)
+    sourced = ("a reference Python retrieved." if audit_record["evidence_ceiling"] == "A"
+               else "a pinned source, not produced by AI.")
     return {
         "scientific_status": status, "status_withheld_reason": withheld,
         "evidence_grade": grade,
@@ -426,9 +442,13 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
         "case_agreement": per_case, "observed_model_ids": models,
         "ai_involvement": {
             "orchestration": True,
-            "evidence_generation": "The planner selected the cases; every expected answer is quoted from "
-                                   + ("a reference Python retrieved." if audit_record["evidence_ceiling"] == "A"
-                                      else "a pinned source, not produced by AI."),
+            "evidence_generation": "The planner selected the cases; every expected answer is quoted from " + sourced
+                                   if not calculated else
+                                   "The planner selected the cases and wrote the program that calculated "
+                                   + str(calculated) + " of the " + str(len(cases)) + " counted expected answers from "
+                                   "a formula quoted from a reference Python retrieved; before any case was keyed, the "
+                                   "program reproduced that reference's quoted worked examples. Every other expected "
+                                   "answer is quoted from " + sourced,
             "verdict": False,
         },
     }

@@ -627,6 +627,36 @@ The Local profile matrix in workflow.md governs their legality.
   false `fail` verdicts. `The key is R1` fails, because the token is never searched
   for inside the line. Controls probe the token followed by an explanation, which
   must pass, and a sentence containing it, which must fail.
+
+  A `numeric` case may take a **calculated** answer instead of a quoted one, for a claim
+  whose answer is mathematically exact, such as a unit conversion or a logarithm. The
+  design then carries `calculation`: `code`, a Python program; `reference_ref` and
+  `formula_quote`, the formula the program implements, quoted exactly from a fetched
+  reference; and one to eight `anchors`, worked examples quoted from fetched references,
+  each with its `reference_ref`, `source_quote`, the `expected` value that quote prints as
+  a complete token, and the `arguments` that reproduce it. A calculated case gives
+  `arguments` and `decimals` (0 to 6), and Python supplies its `expected`, `reference_ref`
+  and `source_quote`: the program's value rounded half away from zero to `decimals`
+  places, and the formula's reference and quote. A proposal omits those three fields or
+  repeats Python's values exactly. Python runs the program in one new container of the
+  operator's pinned image, once for each distinct `arguments`, which the program receives
+  as text on standard input; it must print one bounded decimal number and exit 0. Before
+  any case is keyed, every anchor's value, rounded to the decimal places its quote prints,
+  must equal that printed value, so a wrong formula (a natural logarithm, a dropped sign,
+  a nanomolar number logged bare) is refused here. The formula must be quoted rather than
+  taken from the claim, because a key calculated from the claim cannot refute it: had a
+  skill written pIC50 = -ln(IC50), a claim-derived key for 1 nM would be 20.7, and a
+  subject following the skill would pass. The candidate records the program's digest, the
+  image and every output, so selection re-checks a saved candidate against that record
+  without running it again; a catalog import runs it again, because outputs recorded on
+  another machine are not evidence here. A slip in one case's `arguments`, such as micromolar entered as
+  nanomolar, is left to the claim-only answers under `select_local_candidate`, which miss a
+  key their own reading of the question does not reach. The comparison uses the installed
+  tolerance, so the question states the rounding, and `decimals` stays where a reader
+  working by hand gets the same digits: the claim-only sessions have no calculator, and two
+  places is the usual choice. Without a pinned image a calculation is refused. The critique
+  sees the program, the formula, each anchor with its output and each case's arguments;
+  its rubric's `calculated_answers` says what it judges.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
@@ -687,30 +717,31 @@ The Local profile matrix in workflow.md governs their legality.
   settled grade is fixed rather than offered. An unavailable critique is an
   operational limitation, never a grade.
 
-  The critique and documentary assessment are free-form model replies, so Python
-  fixes their wire shape rather than inferring it. A critique returns one JSON object
-  holding `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (one string per
-  rubric criterion, in that order, and at most eight in total), `objections` and
-  `required_revisions` (each a list of at most eight strings, empty when there are
-  none), and `case_verdicts`: exactly one object per case in the packet, each holding
-  that `case_id`, a `verdict` (one of those defined in `evidence-rubric.md`), a
-  non-empty `reason`, and a `replacement` that is empty for `counts` and otherwise
-  describes a case that would test the claim instead. A verdict may carry up to four
-  further keys, each a string of at most 4000 characters or `null`; they are kept and
-  never read. Run 0a243b7e's reviewer added an empty `verdict_note` to two complete
-  replies and the claim was lost when both were refused. A replay of a reply recorded
-  under an earlier rubric, which had no case verdicts, is judged without them. An
-  assessment returns `status`, `findings`, `citations` and `limitations`,
-  where `limitations` is a single string. Python accepts a Markdown code fence around
-  the whole reply, a lone string in place of a one-item `required_revisions` list, and
-  findings beyond the rubric's criteria, because none of those changes what the session
-  said: the criteria are a floor, so every question is still answered in order and a
-  further observation is kept rather than costing the review. Fewer findings than
-  criteria is refused, and so is anything else, including a case verdict for a case
-  the packet does not contain or a missing one. Both sessions retry an unusable shape
-  once against the identical packet, per `local-contract.md`. A second reply outside
-  that shape is `critic_response_invalid` or `assessor_response_invalid` — an
-  operational failure, never a grade and never a scientific finding.
+  The critique, the documentary assessment and each claim-only answer are model replies,
+  so Python hands each session its reply's shape as a JSON Schema (`--json-schema`)
+  instead of describing it in prose and parsing text. Claude Code adds one
+  `StructuredOutput` tool to the otherwise tool-free session, checks the reply against the
+  schema, and hands a reply that breaks it back to the session with the reason, so the
+  session corrects its own shape within its turn limit. Any other tool call is a boundary
+  violation. A session that ends without a reply in shape is `critic_response_invalid` or
+  `assessor_response_invalid`, an operational failure, never a grade and never a
+  scientific finding; for a claim-only answer it leaves the case unmeasured. A critique
+  holds `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string
+  per rubric criterion, in order), `objections` and `required_revisions` (each at most
+  eight strings, empty when there are none), and `case_verdicts`: one entry for every case
+  ID in the packet and no other, each holding a `verdict` (one of those defined in
+  `evidence-rubric.md`), a `reason`, and a `replacement` that is empty for `counts` and
+  otherwise describes a case that would test the claim instead. An assessment holds
+  `status`, `findings` (one string per documentary criterion), one to eight `citations`
+  naming packet references, and `limitations`, a single string. A claim-only answer holds
+  `answer`, in the form its question asks for, and a short `reason`. No string may be
+  blank and no object may carry a key its schema does not name. Python checks the reply
+  against the same shape again before using it, and checks what a schema cannot: that
+  every citation quotes the packet exactly, a judgement that is never retried
+  (`assessor_citation_invalid`). Before schemas, Python parsed free text and learned its
+  tolerances one lost reply at a time: a Markdown code fence and a list-shaped field
+  discarded three critiques in run a392ea65, a sixth finding cost run e035eef6 a grade A,
+  and an empty extra key in a case verdict lost a claim in run 0a243b7e.
 - `execute_local_claim`: in local_ready, run every fixed case for its audited trial count in fresh
   answer-blind subject session, save requests before invocation, and score returned
   observations. Accuracy, consistency, comparison status and scientific status are

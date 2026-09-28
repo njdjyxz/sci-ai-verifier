@@ -4,7 +4,7 @@ import base64
 
 from .common import Fault,canonical,digest,utc_now
 from .ingest import SECRET_BYTES
-from .local_candidates import fetch_bytes,qualify,save_candidate,METHOD_VERSION
+from .local_candidates import fetch_bytes,qualify,reference_refs,save_candidate,METHOD_VERSION
 from .storage import atomic_write,no_links
 from .mcp import parse_json
 
@@ -27,8 +27,7 @@ def export_bundle(store,candidate_refs,*,redistribution):
         if candidate.get("status")!="qualified_local":
             raise Fault("candidate_not_qualified","Only mechanically qualified candidates can be proposed.")
         objects[key]=base64.b64encode(store.get(key)).decode()
-        for case in candidate["cases"]:
-            ref=case["reference_ref"]
+        for ref in reference_refs(candidate):
             resource=store.get_json(ref)
             # Imports never export an operator filesystem path or observed subject evidence.
             if "path" in resource or not resource.get("license"):
@@ -72,8 +71,7 @@ def import_bundle(store,raw,settings,*,log=None):
         for key in bundle["candidate_refs"]:
             candidate=parse_json(objects[key])
             refs={}
-            for case in candidate["cases"]:
-                ref=case["reference_ref"]
+            for ref in reference_refs(candidate):
                 resource=parse_json(objects[ref])
                 used.update((ref,resource["raw_ref"]))
                 if resource["raw_ref"] not in objects or "path" in resource:
@@ -88,7 +86,12 @@ def import_bundle(store,raw,settings,*,log=None):
                         raise ValueError()
                 refs[ref]=resource
             if candidate["method_version"]==METHOD_VERSION:
-                check=qualify({field:candidate[field] for field in ("name","scope","method","limitations","cases")},refs)
+                # A calculation is run again here: outputs recorded on another machine are not evidence.
+                from .local_evaluators import calculate as run_calculation
+                fields=("name","scope","method","limitations","cases","calculation")
+                check=qualify({field:candidate[field] for field in fields if field in candidate},refs,
+                              (lambda code,inputs:run_calculation(code,inputs,settings,log=log))
+                              if settings.get("sandbox_image") else None)
             else:
                 from .local_evaluators import qualify as qualify_python,specification,METHOD_VERSION as PYTHON_VERSION
                 if candidate["method_version"]!=PYTHON_VERSION:

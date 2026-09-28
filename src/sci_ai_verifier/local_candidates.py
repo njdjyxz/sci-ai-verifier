@@ -6,7 +6,7 @@ import re
 import socket
 import ssl
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
@@ -293,6 +293,111 @@ def compare(method, actual, expected):
         return "invalid"
 
 
+def whole_number_in(value, quote):
+    """True when `value` appears in `quote` as a complete number, not inside a longer one:
+    `1.0` is not read out of `21.09`."""
+    return bool(re.search(r"(?<![\w.+-])" + re.escape(value) + r"(?!\w|\.\d)", quote))
+
+
+def at_precision(value, printed):
+    """`value` rounded half away from zero to the last place `printed` shows: 7.522879 at
+    `7.5` is 7.5. `None` when the rounded value cannot be represented."""
+    try:
+        return number(value).quantize(Decimal(1).scaleb(number(printed).as_tuple().exponent), rounding=ROUND_HALF_UP)
+    except (ValueError, InvalidOperation):
+        return None
+
+
+def reference_refs(candidate):
+    """Every reference a candidate's answers rest on: its cases' and its calculation's anchors'."""
+    refs = [case["reference_ref"] for case in candidate["cases"] if case.get("reference_ref")]
+    calculation = candidate.get("calculation")
+    if calculation:
+        refs += [calculation["reference_ref"], *(anchor["reference_ref"] for anchor in calculation["anchors"])]
+    return list(dict.fromkeys(refs))
+
+
+def calculated(proposal, references, calculate, problems):
+    """The expected answer and quote Python supplies for each calculated case, and the receipts.
+
+    `qualify_local_candidate` in tool-contracts.md owns the rule. `calculate(code, inputs)`
+    runs the planner's program once per distinct input and returns what each printed.
+    Problems are appended to `problems`; a case whose answer was not calculated is left out.
+    """
+    calculation = proposal.get("calculation")
+    wanted = [case for case in proposal["cases"] if "arguments" in case or "decimals" in case]
+    if not calculation or not wanted:
+        if calculation or wanted:
+            problems.append("A calculation keys at least one case, and a case with arguments needs the design's calculation.")
+        return {}, None
+    formula = references.get(calculation["reference_ref"])
+    if not formula or calculation["formula_quote"] not in formula["text"]:
+        problems.append("The calculation's formula must be quoted exactly from a fetched reference.")
+        return {}, None
+    if any("arguments" not in case or "decimals" not in case or case.get("options")
+           or case_method(proposal, case) != "numeric" for case in wanted):
+        problems.append("Only a numeric case may be calculated, and it gives both arguments and decimals.")
+        return {}, None
+    for anchor in calculation["anchors"]:
+        reference = references.get(anchor["reference_ref"])
+        try:
+            number(anchor["expected"])
+        except ValueError:
+            reference = None
+        if (not reference or anchor["source_quote"] not in reference["text"]
+                or not whole_number_in(anchor["expected"].strip(), anchor["source_quote"])):
+            problems.append("Each anchor is a worked example: its expected value must be a complete number in an "
+                            "exact quote from a fetched reference.")
+            return {}, None
+    if calculate is None:
+        problems.append("Calculated answers need the operator's pinned sandbox image.")
+        return {}, None
+    inputs = list(dict.fromkeys([anchor["arguments"] for anchor in calculation["anchors"]]
+                                + [case["arguments"] for case in wanted]))
+    receipts = calculate(calculation["code"], inputs)
+    outputs = receipts["outputs"]
+    anchors = []
+    for anchor in calculation["anchors"]:
+        printed = outputs.get(anchor["arguments"])
+        reproduced = printed is not None and at_precision(printed, anchor["expected"]) == number(anchor["expected"])
+        anchors.append({**anchor, "output": printed, "reproduced": reproduced})
+        if not reproduced:
+            problems.append("The calculation gives " + (repr(printed) if printed is not None else "no number")
+                            + " for the anchor with arguments " + repr(anchor["arguments"]) + ", where its reference "
+                            "prints " + repr(anchor["expected"]) + ".")
+    receipts = {**receipts, "anchors": anchors}
+    if not all(item["reproduced"] for item in anchors):
+        return {}, receipts
+    keyed = {}
+    for case in wanted:
+        printed = outputs.get(case["arguments"])
+        value = at_precision(printed, "1e-" + str(case["decimals"])) if printed is not None else None
+        if value is None:
+            problems.append("The calculation printed no usable number for case " + case["case_id"] + ".")
+            continue
+        supplied = {"expected": str(value), "reference_ref": calculation["reference_ref"],
+                    "source_quote": calculation["formula_quote"]}
+        if any(key in case and case[key] != supplied[key] for key in supplied):
+            problems.append("Python supplies a calculated case's expected, reference_ref and source_quote; omit them "
+                            "from case " + case["case_id"] + ".")
+            continue
+        keyed[case["case_id"]] = supplied
+    return keyed, receipts
+
+
+def recorded(candidate):
+    """A calculator that answers from a saved candidate's receipts, so selection re-checks it
+    without running the program again."""
+    receipts = candidate.get("calculation_receipts") or {}
+
+    def replay(code, inputs):
+        if (digest(code.encode("utf-8")) != receipts.get("code_sha256")
+                or any(value not in receipts.get("outputs", {}) for value in inputs)):
+            raise Fault("candidate_integrity", "A calculated candidate's program or outputs changed.", fatal=True)
+        return {key: receipts[key] for key in ("code_sha256", "image_id", "outputs")}
+    return replay
+
+
 def forced_surface_form(text):
     """True when an open answer has exactly one way to write it.
 
@@ -311,7 +416,8 @@ def forced_surface_form(text):
     return bool(re.search(r"[0-9_]", text) or (re.search(r"[a-z]", text) and re.search(r"[A-Z]", text)))
 
 
-def qualify(proposal, references):
+def qualify(proposal, references, calculate=None):
+    """Check a proposed design mechanically. `calculate` runs a calculation's program; see `calculated`."""
     from .common import validate
     from .local import schemas
     from .tools import obj,string
@@ -323,7 +429,14 @@ def qualify(proposal, references):
         problems.append("Only installed exact, numeric and choice comparison methods, or a mixed design of them, are available.")
     if len({case["input"] for case in proposal["cases"]}) != len(proposal["cases"]):
         problems.append("Case inputs must be distinct.")
-    for case in proposal["cases"]:
+    keyed, receipts = calculated(proposal, references, calculate, problems)
+    cases = [{**case, **keyed.get(case["case_id"], {})} for case in proposal["cases"]]
+    for case in cases:
+        if "arguments" in case and case["case_id"] not in keyed:
+            continue  # Its answer was not calculated, and `calculated` said why.
+        if not all(case.get(key) for key in ("expected", "reference_ref", "source_quote")):
+            problems.append("A case Python does not calculate needs its expected answer, reference_ref and source_quote.")
+            continue
         reference = references.get(case["reference_ref"])
         expected = case["expected"]
         trimmed = expected.strip()
@@ -382,8 +495,10 @@ def qualify(proposal, references):
                                 "keep it out of the question.")
                 continue
             answer = options[index - 1]
-        if (not reference or case["source_quote"] not in reference["text"]
-                or answer not in case["source_quote"]):
+        # A calculated answer's provenance is its quoted formula and reproduced anchors.
+        quoted = "arguments" not in case
+        if quoted and (not reference or case["source_quote"] not in reference["text"]
+                       or answer not in case["source_quote"]):
             problems.append("Each expected value needs an exact quote from a fetched reference.")
             continue
         if method == "numeric":
@@ -392,7 +507,7 @@ def qualify(proposal, references):
             except ValueError:
                 problems.append("Numeric expected answers must be bounded plain decimal numbers.")
                 continue
-            if not re.search(r"(?<![\w.+-])" + re.escape(trimmed) + r"(?!\w|\.\d)", case["source_quote"]):
+            if quoted and not whole_number_in(trimmed, case["source_quote"]):
                 problems.append("Expected numeric values must be complete tokens in the reference quote.")
                 continue
             probes = [(expected, "pass"), (str(center + TOLERANCE), "pass"),
@@ -433,7 +548,8 @@ def qualify(proposal, references):
         problems.append("Vary which option position holds the correct answer across the design's choice "
                         "cases: with every answer at position " + str(positions[0]) + ", a subject that "
                         "always picks that position passes every case.")
-    return {"schema_version": 1, "method_version": METHOD_VERSION, **proposal,
+    return {"schema_version": 1, "method_version": METHOD_VERSION, **proposal, "cases": cases,
+            **({"calculation_receipts": receipts} if receipts else {}),
             "status": "rejected" if problems else "qualified_local",
             "scientific_approval": "provisional", "qualification_problems": sorted(set(problems)),
             "controls": controls, "qualification_limitations": QUALIFICATION_LIMITS,

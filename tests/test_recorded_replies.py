@@ -17,70 +17,29 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import NO_SUBSTITUTION, ClaudeCode, parse_events, refusal_category
-from sci_ai_verifier.common import Fault, canonical, digest
-from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, CRITIQUE_RUBRIC, RUBRIC, critique,
-    parse_reply, validate_assessment, validate_critique)
-from sci_ai_verifier.local_candidates import SECRET_BYTES
+from sci_ai_verifier.common import Fault, canonical, digest, validate
+from sci_ai_verifier.documentary import (CLAIM_PROBE_SCHEMA, CRITIC_TIMEOUT_SECONDS, CRITIQUE_REF, CRITIQUE_RUBRIC,
+    REPLY_TOOL, critique, critique_schema, validate_assessment, validate_critique)
+from sci_ai_verifier.local_candidates import SECRET_BYTES, compare
 from sci_ai_verifier.local_config import load_configuration
 
 RECORDED = Path(__file__).resolve().parent / "recorded"
-# Grade and revision count are properties of the recording, not of the parser. They are
-# asserted so an edited recording fails loudly instead of quietly weakening the test.
-CRITIC_RECORDINGS = {"critic-fenced-revision-list.jsonl": ("B", 5, True),
-                     "critic-fenced-revision-list-2.jsonl": ("B", 4, True),
-                     "critic-bare-empty-revisions.jsonl": ("A", 0, False),
-                     # Answered all five criteria, then added a sixth observation that fitted
-                     # none of them. Refusing this cost run e035eef6 a grade A and 27 trials.
-                     "critic-extra-finding.jsonl": ("A", 0, False)}
-# Run 0a243b7e: two complete v5 replies, both supporting B, each with one extra empty key
-# inside a case verdict. Refusing both lost claim 1. Mapped to the key each one added.
-CASE_VERDICT_RECORDINGS = {"critic-case-verdict-extra-key.jsonl": "verdict_note",
-                           "critic-case-verdict-extra-key-2.jsonl": "case_id_note"}
-# Streams that are not critic replies, exercised by their own tests.
-OTHER_RECORDINGS = ["assessor-bare.jsonl", "subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
+# The verifier's own sessions answering through their reply schemas, captured live on
+# 2026-09-28 through the code that reads them. In two of the three the first reply broke
+# the schema and the session corrected it; each maps to the key its refused reply added.
+STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "$PARAMETER_NAME", "assessor-structured.jsonl": None,
+                         "claim-probe-structured.jsonl": "a"}
+# Streams that are not the verifier's own replies, exercised by their own tests.
+OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
                     "subject-refusal-fallback.jsonl", "subject-refusal-recovered.jsonl"]
-# Every critic recording answered rubric v2, which had five criteria; v3 appended a sixth,
-# and v4 added the per-case verdict keys. A reply is judged against the rubric it was
-# answering -- judging it against a later one would fail real replies for a question nobody
-# had asked them. Criteria are append-only and v4 only added keys, so each earlier rubric is
-# reconstructed from the live one, and the digests below were taken before the later
-# versions existed: they prove each reconstruction is the exact rubric those sessions saw.
-# v6 as runs 31b67427 and 3b3f3c94 recorded it. v7 added two keys and rewrote the `naming`
-# and `leaked` definitions, so removing the keys and restoring those definitions gives v6,
-# and every earlier rubric is rebuilt from v6 rather than from the live one.
-V7_KEYS = ("leak_shapes", "claim_only_answer")
-V6 = {**{key: value for key, value in CRITIQUE_RUBRIC.items() if key not in V7_KEYS},
-      "id": "local-evidence-critique-v6",
-      "case_verdicts": {**CRITIQUE_RUBRIC["case_verdicts"],
-                        "naming": "Only recites what something is called, for a claim about what it does",
-                        "leaked": "The answer can be read from the question itself"}}
-V6_REF = "9dc8fd5d3510504e4bf49ee3b06600eb2e2cf0315df8c474f695a4dbca2864f9"
-# v5 as runs b0955d2f, 3dc02567 and 84e90683 recorded it. v6 added one key and widened the
-# `beyond_scope` definition, so removing the key and restoring that definition gives v5.
-V6_KEYS = ("verdict_consistency",)
-V5 = {**{key: value for key, value in V6.items() if key not in V6_KEYS},
-      "id": "local-evidence-critique-v5",
-      "case_verdicts": {**V6["case_verdicts"],
-                        "beyond_scope": "Asks a consequence or fact the claim never states"}}
-V5_REF = "bf9442695413d32d8e95cb7f9786f638071f9d037eeff9db4a3a682fe718ef56"
-V4_KEYS = ("case_verdicts", "case_requirements", "case_replacement")
-BEFORE_V4 = {key: value for key, value in V5.items() if key not in V4_KEYS}
-ANSWERED = {**BEFORE_V4, "id": "local-evidence-critique-v2", "criteria": CRITIQUE_RUBRIC["criteria"][:5]}
-ANSWERED_REF = "91f33b72c208817675e458838093f10c73d156067e64d10e299509fe8feacd36"
-# v3 as run d87a6d5c recorded it on all five of its critiques.
-V3 = {**BEFORE_V4, "id": "local-evidence-critique-v3"}
-V3_REF = "07140328e5a3cbdd4eec803717fa0c71e0b05c0c5394d4f73b72b1f581c8663e"
-# v4 as run 28d19f8a recorded it on all five of its critiques. v5 changed only the wording
-# of the `duplicate` verdict, so restoring that one definition must give v4's exact digest.
-V4 = {**V5, "id": "local-evidence-critique-v4",
-      "case_verdicts": {**V5["case_verdicts"],
-                        "duplicate": "Tests the same fact as an earlier case in this design, so it adds no "
-                                     "independent evidence; the reason names that earlier case, which keeps its own verdict"}}
-V4_REF = "be80e6974bde1cb6c02de6145b1cffe87ef0505a16b45a4f0fb736eee8956a14"
 
 
 def recorded(name):
     return (RECORDED / name).read_bytes()
+
+
+def packet(name):
+    return json.loads(recorded(name))
 
 
 def probe_stream(command, model="claude-opus-5", text="OK"):
@@ -101,107 +60,113 @@ def session_of(raw):
     raise AssertionError("recording has no result event")
 
 
+def reply_attempts(raw):
+    """Each reply the session offered through the reply tool, with the verdict Claude Code returned."""
+    calls, results = [], {}
+    for line in raw.splitlines():
+        content = (json.loads(line).get("message") or {}).get("content")
+        for block in content if isinstance(content, list) else []:
+            if block.get("type") == "tool_use":
+                calls.append(block)
+            elif block.get("type") == "tool_result":
+                results[block["tool_use_id"]] = block
+    return [(call["name"], call["input"], results[call["id"]]) for call in calls]
+
+
 class RecordedReplyTests(unittest.TestCase):
     def test_recordings_are_present_and_carry_no_credential_bytes(self):
         names = sorted(path.name for path in RECORDED.glob("*.jsonl"))
-        self.assertEqual(names, sorted([*CRITIC_RECORDINGS, *CASE_VERDICT_RECORDINGS, *OTHER_RECORDINGS]))
+        self.assertEqual(names, sorted([*STRUCTURED_RECORDINGS, *OTHER_RECORDINGS]))
         for path in RECORDED.iterdir():
             if path.suffix in {".jsonl", ".json"}:
                 with self.subTest(recording=path.name):
                     self.assertIsNone(SECRET_BYTES.search(path.read_bytes()))
                     self.assertNotIn(b"\r\n", path.read_bytes())
 
-    def test_recorded_critiques_survive_the_whole_parse_and_validate_path(self):
-        """parse_events -> parse_reply -> validate_critique, on bytes a real session sent."""
-        for name, (grade, revisions, fenced) in CRITIC_RECORDINGS.items():
+    def test_each_reply_arrives_through_the_one_reply_tool(self):
+        for name in STRUCTURED_RECORDINGS:
             with self.subTest(recording=name):
                 raw = recorded(name)
                 response = parse_events(raw, expected_session=session_of(raw))
-                self.assertFalse(response["tool_calls"], "a no-tool session must call no tools")
-                self.assertEqual(response["text"].strip().startswith("```"), fenced)
-                value = validate_critique(parse_reply(response["text"]), ANSWERED)
-                self.assertEqual(value["supported_grade"], grade)
-                self.assertGreaterEqual(len(value["findings"]), len(ANSWERED["criteria"]))
-                self.assertEqual(len(value["required_revisions"]), revisions)
-                self.assertIsInstance(value["required_revisions"], list)
+                self.assertTrue(response["tool_calls"])
+                self.assertEqual({call["name"] for call in response["tool_calls"]}, {REPLY_TOOL})
+                self.assertIsInstance(response["structured_output"], dict)
 
-    def test_recorded_case_verdicts_with_an_extra_key_are_complete_answers(self):
-        """Both replies answered every question rubric v5 asks and added one empty key
-        inside a verdict. They are judged against the packet they were given, whose rubric
-        was v5, and the extra key is kept, not read."""
-        packet = json.loads((RECORDED / "critic-case-verdict-packet.json").read_bytes())
-        self.assertEqual(digest(canonical(packet["rubric"])), V5_REF)
-        case_ids = [case["case_id"] for case in packet["evidence"]["cases"]]
-        for name, extra in CASE_VERDICT_RECORDINGS.items():
+    def test_a_reply_the_schema_refused_was_corrected_in_the_same_session(self):
+        """The slips a free-text reader met one lost claim at a time. Run 0a243b7e lost a claim to an
+        empty extra key; here the critique wrapped its reply in a stray `$PARAMETER_NAME` and a
+        claim-only answer added a stray `a`. Claude Code refused each and the session resent it."""
+        for name, stray in STRUCTURED_RECORDINGS.items():
             with self.subTest(recording=name):
-                raw = recorded(name)
-                response = parse_events(raw, expected_session=session_of(raw))
-                self.assertFalse(response["tool_calls"])
-                value = validate_critique(parse_reply(response["text"]), V5, case_ids)
-                self.assertEqual(value["supported_grade"], "B")
-                self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
-                carrying = [item for item in value["case_verdicts"] if extra in item]
-                self.assertTrue(carrying)
-                self.assertTrue(all(item[extra] == "" for item in carrying))
+                attempts = reply_attempts(recorded(name))
+                if stray is None:
+                    self.assertEqual(len(attempts), 1)
+                    self.assertFalse(attempts[0][2].get("is_error"))
+                    continue
+                (_, refused, verdict), (_, accepted, final) = attempts
+                self.assertIn(stray, refused)
+                self.assertTrue(verdict["is_error"])
+                self.assertIn("must NOT have additional properties", json.dumps(verdict["content"]))
+                self.assertNotIn(stray, accepted)
+                self.assertFalse(final.get("is_error"))
 
-    def test_recorded_assessment_cites_its_own_real_packet(self):
-        raw = recorded("assessor-bare.jsonl")
-        packet = json.loads((RECORDED / "assessor-packet.json").read_bytes())
-        response = parse_events(raw, expected_session=session_of(raw))
-        self.assertFalse(response["tool_calls"])
-        value = validate_assessment(parse_reply(response["text"]), packet)
-        self.assertEqual(value["status"], "inconclusive")
-        self.assertEqual(len(value["findings"]), len(RUBRIC["criteria"]))
-        # Every quote really is a substring of the packet it was given, not a paraphrase.
-        for citation in value["citations"]:
-            self.assertTrue(any(citation["reference_ref"] == item["reference_ref"]
-                                and citation["quote"] in item["quote"] for item in packet["evidence"]))
+    def test_the_recorded_critique_is_a_complete_answer_to_its_real_packet(self):
+        """Run d416f79d's pIC50 packet, answered under the live rubric: B, all three cases counted,
+        as that run's critique had judged them."""
+        raw, sent = recorded("critic-structured.jsonl"), packet("critic-structured-packet.json")
+        self.assertEqual(digest(canonical(sent["rubric"])), CRITIQUE_REF)
+        case_ids = [case["case_id"] for case in sent["evidence"]["cases"]]
+        value = validate_critique(parse_events(raw, expected_session=session_of(raw))["structured_output"], case_ids)
+        self.assertEqual(value["supported_grade"], "B")
+        self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
+        self.assertEqual({item["verdict"] for item in value["case_verdicts"]}, {"counts"})
+        self.assertEqual(len(value["findings"]), len(CRITIQUE_RUBRIC["criteria"]))
 
     def test_critique_end_to_end_over_a_replayed_recording(self):
         """The whole public entry point, with only the child process replaced by a recording."""
-        raw = recorded("critic-fenced-revision-list.jsonl")
+        raw, sent = recorded("critic-structured.jsonl"), packet("critic-structured-packet.json")
+        seen = {}
 
         def replay(command, **kwargs):
             # The critique's own deadline reaches the process, not the assessor's two minutes.
             self.assertEqual(kwargs["timeout"], CRITIC_TIMEOUT_SECONDS)
-            # Rewrite the recorded session id to the one this call generated, so the
-            # identity check in parse_events is exercised rather than bypassed.
-            recorded_session = session_of(raw)
-            return 0, raw.replace(recorded_session.encode(), command[command.index("--session-id") + 1].encode()), b""
+            seen["command"] = command
+            # Rewrite the recorded session id to the one this call generated, so the identity
+            # check in parse_events is exercised rather than bypassed.
+            return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
 
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
-            value = critique(ClaudeCode(auth="subscription", process=replay), {"claim": "fixture packet"},
-                             rubric=ANSWERED)
+            value = critique(ClaudeCode(auth="subscription", process=replay), sent)
         self.assertEqual(value["supported_grade"], "B")
-        # Recorded under the rubric it answered, so the audit trail names the right one.
-        self.assertEqual(value["rubric_ref"], ANSWERED_REF)
+        self.assertEqual(value["rubric_ref"], CRITIQUE_REF)
         self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
         self.assertTrue(value["ai_judgment"])
+        command = seen["command"]
+        case_ids = [case["case_id"] for case in sent["evidence"]["cases"]]
+        self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), critique_schema(case_ids))
 
-    def test_every_rubric_criterion_is_answered_and_an_extra_note_is_kept(self):
-        """The criteria are a floor. A sixth finding is one more answer, not a broken reply."""
-        raw = recorded("critic-extra-finding.jsonl")
-        value = validate_critique(parse_reply(parse_events(raw, expected_session=session_of(raw))["text"]),
-                                  ANSWERED)
-        self.assertEqual(len(value["findings"]), len(ANSWERED["criteria"]) + 1)
-        self.assertEqual(value["supported_grade"], "A")
-        # The extra is retained verbatim, not folded into objections or dropped.
-        self.assertIn("test facts the claim does not print", value["findings"][-1])
+    def test_the_recorded_assessment_cites_its_own_real_packet(self):
+        raw, sent = recorded("assessor-structured.jsonl"), packet("assessor-packet.json")
+        value = validate_assessment(parse_events(raw, expected_session=session_of(raw))["structured_output"], sent)
+        self.assertEqual(value["status"], "inconclusive")
+        # Every quote really is a substring of the packet it was given, not a paraphrase.
+        for citation in value["citations"]:
+            self.assertTrue(any(citation["reference_ref"] == item["reference_ref"]
+                                and citation["quote"] in item["quote"] for item in sent["evidence"]))
 
-    def test_the_rubric_the_recordings_answered_is_reconstructed_exactly(self):
-        """If this fails, a criterion was inserted or reordered rather than appended."""
-        self.assertEqual(digest(canonical(ANSWERED)), ANSWERED_REF)
-        self.assertEqual(digest(canonical(V3)), V3_REF)
-        self.assertEqual(digest(canonical(V4)), V4_REF)
-        self.assertEqual(digest(canonical(V5)), V5_REF)
-        self.assertEqual(digest(canonical(V6)), V6_REF)
+    def test_the_recorded_claim_only_answer_reaches_its_key(self):
+        raw = recorded("claim-probe-structured.jsonl")
+        reply = parse_events(raw, expected_session=session_of(raw))["structured_output"]
+        validate(reply, CLAIM_PROBE_SCHEMA)
+        self.assertEqual(compare("numeric", reply["answer"], "9"), "pass")
+        self.assertIn("1 nM", packet("claim-probe-packet.json")["question"])
 
-    def test_the_live_rubric_gives_the_critique_what_runs_31b67427_and_3b3f3c94_lacked(self):
-        """v7 is the first rubric a critique can use to reject a style tell among options,
-        a narrower key a subject applying the claim could meet with "none of these", and an
-        effect-to-setting case mistaken for naming. Each rule is the mirror of an
-        evidence-rubric.md passage, which owns it."""
-        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v7")
+    def test_the_live_rubric_gives_the_critique_what_earlier_reviewers_lacked(self):
+        """v7 is the first rubric a critique can use to reject a style tell among options, a
+        narrower key a subject applying the claim could meet with "none of these", and an
+        effect-to-setting case mistaken for naming; v8 says how to judge a calculated answer.
+        Each rule is the mirror of a contract passage, which owns it."""
+        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v8")
         shapes = CRITIQUE_RUBRIC["leak_shapes"]
         self.assertEqual(len(shapes), 5)
         self.assertIn("leading word or article", shapes[-1])
@@ -210,55 +175,16 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertIn("none of these", CRITIQUE_RUBRIC["claim_only_answer"])
         self.assertIn("sibling setting", CRITIQUE_RUBRIC["claim_only_answer"])
         self.assertIn("is not naming", CRITIQUE_RUBRIC["case_verdicts"]["naming"])
-        # Every case verdict is still one of the five the validator accepts.
+        self.assertIn("quoted formula", CRITIQUE_RUBRIC["calculated_answers"])
+        # Every case verdict is still one of the five the schema allows.
         self.assertEqual(set(CRITIQUE_RUBRIC["case_verdicts"]),
                          {"counts", "naming", "beyond_scope", "leaked", "duplicate"})
-
-    def test_the_live_rubric_refuses_real_replies_that_never_judged_case_scope(self):
-        """The scope criterion is enforced, not advisory. These three real critiques answered
-        every question v2 asked and nothing about whether their cases stayed inside the claim;
-        under v3 that is an unanswered criterion, so each is an operational failure, not a
-        grade. Their rejection is the point of this test, not a regression."""
-        for name in ("critic-fenced-revision-list.jsonl", "critic-fenced-revision-list-2.jsonl",
-                     "critic-bare-empty-revisions.jsonl"):
-            with self.subTest(recording=name, rubric="v3"):
-                raw = recorded(name)
-                text = parse_events(raw, expected_session=session_of(raw))["text"]
-                with self.assertRaises(Fault) as caught:
-                    validate_critique(parse_reply(text), V3)
-                self.assertEqual(caught.exception.code, "critic_response_invalid")
-        for name in ("critic-fenced-revision-list.jsonl", "critic-fenced-revision-list-2.jsonl",
-                     "critic-bare-empty-revisions.jsonl"):
-            with self.subTest(recording=name):
-                raw = recorded(name)
-                text = parse_events(raw, expected_session=session_of(raw))["text"]
-                with self.assertRaises(Fault) as caught:
-                    validate_critique(parse_reply(text))
-                self.assertEqual(caught.exception.code, "critic_response_invalid")
-
-    def test_the_one_critique_that_raised_scope_unprompted_answers_the_new_criterion(self):
-        """Run e035eef6's reviewer answered v2's five criteria, then added an observation no
-        criterion covered: that the cases "test facts the claim does not print". That is the
-        v3 scope criterion, found by a real reviewer before it existed. Findings map by
-        position, so under v3 its sixth finding is the answer to the sixth criterion."""
-        raw = recorded("critic-extra-finding.jsonl")
-        value = validate_critique(parse_reply(parse_events(raw, expected_session=session_of(raw))["text"]), V3)
-        self.assertEqual(len(value["findings"]), len(CRITIQUE_RUBRIC["criteria"]))
-        self.assertIn("test facts the claim does not print", value["findings"][len(CRITIQUE_RUBRIC["criteria"]) - 1])
-
-    def test_fewer_findings_than_criteria_is_still_refused(self):
-        """Tolerating an extra answer must not tolerate an unanswered criterion."""
-        short = {"supported_grade": "A", "objections": [], "required_revisions": [], "case_verdicts": [],
-                 "findings": ["f"] * (len(CRITIQUE_RUBRIC["criteria"]) - 1)}
-        with self.assertRaises(Fault) as caught:
-            validate_critique(short)
-        self.assertEqual(caught.exception.code, "critic_response_invalid")
 
     def test_a_recorded_safety_refusal_is_named_and_not_a_crash(self):
         """A provider refusal is its own operational outcome, never a scientific result."""
         self.assertEqual(refusal_category(recorded("subject-safety-refusal.jsonl")), "bio")
         # The same detector must not see a refusal in an ordinary completed session.
-        for name in ("critic-bare-empty-revisions.jsonl", "assessor-bare.jsonl"):
+        for name in STRUCTURED_RECORDINGS:
             with self.subTest(recording=name):
                 self.assertIsNone(refusal_category(recorded(name)))
 
@@ -364,7 +290,7 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_a_recording_from_the_wrong_session_is_an_operational_failure(self):
         """The recording proves the happy path; identity checking must still reject a mismatch."""
-        raw = recorded("critic-bare-empty-revisions.jsonl")
+        raw = recorded("critic-structured.jsonl")
         with self.assertRaises(Fault) as caught:
             parse_events(raw, expected_session="00000000-0000-0000-0000-000000000000")
         self.assertEqual(caught.exception.code, "claude_identity_error")
@@ -429,91 +355,73 @@ class RecordedReplyTests(unittest.TestCase):
             self.assertIn("Reason: ", (run_directory / "partial-report.md").read_text(encoding="utf-8"))
 
 
-class ReplyShapeTests(unittest.TestCase):
-    """The two shapes the recordings proved real, plus what must still be refused."""
+class SchemaShapeTests(unittest.TestCase):
+    """Python checks a structured reply against the schema Claude Code enforced, and refuses
+    every shape that schema refuses, including each one the free-text reader used to accept."""
 
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(CRITIQUE_RUBRIC["criteria"]),
                 "objections": [], "required_revisions": [],
-                "case_verdicts": [{"case_id": "c1", "verdict": "counts", "reason": "in scope", "replacement": ""}],
+                "case_verdicts": {"c1": self.verdict(), "c2": self.verdict("leaked", "Ask it without naming the key.")},
                 **changes}
 
-    def test_fence_around_a_whole_reply_is_the_same_answer(self):
-        for text in ('{"a": 1}', '```json\n{"a": 1}\n```', '```\n{"a": 1}\n```',
-                     '  ```json\n{"a": 1}\n```  '):
-            with self.subTest(text=text):
-                self.assertEqual(parse_reply(text), {"a": 1})
+    def verdict(self, verdict="counts", replacement=""):
+        return {"verdict": verdict, "reason": "because", "replacement": replacement}
 
-    def test_prose_outside_the_json_is_still_refused(self):
-        for text in ("Here is my verdict: {\"a\": 1}", '```json\n{"a": 1}\n``` and my note',
-                     "```json\n{\"a\": 1}", "not json at all", ""):
-            with self.subTest(text=text), self.assertRaises(ValueError):
-                parse_reply(text)
+    def refused(self, value, case_ids=("c1", "c2")):
+        with self.assertRaises(Fault) as caught:
+            validate_critique(value, list(case_ids))
+        self.assertEqual(caught.exception.code, "critic_response_invalid")
 
-    def test_required_revisions_accepts_a_list_and_normalises_a_lone_string(self):
-        self.assertEqual(validate_critique(self.base(required_revisions=["one", "two"]))["required_revisions"],
-                         ["one", "two"])
-        # A critique that wrote one revision as a bare string said the same thing.
-        self.assertEqual(validate_critique(self.base(required_revisions="one"))["required_revisions"], ["one"])
-        self.assertEqual(validate_critique(self.base(required_revisions=""))["required_revisions"], [])
-        self.assertEqual(validate_critique(self.base(required_revisions="   "))["required_revisions"], [])
+    def test_verdicts_come_back_keyed_and_leave_in_packet_order(self):
+        value = validate_critique(self.base(), ["c2", "c1"])
+        self.assertEqual([(item["case_id"], item["verdict"]) for item in value["case_verdicts"]],
+                         [("c2", "leaked"), ("c1", "counts")])
+        self.assertEqual(validate_critique(self.base(required_revisions=["one", "two"]), ["c1", "c2"])
+                         ["required_revisions"], ["one", "two"])
+
+    def test_none_becomes_an_absent_grade_not_the_string_none(self):
+        self.assertIsNone(validate_critique(self.base(supported_grade="none"), ["c1", "c2"])["supported_grade"])
+
+    def test_the_shapes_a_free_text_reader_once_tolerated_are_refused(self):
+        """A lone string for a one-item list, a sixth finding, a `null` replacement and an extra key
+        in a verdict each cost a live reply before the schema; now the session corrects them."""
+        verdicts = self.base()["case_verdicts"]
+        for label, broken in (
+                ("lone string", self.base(required_revisions="one")),
+                ("extra finding", self.base(findings=["f"] * (len(CRITIQUE_RUBRIC["criteria"]) + 1))),
+                ("null replacement", self.base(case_verdicts={**verdicts, "c1": {**self.verdict(), "replacement": None}})),
+                ("extra key in a verdict", self.base(case_verdicts={**verdicts, "c1": {**self.verdict(), "verdict_note": ""}}))):
+            with self.subTest(label):
+                self.refused(broken)
 
     def test_shapes_that_are_not_a_rubric_answer_are_refused(self):
         for broken in (self.base(supported_grade="A+"), self.base(supported_grade=None),
                        self.base(findings=["only one"]), self.base(findings="not a list"),
-                       self.base(objections="not a list"), self.base(objections=[""]),
+                       self.base(findings=["f"] * (len(CRITIQUE_RUBRIC["criteria"]) - 1)),
+                       self.base(objections="not a list"), self.base(objections=[""]), self.base(objections=["  "]),
                        self.base(required_revisions=[""]), self.base(required_revisions=[1]),
                        self.base(required_revisions={"a": "b"}), self.base(required_revisions=["x"] * 9),
                        self.base(objections=["x"] * 9), self.base(extra="field"),
-                       {k: v for k, v in self.base().items() if k != "required_revisions"}):
-            with self.subTest(broken=canonical(broken)[:90]), self.assertRaises(Fault) as caught:
-                validate_critique(broken)
-            self.assertEqual(caught.exception.code, "critic_response_invalid")
-
-    def test_none_becomes_an_absent_grade_not_the_string_none(self):
-        self.assertIsNone(validate_critique(self.base(supported_grade="none"))["supported_grade"])
-
-    def verdict(self, case_id, verdict="counts", replacement=""):
-        return {"case_id": case_id, "verdict": verdict, "reason": "because", "replacement": replacement}
-
-    def test_every_packet_case_gets_one_verdict_returned_in_packet_order(self):
-        given = [self.verdict("c2", "leaked", "Ask it without naming the function."), self.verdict("c1")]
-        value = validate_critique(self.base(case_verdicts=given), case_ids=["c1", "c2"])
-        self.assertEqual([item["case_id"] for item in value["case_verdicts"]], ["c1", "c2"])
-        # `null` for a counting case's replacement is the empty description it meant.
-        value = validate_critique(self.base(case_verdicts=[{**self.verdict("c1"), "replacement": None}]),
-                                  case_ids=["c1"])
-        self.assertEqual(value["case_verdicts"][0]["replacement"], "")
+                       {key: value for key, value in self.base().items() if key != "required_revisions"},
+                       {key: value for key, value in self.base().items() if key != "case_verdicts"}):
+            with self.subTest(broken=canonical(broken)[:90]):
+                self.refused(broken)
 
     def test_case_verdicts_that_do_not_match_the_packet_are_refused(self):
-        rejected = self.verdict("c2", "beyond_scope", "Ask what the claim states.")
-        for label, given in (("missing case", [self.verdict("c1")]),
-                             ("unknown case", [self.verdict("c1"), self.verdict("c9")]),
-                             ("duplicate", [self.verdict("c1"), self.verdict("c1"), rejected]),
-                             ("unknown verdict", [self.verdict("c1"), self.verdict("c2", "fine")]),
-                             ("rejected without replacement", [self.verdict("c1"), self.verdict("c2", "naming")]),
-                             ("counted with replacement", [self.verdict("c1", replacement="x"), rejected]),
-                             ("empty reason", [{**self.verdict("c1"), "reason": " "}, rejected]),
-                             ("extra key that is not a string", [{**self.verdict("c1"), "note": {"a": 1}}, rejected]),
-                             ("too many extra keys", [{**self.verdict("c1"), **{"n%d" % i: "" for i in range(5)}},
-                                                      rejected]),
-                             ("missing required key", [{k: v for k, v in self.verdict("c1").items() if k != "reason"},
-                                                       rejected]),
-                             ("not a list", "all count")):
-            with self.subTest(label), self.assertRaises(Fault) as caught:
-                validate_critique(self.base(case_verdicts=given), case_ids=["c1", "c2"])
-            self.assertEqual(caught.exception.code, "critic_response_invalid")
-        with self.assertRaises(Fault):
-            validate_critique({key: value for key, value in self.base().items() if key != "case_verdicts"})
-
-    def test_a_few_extra_string_or_null_keys_in_a_verdict_are_kept_and_never_read(self):
-        given = [{**self.verdict("c1"), "verdict_note": "", "note": None, "grade": "A"},
-                 self.verdict("c2", "leaked", "Ask it without naming the key.")]
-        value = validate_critique(self.base(case_verdicts=given), case_ids=["c1", "c2"])
-        self.assertEqual(value["case_verdicts"][0]["verdict_note"], "")
-        self.assertIsNone(value["case_verdicts"][0]["note"])
-        # Only `verdict` decides whether a case counts; an extra "grade" changes nothing.
-        self.assertEqual([item["verdict"] for item in value["case_verdicts"]], ["counts", "leaked"])
+        rejected = self.verdict("beyond_scope", "Ask what the claim states.")
+        for label, given in (("missing case", {"c1": self.verdict()}),
+                             ("unknown case", {"c1": self.verdict(), "c2": rejected, "c9": self.verdict()}),
+                             ("unknown verdict", {"c1": self.verdict(), "c2": self.verdict("fine")}),
+                             ("rejected without replacement", {"c1": self.verdict(), "c2": self.verdict("naming")}),
+                             ("counted with replacement", {"c1": self.verdict(replacement="x"), "c2": rejected}),
+                             ("blank reason", {"c1": {**self.verdict(), "reason": " "}, "c2": rejected}),
+                             ("missing reason", {"c1": {"verdict": "counts", "replacement": ""}, "c2": rejected}),
+                             ("a list, as before the schema", [{"case_id": "c1", **self.verdict()},
+                                                               {"case_id": "c2", **rejected}]),
+                             ("not an object", "all count")):
+            with self.subTest(label):
+                self.refused(self.base(case_verdicts=given))
 
 
 if __name__ == "__main__":

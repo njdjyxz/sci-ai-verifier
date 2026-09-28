@@ -54,8 +54,9 @@ Check whether it is already available:
 claude.exe --version
 ```
 
-If it prints **2.1.248 or newer**, skip installation. Our verifier needs that
-minimum version for its restricted execution mode. If the command is not found:
+If it prints **2.1.268 or newer**, skip installation. Our verifier needs that
+minimum version for its restricted execution mode and the reply schemas of its own
+review sessions. If the command is not found:
 
 ```powershell
 winget install Anthropic.ClaudeCode
@@ -270,7 +271,7 @@ available. They do not claim verification completed.
 | What you see | What to do |
 | --- | --- |
 | `claude.exe` is not recognized | Complete step 2 and reopen PowerShell. Having the desktop app alone does not guarantee a standalone executable is available. |
-| `claude_version_unsupported` | Update the standalone installation to at least 2.1.248. |
+| `claude_version_unsupported` | Update the standalone installation to at least 2.1.268. |
 | “Git is required” in Code | Install [Git for Windows](https://git-scm.com/downloads/win) and restart the app. |
 | The verifier tool is missing | Confirm step 5 printed **Added**, start a fresh local Code session, and check whether `scientific-verifier-local` is disabled. |
 | The connection name already exists | To update the earlier setup, run `claude.exe mcp remove --scope user scientific-verifier-local`, then repeat steps 5–6. This removes the connection, not saved reports. |

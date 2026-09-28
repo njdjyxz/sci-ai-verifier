@@ -3325,3 +3325,374 @@ grades.
 
 In a new session after the commit, clean `3b3f3c94` as above and run once. It is finished when
 every item under "What to check in the run" has a recorded answer.
+
+## Claude: 2026-09-25 (run d416f79d; a log that keeps up with its readers, reused answers under their case's ID)
+
+### Current stage and status
+
+Version 0.7.0, local workflow. Run `d416f79d`, on `da7605b`, ran from 22:58 to 23:50 PDT on
+2026-09-24 and completed four claims, all passing at B:
+
+| Claim | Status | Grade | Accuracy | Note |
+| --- | --- | --- | --- | --- |
+| FindMCS `threshold` | pass | B | 12 of 12 | four counting cases, two open |
+| `completeRingsOnly` / `ringMatchesRingOnly` | pass | B | 9 of 9 | round 1 lost `ring-atom-count` to the claim-only answers; one `duplicate` |
+| pIC50 | pass | B | 9 of 9 | three counting cases, one open |
+| dummy atoms / `makeDummiesQueries` | pass | B | 9 of 9 | one `leaked`; one case `unmeasured` |
+
+It used 3,096 s of the 5,400 s limit and cost about $18.90: planner $12.21, 45 subject
+sessions $4.69, six critiques $1.56 and 40 claim-only sessions $0.42. All 39 counted trials
+passed, with no `invalid`, fault, refusal, timeout, fallback, re-run or model change. It is the
+first full run of the 2026-09-24 fixes, and the claim-only answers did what they were built
+for: both answers to the ring claim's `ring-atom-count` gave `2` against RDKit's `3`, the split
+behind `84e90683`'s failure, and the case left the design before any trial ran.
+
+It exposed two defects in the verifier, fixed in this session with contracts first. Neither
+changed a counted case or a grade. **The fixes are tested and pushed to `main` in the commit
+that carries this entry, but have not met a live run.**
+
+1. **The workflow log starved its pipe readers.** Every write re-read and re-verified every
+   earlier event file, and the path check behind each read lstat'ed every parent directory. A
+   write took about 0.09 s around the 350th event and 0.94 s by the 2,100th. The readers logged
+   as they read, so with four claim-only sessions sharing the lock a reader fell more than the
+   5 s drain grace behind its exited process. Two finished claim-only sessions were read as
+   `claude_incomplete`, leaving two cases `unmeasured`. Four more kept their answers but lost
+   their last lines from `workflow.jsonl`: `StreamLog.close()`, called on another thread,
+   flushed the unread remainder as one unparseable line. The gap between a trial's wall time and
+   the CLI's own time grew from 2.0 s in claim 1 to 6.1 s in claim 4. Now the readers only read,
+   the thread waiting for the process logs its stream and returns exactly what it logged, and a
+   write reads back only event files it has not verified or whose size or modification time
+   changed. `local-contract.md` "Acceptance" owns the rule.
+2. **Reused claim-only answers kept an earlier round's case ID.** The planner renamed
+   `ring-which-argument` to `ring-prevent-argument` without changing it, and its reused answers
+   were reported under the old name. Counting matches misses by ID, so a renamed miss would still
+   have counted. The answers now carry the current ID. `select_local_candidate` in
+   `tool-contracts.md` owns the rule.
+
+Why neither touched the result: a slow reader loses only the end of a session's output, and an
+answer is recorded only once the final `result` line has arrived, so nothing partial was scored.
+All 45 subject sessions, the six critiques and the planner have complete logs. The two lost
+answers belonged to cases the critique had ruled `leaked`, and a claim-only answer can only drop
+a case from the count. The renamed case asks the same question, with the same input, key and
+method, and its answers were `reached`; only a `missed` answer affects counting.
+
+### What has been done
+
+In the session of run `d416f79d`, started at 22:55 PDT on 2026-09-24 after `da7605b`:
+
+- Preflight as the 2026-09-24 entry lists it: Docker 29.8.0 with the pinned image; this
+  session's own `serve-local` started six minutes after `da7605b`; `claude-opus-5`; a clean
+  tree; 27 % of the five-hour window used.
+- Cleaned `3b3f3c94` into the session scratchpad: 2,458 files, counts and bytes matched.
+- Ran `d416f79d`. Report `.verifier/runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8/report-card.md`,
+  workflow log `.verifier/attempts/2275addb-174d-4ac5-9db8-325bf15593bb/workflow.md`.
+- Checked it against "What to check in the run"; the answers are below.
+- Traced both defects to the code and measured the log on a copy of the run's 2,430 events: a
+  write took 2.34 s there, of which 2.00 s path checks, 0.23 s reads, 0.06 s rewriting the two
+  timelines and 0.04 s parsing and digests.
+- Fixed both in `local-contract.md`, `tool-contracts.md`, `claude_runner.py`, `runlog.py` and
+  `documentary.py`. Verification: suite 337 → 341 tests, with 338 passing, 2 skipped and the
+  machine-only failure under "Current state". Three of the four new tests fail on `da7605b`'s
+  code: a slow observer loses a finished process's output and runs on the reader thread; a write
+  re-reads every file; a reused answer keeps the old ID and its miss counts. The fourth, a
+  changed event still detected, guards the new cache; the old code passed it by reading
+  everything. Six one-line mutations of
+  the fixes were each caught. Each test run compiled into its own bytecode cache: a same-size
+  mutation restored within the same second had left a `.pyc` that still looked current.
+- On the same copy the fixed log writes in 0.034 s. A process opening a 2,430-event log for the
+  first time verifies it once, in 2.5 s.
+- Not verified: either fix live. The two timelines are still rewritten whole on every write,
+  0.06 s at 2,430 events.
+- Later, at the operator's request: corrected `local-contract.md`, whose paragraph on the
+  installed policy still said that invalid observations prevent a grade and that trials must
+  agree unanimously for one. That was true when written in `f7293ec` (2026-09-12); since the
+  six-axis report card, `670033f` (2026-09-21), `decide()` keeps the settled grade and both
+  change only the status and the execution limits, as `evidence-rubric.md` says. The local
+  planner receives that file in full, so every local run since 2026-09-21 was given the old
+  rule. The paragraph now states the current rule and names its owner. Suite unchanged: 338
+  passing, 2 skipped, the machine-only failure.
+
+Against "What to check in the run" of the 2026-09-24 entry:
+
+1. **The new code ran.** `local_method_ref` matched the tree's `98882e6b…`, all six critiques
+   carried v7's `58b2509c…`, and all six candidates were at `local-reference-comparison-6`.
+2. **RDKit.** No subject ran it, or any command: all 45 trials used only the Skill tool, in
+   three turns each. No `claude_timeout`.
+3. **The fallback.** Not exercised; nothing stopped a claim.
+4. **Critique v7.** One `beyond_scope`, the ring claim's first-round `ring-atom-count`, which
+   the claim-only answers also missed. No critique counted a case its own objection placed
+   outside the claim: every objection to a counted case questioned its strength. No counted
+   case failed a trial.
+5. **Leaks.** No qualification was refused, so the leading-word and repeated-word checks cost
+   no rewrite and did not fire. Two `leaked` verdicts, both claim 4's. One counted key stands
+   alone among its options: `thr-proportion-of-what`'s "the dataset" is the only option naming
+   the molecule set. Its critique objected to exactly that and counted it; claim 4's critique
+   ruled the same shape `leaked`.
+6. **Grades.** Two `case_gap` replies. The ring claim's first round: "This design has 1 counted
+   case, 1 generated: add at least 2 more counting cases of either form. The critique's own
+   grade is none, so its objections need answering as well." The dummy claim's: "This design
+   has 2 counted cases, 1 generated: add at least 1 more counting case of either form." Both
+   times the planner replaced the rejected cases and the next critique supported B. It never
+   accepted a grade below its proposal. It proposed B for all four claims, and each
+   `stronger_grade_considered` names why no further independent case with a quotable key
+   existed. The dummy claim's critique did not accept that reason: "rdkit.Chem.rdmolops
+   documents AdjustQueryProperties as a module function on the same page", so a second
+   generated case "appears to have been available"; with four counting cases it would still
+   have been B.
+7. **Effect-to-setting cases.** Three designed, all counted: `thr-which-property`,
+   `ring-prevent-argument` and `dummy-which-field`.
+8. **Claim-only answers.** One miss, `ring-atom-count`, answered `2` twice against the key `3`
+   that RDKit's test asserts: a scope problem, not a slip. One reply: "The claim, applied
+   literally, bars any partial-ring fragment from the MCS. … any single ring carbon would be a
+   partial-ring fragment". Two `unmeasured`, both from the log defect. 40 sessions, $0.42 for
+   the 38 that returned, about 2.3 minutes over six rounds; six answers reused.
+9. **The rest.** No `model_refusal_*` event, `invalid` zero, four claims, 3,096 s.
+
+### Before the next run
+
+1. **Docker Desktop is running** and the pinned image is present:
+   `sha256:127711447fe5260556ae724850ef4186a79ea774ec119ebb01c3775240f5264e`
+   (`sci-verifier-rdkit:2026.3.6`, built from `images/rdkit/` as `LOCAL-CONFIG.md` says).
+2. **A new Code-tab session after the commit that carries these fixes.** Every session, new or
+   resumed, starts its own `serve-local`, and a resumed one keeps the code it started with.
+   After the run, `run.json`'s `local_method_ref` must equal the tree's digest, printed by
+   `python -c "import sys; sys.path.insert(0, 'src'); from sci_ai_verifier.storage import implementation_bytes; from sci_ai_verifier.common import digest; print(digest(implementation_bytes()))"`.
+3. **The model is `claude-opus-5`.** The probe stops a run the CLI cannot serve.
+4. **The working tree is clean** at that commit, or at a later one that did not touch `src/`.
+5. **The plan's 5-hour window has room**; `d416f79d` cost about $19, `3dc02567` $35.
+6. **The timeout.** The app passes 5,400 s; three claims took 40 minutes, four took 43 to 52 and
+   six took 90. The log fix removes most of the late-run overhead; by how much is unmeasured.
+
+### Cleaning the previous sar-analysis run
+
+Move, do not delete, into the session scratchpad. The previous run is `d416f79d`:
+
+- `.verifier/runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8`
+- `.verifier/attempts/2275addb-174d-4ac5-9db8-325bf15593bb`
+- `.verifier/subject-runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8`
+- the **six** candidates in `.verifier/candidates/` at `local-reference-comparison-6`, all
+  qualified
+
+**Keep** the glycoengineering run `76ce4af1-…`, its attempt `a1ec3e49-…`, its subject-runs, and
+the five candidates at `local-reference-comparison-1`. Leave `.verifier/store/` alone. Do not
+leave a shell inside a directory you are moving.
+
+### What to check in the run
+
+`verify_skill` returns 150–350 KB, which overflows the tool result; read
+`.verifier/runs/<run>/report-card.json` on disk.
+
+1. **The new code ran.** `run.json`'s `local_method_ref` matches the tree, every critique's
+   `rubric_ref` is v7, `58b2509c3e8799cf55cf60033edcb7e2d550d4ce8821295cb4daeddbeaba7aa9`, and
+   every candidate is at `local-reference-comparison-6`.
+2. **The log keeps up.** Every subject, critique and claim-only session has its `result` event
+   in `workflow.jsonl`; no `process_unparsed_output`; no claim-only sample `claude_incomplete`.
+   Late in the run, the gap between a trial's wall time and the CLI's `duration_ms` should stay
+   near claim 1's 2 s, not reach `d416f79d`'s 6 s.
+3. **Reused answers.** A claim-only case reused under a new name shows its current ID.
+4. **Claim-only answers.** Quote every `missed` case with its answers and key, and say whether it
+   was a scope problem or a slip, from the full reply in `workflow.jsonl` (role `claim_probe`).
+   Any `unmeasured` case, and why. Cost, minutes and reused answers.
+5. **Critique v7 and leaks.** Quote every `beyond_scope` verdict. Did any critique count a case
+   its own objection placed outside the claim? Quote every qualification refused for a leak
+   and count the rewrites; both checks have yet to fire live. The `leaked` count.
+6. **Grades.** Quote every `case_gap` summary and what the planner did next. Did it accept a
+   settled grade below its proposal while a replacement round remained? For each grade below
+   A, did the critique accept the planner's `stronger_grade_considered`?
+7. **RDKit and timeouts.** Which subjects ran commands, and did they compute or look up? Any
+   `claude_timeout`, with the subject's events quoted.
+8. **The fallback.** Did any claim carry `fallback`? Its status and reason.
+9. **The rest.** Any refusal (quote the `model_refusal_*` events), `invalid` still zero, the
+   claim count and the run time.
+
+### Reading the results without fooling yourself
+
+- **Before calling any `fail` a finding about the skill, read the observed reply, the expected
+  answer and the reference quote verbatim.**
+- **A unanimous `none of these`** means a broken case far more often than a wrong subject.
+- **`claim-00N` directories under `subject-runs/` do not follow the report's order**, and a
+  re-run's trials sit in `claim-NNN-retry`. Map them by `case_id`.
+- **`subject_refused` or `subject_model_changed`: read the trial's `system` events** in the
+  workflow log (`model_refusal_*`) before advising anything. A refusal may or may not recur.
+- **A `claude_timeout` can come from the case itself.** Trace the subject's commands and
+  thinking before promising that a re-run or a longer limit fixes it.
+- **A `claude_incomplete` from a session that exited 0** was the log starving its reader until
+  this fix. On the fixed code, it means this diagnosis was incomplete.
+- **Trial wall times before this fix include log overhead** that grew through a run. Compare
+  runs with the CLI's own `duration_ms`.
+- **A run the runner closed should say `agent_unavailable`** with the planner's own reason; one
+  that still says "The operator cancelled this run." for a stop nobody made means old code.
+- **`workflow.jsonl` truncates long tool results** at about 16 KB; every tool call's whole
+  request and result, including every critique round, is in `.verifier/runs/<run>/events/`.
+- **With RDKit in the image, a subject can compute an answer instead of recalling it, or look it
+  up.** In `31b67427` two trials printed a docstring that was their case's key word for word.
+- **A counted case can still turn on a finer fact than its claim.** Compare a failing reply with
+  the claim's wording before calling it a finding.
+- **A fallback D rests on its cases' quotes alone.** Read it as documentary, never as behaviour.
+- **A clean run is not proof of a fix** if the model never produced the case the fix handles.
+
+### Drafted, not built: calculated answers for exact-maths claims
+
+Raised by the operator after the run, on 2026-09-25; the operator will decide and build it on
+2026-09-26. Nothing here is implemented.
+
+**The problem.** A maths claim reaches A only if the planner finds a page that happens to print
+enough worked examples. `local-contract.md` requires that "Reference quotes and expected values
+must occur in retrieved material" at every grade, and `local-evaluator-spec.md` holds a
+generated evaluator's expected value to its quote as well, so no grade accepts a calculated
+answer. `evidence-rubric.md` defines A as "traceable or mathematically exact", with a
+monoisotopic-mass calculation as its example; the local profile implements only the traceable
+half.
+
+**The evidence.**
+
+- In `d416f79d` the pIC50 claim settled at B with three counting cases, one open (1 nM → 9), no
+  case rejected, one review and 9 of 9 passing. The planner quoted ChEMBL's FAQ and Papadatos
+  2015, which hold one worked conversion between them, and wrote that "a second numeric
+  conversion would have no quoted expected value". Its critique agreed that A was "genuinely
+  unreachable here rather than passed over out of convenience".
+- Under the same case and quoting rules the claim reached A in `84e90683` and `3b3f3c94`, both
+  from TeachOpenCADD T006, whose EGFR table lists IC50 and pIC50 side by side. `84e90683`
+  counted five open conversions from it; `3b3f3c94` added a CDD blog and counted five cases,
+  three open. `d416f79d`'s B came
+  from the pages its planner chose, which neither Python nor the critique can see (open
+  question 5).
+- A quoted number is no safer than a calculated one. `3b3f3c94`'s first design keyed 30 nM to a
+  page's "which is pIC50 = 7.5"; the exact value is 7.522879, and its critique caught it.
+  `84e90683`'s `pic50-anchor-1nm` key `9` was quoted from "Number of compounds with pIC50 > 9:
+  186", which contains the token but not the conversion: the token check proves presence, not
+  support.
+- Duplicates are not the obstacle. Critiques ruled a conversion `duplicate` only when nothing
+  but the number changed (`84e90683`'s `pic50-inverse-b`, `3b3f3c94`'s
+  `pic50-chembl-nondecade`); a change of unit or of direction counted.
+
+**The proposed rule.** A calculated answer counts toward A for a mathematically exact claim when
+all four hold:
+
+1. The formula is quoted token-exactly from bytes Python retrieved, such as ChEMBL's
+   "-Log(molar IC50, XC50, EC50, AC50, Ki, Kd or Potency)".
+2. Python runs the planner's program in the pinned container `qualify_local_evaluator` already
+   uses, never the planner's own arithmetic, and before any case uses it the program
+   reproduces every worked example on that page, such as ChEMBL's 1 nM → 9. A wrong formula (a
+   natural log, a dropped sign, a nanomolar number logged bare) fails there.
+3. Scoring stays an installed comparison method. A slip in one case's input, such as µM entered
+   as nM, is left to the claim-only answers: sessions computing from the claim miss the wrong
+   key, and the case stops counting.
+4. The report's AI involvement records that the planner wrote the program.
+
+The formula has to be quoted because an answer calculated from the claim is circular. Had the
+skill said pIC50 = -ln(IC50), a key derived from the claim would give 20.7 for 1 nM, the subject
+following the skill would answer 20.7, and a wrong claim would pass. Under this rule
+`d416f79d`'s two ChEMBL pages alone would have supported A: 1 nM, conversions in µM, pM and M,
+and one in reverse.
+
+**Still to decide.**
+
+- The rule bends "A planner-authored scorer cannot reach A" in `local-contract.md`: the scorer
+  stays installed, but the planner writes the program that produces the answers. Whether
+  reproducing the page's worked examples keeps that outside "AI judgment in scoring or the
+  verdict" is the operator's call.
+- One worked example cannot catch a unit slip outside its own unit; there the claim-only
+  answers are the only guard.
+- Claim-only sessions have no tools and take the logarithm in their heads, so keys to six
+  decimals, as both A designs used, could make correct cases miss. Neither design met the
+  claim-only check, which came after them; two decimals are safer.
+- Scope: exact maths first. Answers produced by running RDKit for RDKit claims stay under open
+  question 8: there is no formula to quote, because the library is the reference; an answer
+  holds only for the pinned 2026.03.6; and subjects have the same RDKit in their sandbox.
+
+**Where it would go**, contracts first: the grade list and the "Reference quotes and expected
+values" sentence in `local-contract.md`, which own the rule; `qualify_local_candidate` in
+`tool-contracts.md`; `local-evaluator-spec.md` if the program travels in that specification;
+then the code, tests and one live run. `evidence-rubric.md`'s A row already allows it, and
+`workflow.md` changes only if a new tool is added, and none is planned.
+
+### Open questions for the operator
+
+1. **Should the aggregation rule become a plan field?** Still `unanimity`, still correct.
+2. **Claim coverage.** `3dc02567` extracted six claims, `84e90683`, `3b3f3c94` and `d416f79d`
+   four, and `74eadedd` and `31b67427` three.
+3. **A narrow capitalization residue, by choice.** Tokens carrying both cases — `Core`,
+   `Threshold`, `Fuc` — stay open answers. It now costs evidence: `d416f79d`'s threshold planner
+   named it as the reason `Threshold` could not be a fifth, open case.
+4. **Recognition.** The fifth leak shape covers one tell; a subject can still pick the
+   conventional-looking option. `thr-proportion-of-what` counted although its critique wrote
+   that the key could be reached "on general plausibility".
+5. **Reviewers and planners disagree across runs.** In `d416f79d` one critique counted a key that
+   alone names what the stem is about and another ruled that shape `leaked`. The threshold and
+   pIC50 claims settled at B after reaching A in earlier runs. For pIC50 the cause was the pages
+   the planner chose; see "Drafted, not built" above.
+6. **A claim Opus 5 refuses cannot be verified on Opus 5.** If the re-run is refused too, the
+   report says so, and that is the finding: a provider limitation, not the skill's.
+7. **Other operational endings.** Only subject-trial faults get a fallback D; a claim ended by
+   `critic_unavailable` or by the planner still reports nothing. Should they get one?
+8. **Knowledge or execution.** With RDKit available, should some cases stay questions a subject
+   must answer without running code? In `d416f79d` every B rested on sources that quote only
+   three or four independent facts, and the ring planner wrote that "Executing RDKit to measure
+   a fresh consequence is not available to this verifier for this claim".
+   `qualify_local_evaluator` has never run. Is an executed key the route to A for narrow API
+   claims? For exact maths, "Drafted, not built" above proposes one; answers produced by
+   running RDKit stay open here.
+9. **Accepting a lower grade.** In `31b67427` the planner accepted B one counting case short of
+   A with a replacement round unused. Neither later run repeated it. Not changed; the revision
+   reply states the case gap instead.
+10. **How strict qualification should be.** Its two leak checks would have refused 11 of the 30
+    choice cases before them, yet refused none of `d416f79d`'s designs. If rewrites start to
+    cost more than the leaks did, should the repeated-word check drop to a warning?
+11. **The prior-review trigger.** It refused a first proposal in `3b3f3c94` for a sentence about
+    the coming review, and did not fire in `d416f79d`. Should it match only references to an
+    earlier review?
+12. **How many claim-only answers per case.** Two answers caught `d416f79d`'s one miss, which both
+    answers made. A case missed in one answer of four, as `3b3f3c94`'s lone-ring case was, slips
+    past two answers about half the time; a third answer cost about $0.01 a case in `d416f79d`.
+    Should it be three?
+
+### Deferred, and why
+
+- **Parallel trials** — the operator agreed it is a good design. It is not built: the sandbox is
+  configured with one CPU, and parallel sessions spend the usage window faster, so both need a
+  decision first.
+- **Appending to the timelines** instead of rewriting them on every write — 0.06 s per write at
+  2,430 events. Rewriting keeps each projection rebuilt from verified events.
+- **Opus 5.5** — until WinGet offers Claude Code 2.1.280; the startup probe catches a premature
+  switch.
+- **A longer subject limit** — the operator will raise `subject_timeout_seconds` when a large
+  skill needs it; the report names the limit whenever it stops a trial.
+- **The case-level contract** — flagged do-not-implement until four or five case-type rules
+  accumulate. Design in the archive, 2026-09-22.
+- **Automatic dependency resolution** — flagged do-not-implement, design in the archive,
+  2026-09-18. `images/rdkit/` is the manual path it would automate.
+
+### Prompt for the next session
+
+```text
+Before anything else, read the latest entry in DEVELOPMENT-PLAN.md
+("Claude: 2026-09-25"). Follow its preflight, clean the previous run as it
+describes, and use scientific-verifier-local to verify this skill:
+"D:\Su Lab\verifier-submissions\examples\sar-analysis"
+
+Show me the report and workflow-log paths, a table with one row per claim
+(grade, accuracy, consistency, status and the other measurements) and, for each
+claim, a table with one row per test. Tell me whether it is a good run, and
+whether our fixes work: go through the entry's "What to check in the run" list
+item by item. Before concluding anything from a `fail`, an `invalid`, a refusal
+or a unanimous "none of these", quote the verbatim reply or event behind it.
+
+Do not change code, commit or push unless I ask.
+```
+
+### Urgent next steps, if any
+
+None for the code, which is committed and pushed with this entry. Before the next live run,
+start a new session: a session started before this commit runs a `serve-local` with older code.
+
+### Suggested next move
+
+Run `sar-analysis` once on the fixed code and read the log's completeness and timing, and any
+claim-only answers reused under a new name, before the grades. Separately, the operator will
+decide and build "Drafted, not built" above on 2026-09-26; open question 8 keeps the RDKit half.
+
+### Recommended next action
+
+In a new session after the commit, clean `d416f79d` as above and run once. It is finished when
+every item under "What to check in the run" has a recorded answer.

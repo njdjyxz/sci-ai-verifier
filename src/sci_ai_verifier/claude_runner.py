@@ -21,7 +21,9 @@ from .mcp import parse_json
 from .process_guard import guard
 from .storage import atomic_write, no_links
 
-MIN_VERSION = (2, 1, 248)
+# The earliest version the reply schemas of the verifier's own sessions (`--json-schema`)
+# were tested on.
+MIN_VERSION = (2, 1, 268)
 SUBJECT_SKILL = "verifier-subject:submitted"
 SAFE_TEXT = {".md", ".txt", ".json", ".csv", ".tsv", ".rst", ".xml"}
 
@@ -361,7 +363,9 @@ def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
     return {"text": result["result"], "response_id": expected_session,
             "session_id": expected_session, "response_id_source": "claude_cli_session_id",
             "observed_model_ids": sorted(models), "invocation_verified": bool(invoked),
-            "tool_calls": calls, "usage": result.get("usage"), "total_cost_usd": result.get("total_cost_usd")}
+            "tool_calls": calls, "usage": result.get("usage"), "total_cost_usd": result.get("total_cost_usd"),
+            # Present only for a session given a reply schema: the reply, already parsed.
+            "structured_output": result.get("structured_output")}
 
 
 class ClaudeCode:
@@ -411,7 +415,8 @@ class ClaudeCode:
             raise Fault("claude_unavailable", "Claude Code version check failed.") from None
         match = re.search(rb"(\d+)\.(\d+)\.(\d+)", result.stdout[:1000])
         if result.returncode or not match or tuple(map(int, match.groups())) < MIN_VERSION:
-            raise Fault("claude_version_unsupported", "Claude Code 2.1.248 or newer is required for restricted execution.")
+            raise Fault("claude_version_unsupported", "Claude Code 2.1.268 or newer is required for restricted "
+                        "execution and reply schemas.")
         self.executable = executable
         isolated_environment(Path(tempfile.gettempdir()) / "verifier-preflight-unused", self.auth)
         return {"executable": executable, "version": match.group().decode(), "auth": self.auth,
