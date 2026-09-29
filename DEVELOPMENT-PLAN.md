@@ -93,10 +93,11 @@ ran for the first time**. That run also exposed three problems:
 - a code-fenced reply was misread;
 - the sandbox could not run scikit-survival at all.
 
-The last is now answered by **skill environments** (below), which are tested with fake Docker and
-**not yet live**. Calculated answers have still not met a run. The 2026-09-28 entry has the details.
+The last is now answered by **skill environments** (below). They are live-checked on a blank
+`python:3.12-slim` base but have not yet been used in a verifier run. Calculated answers have still
+not met a run. The 2026-09-28 entry has the details.
 
-Automated suite: **382 tests, 380 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **385 tests, 383 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -188,7 +189,8 @@ The run could execute nothing, because the pinned image lacks scikit-survival. S
 asked, by name, for the 2026-09-18 automatic dependency resolution design. It is now built, contracts
 first, as **skill environments**: the packages a skill declares are downloaded in one step before
 the run exists, and installed offline into an image that only its subject trials use.
-**Skill environments are tested with fake Docker only: no live build and no run yet.** A Windows
+**Skill environments build live on a blank base and are removed after each run, but have not yet
+been used in a verifier run.** A Windows
 long-path fix to temp cleanup was also made. The long-path fix is on `main` (`f61a97b`). At the
 operator's request, skill environments live on this branch, `skill-environments`, until they have
 been tested; this copy of the entry describes them.
@@ -322,13 +324,19 @@ happen only in this step. `local-contract.md` "Skill environment" owns the mecha
   markers, index options and installer packages are rejected. Import-only names are never installed.
   On the real skills: scikit-survival gives its 10 pins, sar-analysis nothing, and
   glycoengineering's `uv pip install -e .` is rejected.
-- **The build** runs in setup, after the model probe and before the run or planner exists:
+- **The build** runs in setup, after the model probe and before the run or planner exists. It
+  starts from `environment_base_image`, a plain Python image the operator pins, never from
+  `sandbox_image`:
   1. a resolver container, the only container with a network, runs `pip download` for wheels only;
   2. Python checks and hash-locks the wheels;
-  3. an offline installer applies the lock with `--require-hashes`, then `pip check`;
-  4. `docker commit` makes the image, tagged `sci-verifier-env:<key>` and cached by labels.
+  3. an offline installer applies the lock with `--require-hashes`, then `pip check`, under the
+     base's own empty entrypoint;
+  4. `docker commit` makes an image tagged for this build alone.
 
   Any failure stops the run before a planner is spent.
+- **Removal.** The image is removed when the verification ends, however it ends. Setup also
+  removes environment images more than a day old that a killed verification left behind. Nothing
+  is cached, so each verification rebuilds, which took about 30 s.
 - **Only subject trials use the built image.** Calculations, evaluators, scoring and catalog
   requalification keep the operator's image, so no package the skill chose runs where keys are
   produced or trials scored. The image is folded into the subject identity (`--subject-image` to
@@ -336,16 +344,34 @@ happen only in this step. `local-contract.md` "Skill environment" owns the mecha
 - **The planner** gets a pinned block rendered only from checked values, and the full record as the
   `environment` context section. A skill changed between setup and `load_submitted_skill` ends the
   run as `source_changed`.
-- **Settings:** `package_index` (null by default), `max_package_bytes` and `max_packages`.
+- **Settings:** `package_index` (null by default), `environment_base_image` (required with it),
+  `max_package_bytes` and `max_packages`.
 
 Verification of items 4 and 5:
-- Suite 349 → 382 tests: 380 passing, 2 skipped, none failing.
-- 31 new tests in `test_environment.py` run on fake Docker. Among them, a guard checks that only
+- Suite 349 → 385 tests: 383 passing, 2 skipped, none failing.
+- 34 tests in `test_environment.py` run on fake Docker. Among them, a guard checks that only
   `environment.py` gives a container a network.
-- Twelve one-line mutations of the safeguards were each caught.
+- Twelve one-line mutations of the first design's safeguards were each caught.
 - `resource-policy.md`'s new section was kept short so that the historical verification profile's
   bootstrap stays under its 200,000-byte test bound (199,805).
-- **Not verified:** a real resolve and build, and a run in the built image.
+- **First live build**, of scikit-survival on the RDKit image, which was the base then:
+  - 10 pins resolved to 16 wheels (79 MB) in 30 s, and `pip check` passed;
+  - an offline container imported `sksurv` and computed a competing-risk CIF of shape `(3, 6)`;
+  - a second call reused the image with no download.
+
+  It showed two faults, both fixed:
+  - the environment carried RDKit's 670 MB and had numpy and pandas swapped under it;
+  - Docker ignored the `ENTRYPOINT []` reset, so the image kept `python3` as its entrypoint.
+- **Live re-check on `python:3.12-slim`:**
+  - the same lock, digest `9679b819…`, came out again in 30 s;
+  - entrypoint empty, 695 MB, and scikit-survival works;
+  - RDKit is absent;
+  - the image was gone after `remove_environment`;
+  - the sweep ran;
+  - `package_index` null gave `disabled`.
+
+  No container or volume was left behind. The operator's settings file was not edited.
+- **Not verified:** a verifier run in a built environment.
 
 ### Decisions taken 2026-09-28
 
@@ -368,6 +394,11 @@ Verification of items 4 and 5:
   scoring keep the operator's image, which also leaves open question 2 open.
 - **Keep skill environments on their own branch** (operator): `skill-environments`, until they have
   been tested. The operator may still change them before any merge.
+- **Build on a blank base** (operator, after the first live build). Environments start from a plain
+  Python image (`environment_base_image`), never from the RDKit image. This corrects the plan's
+  choice of `sandbox_image` as the base, which contradicted what had been proposed to the operator.
+- **Delete each built image after its run** (operator), rather than caching it: nothing
+  accumulates, at the cost of about 30 s and an 80 MB download per run.
 - **Delete the 25 leftover temp folders** (operator). They went to the Recycle Bin, not
   permanently.
 
@@ -386,11 +417,15 @@ Verification of items 4 and 5:
 4. **The working tree is clean** at that commit.
 5. **The plan's 5-hour window has room.** `0aeca4c6` cost about $27 and took the window from 26%
    to 77%, so plan one run per window.
-6. **The timeout.** The app passes 5,400 s. `0aeca4c6` used 3,827 s for five claims, and a first
-   environment build adds a few minutes of setup.
-7. **For a skill environment:** the operator sets `package_index` (e.g. `https://pypi.org/simple`)
-   in `.verifier/local-settings.json`. The first build downloads the scikit-survival stack, about
-   100 MB of wheels, once. The live build check under "Recommended next action" should come first.
+6. **The timeout.** The app passes 5,400 s. `0aeca4c6` used 3,827 s for five claims, and each
+   environment build adds about 30 s of setup.
+7. **For a skill environment**, the operator adds two settings to `.verifier/local-settings.json`:
+   - `package_index: "https://pypi.org/simple"`;
+   - `environment_base_image:
+     "sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea"`, the local
+     `python:3.12-slim`.
+
+   Each run downloads the scikit-survival stack, about 80 MB of wheels.
 
 ### Cleaning the previous run
 
@@ -402,7 +437,8 @@ Move, do not delete, into the session scratchpad:
 
 Keep the glycoengineering run `76ce4af1-…`, its attempt `a1ec3e49-…`, its subject-runs and its five
 candidates. Leave `.verifier/store/` alone: environment build records live there. `d416f79d`'s
-files are already in an earlier session's scratchpad.
+files are already in an earlier session's scratchpad. Built environment images need no cleaning:
+each run removes its own.
 
 ### What to check in the run
 
@@ -423,9 +459,9 @@ files are already in an earlier session's scratchpad.
    A reused claim-only answer shows its case's current ID.
 6. **The rest.** Refusals (quote `model_refusal_*`), `invalid` still zero, claim count, run time.
 7. **Skill environment.**
-   - The setup log's `preflight.environment` status. The first time should be `built`, a second
-     run `reused` with no networked container.
-   - The lock, and whether `pip check` passed with the skill's numpy/pandas pins over the RDKit base.
+   - The setup log's `preflight.environment` status should be `built`, on `python:3.12-slim`.
+   - The lock (digest `9679b819…` if nothing moved on PyPI).
+   - That no `sci-verifier-env` image remains after the run.
    - The planner's pinned block.
    - Whether subjects now run scikit-survival or the skill's scripts.
    - Any docstring lookups of a key: trace `mcp__subject__run_command`, as with RDKit in `31b67427`.
@@ -503,22 +539,16 @@ because a session started earlier runs a `serve-local` with the old code.
 
 ### Suggested next move
 
-Prove skill environments live, then run scikit-survival again. The question is whether subjects
-execute the library once it is installed, and whether planners design executed cases.
+Run scikit-survival in a built environment. The build itself is proven live. The question now is
+whether subjects execute the library once it is installed, and whether planners design executed
+cases.
 
 ### Recommended next action
 
-With the operator's go-ahead (it downloads about 100 MB from PyPI and edits the operator's
-settings):
-1. Set `package_index`.
-2. Run `prepare_environment` alone on scikit-survival over the RDKit image.
-3. Confirm, in this order:
-   - the lock is written;
-   - `pip check` passes with the skill's numpy/pandas pins;
-   - the image carries its labels;
-   - a `--network none` container imports `sksurv`;
-   - a second call reuses the image with no networked container;
-   - `package_index: null` gives `disabled`.
+With the operator's go-ahead:
+1. Add the two settings under "Before the next run", item 7.
+2. Start a new session with this branch checked out.
+3. Clean `0aeca4c6` as described above.
+4. Run scikit-survival once.
 
-It is finished when all six hold, or the first that fails is named. After that, a scikit-survival
-run from a new session answers item 7 of "What to check in the run".
+It is finished when every item under "What to check in the run" has a recorded answer.

@@ -404,19 +404,20 @@ source/environment/model pins.
 A computational run also holds `local_environment_ref`, the record of "Skill
 environment" in `local-contract.md`, with these fields:
 - `status`, `source_path` and `snapshot_digest`;
-- `base_image`, the operator's image, and `image_id`, the image subject trials run in;
+- `operator_image`, `base_image` (the environment base, for `built` only) and `image_id`, the
+  image subject trials run in;
 - `index`;
 - `requirements`, each with its normalized name and the `path:line` sources that declared it;
 - `rejected` and `notes`, each with its source, bounded text and reason code;
 - the checked `imports`;
-- for `built` and `reused`, the `cache_key`, `build_record_ref` and `lock` (digest, and per
-  wheel its name, version, file, SHA256 and size);
+- for `built`, the `build_key`, `build_record_ref` and `lock` (digest, and per wheel its name,
+  version, file, SHA256 and size);
 - `manifest`, the packages and unavailable imports the built image reported about itself,
   marked `reported_by_image` because it is untrusted.
 
 The report card carries `environment_ref` and an `environment` summary, and
-report-card.md opens with an Environment line. A run whose subject image was built
-or reused lists `skill_packages_from_configured_index` among its host limitations. A plan audit records the proposed grade, the evidence
+report-card.md opens with an Environment line. A run whose subject image was built lists
+`skill_packages_from_configured_index` among its host limitations. A plan audit records the proposed grade, the evidence
 ceiling Python computed with its limiting reasons, the independent critique with its
 per-case verdicts, the `counted_cases` and the `case_ceiling` recomputed over them, the
 round number and the settled ceiling; `negotiation_refs` retains every round's audit,

@@ -75,33 +75,38 @@ add to the list.
 **Status.** `not_needed` when nothing is declared; `all_rejected` when every
 declaration was rejected; `disabled` when requirements exist but `package_index` is
 null; `source_unavailable` when setup cannot snapshot the skill, in which case
-`load_submitted_skill` records the fault as it would anyway; otherwise `built` or
-`reused`. Only `built` and `reused` give subject trials a different image.
+`load_submitted_skill` records the fault as it would anyway; otherwise `built`. Only
+`built` gives subject trials a different image; otherwise they run in `sandbox_image`.
 
-**Build.** One container of the operator's image resolves the requirements. It is the
-only container of a verification with a network. It downloads wheels only, from the
-configured index into a Docker volume, under its own deadline. Python checks each
-wheel's file name, and the number and total size of the wheels against `max_packages`
-and `max_package_bytes`, then writes a hash lock. A second container, with no network,
-installs exactly that lock from the volume with `--require-hashes` and runs
-`pip check`. The skill's pins replace versions already in the image. The result is
-committed as a new image tagged `sci-verifier-env:<key>` and labelled with its cache
-key and build record. Every container, and the volume, is removed on success, failure,
-cancellation and timeout. Any failure stops the verification as
-`skill_environment_unavailable`, naming the cause, before any planner cost, like the
-model probe under "Subject boundary". Setting `package_index` to null runs on the
-operator's image instead.
+**Build.** Every build starts from `environment_base_image`, a plain Python image the
+operator pins, never from `sandbox_image`, so one skill's packages never land on
+another's tools. `package_index` requires it. The build proceeds in four steps:
+1. One container of that base resolves the requirements. It is the only container of a
+   verification with a network. It downloads wheels only, from the configured index into
+   a Docker volume, under its own deadline.
+2. Python checks each wheel's file name, and the number and total size of the wheels
+   against `max_packages` and `max_package_bytes`, then writes a hash lock.
+3. A second container, with no network, installs exactly that lock from the volume with
+   `--require-hashes` and runs `pip check`. It runs under the base's own entrypoint,
+   which must be empty.
+4. The result is committed as a new image tagged for this build alone. It is labelled
+   with the build's key, covering the base, index, requirements and build scripts, and
+   with the build record.
 
-**Reuse.** The cache key covers the operator's image, the index, the normalized
-requirements and the digests of the verifier's fixed build scripts. An image whose
-labels match, and whose installed packages still include the whole lock, is reused
-without any network. Removing a built image forces the next verification to rebuild
-it. A run that used the removed image cannot execute further trials.
+Every container, and the volume, is removed on success, failure, cancellation and timeout.
+Any failure stops the verification as `skill_environment_unavailable`, naming the cause,
+before any planner cost, like the model probe under "Subject boundary". Setting
+`package_index` to null runs on `sandbox_image` instead.
+
+**Removal.** A built image lives for one verification. It is removed when the
+verification ends, however it ends, so every verification starts from the plain base
+again and nothing accumulates. Setup also removes environment images more than a day old
+that a killed verification left behind.
 
 **Subject trials only.** The built image serves the skill's subject trials and nothing
 else. Calculations, generated evaluators, scoring and catalog requalification keep the
-operator's image, so no package the skill chose runs inside code that produces an
-expected answer or scores a trial. The built image is part of the subject identity, so
+operator's `sandbox_image`, so no package the skill chose runs inside code that produces
+an expected answer or scores a trial. The built image is part of the subject identity, so
 the identity checks catch any change, and `environment_digest` includes the environment
 record.
 

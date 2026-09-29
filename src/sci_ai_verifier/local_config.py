@@ -16,7 +16,8 @@ DEFAULTS = {"schema_version": 1, "sandbox_image": None, "docker_executable": "do
             "subject_timeout_seconds": 120, "allowed_reference_hosts": [],
             "allowed_subject_hosts": [], "external_tools": {}, "resources": {},
             "documentary_assessment": True, "catalogs": [], "minimum_grade": None,
-            "package_index": None, "max_package_bytes": 1024*1024*1024, "max_packages": 200}
+            "package_index": None, "environment_base_image": None,
+            "max_package_bytes": 1024*1024*1024, "max_packages": 200}
 
 
 def valid_package_index(value):
@@ -72,9 +73,10 @@ def load_configuration(path=None):
     for key, (minimum, maximum) in bounds.items():
         if type(settings[key]) is not int or not minimum <= settings[key] <= maximum:
             raise Fault("configuration_invalid", f"{key} must be between {minimum} and {maximum}.")
-    image = settings["sandbox_image"]
-    if image is not None and (not isinstance(image,str) or not re.fullmatch(r"(?:[A-Za-z0-9._:/-]+@)?sha256:[0-9a-f]{64}",image)):
-        raise Fault("configuration_invalid", "Pin sandbox_image to an installed sha256 image ID or repository digest.")
+    for key in ("sandbox_image", "environment_base_image"):
+        image = settings[key]
+        if image is not None and (not isinstance(image,str) or not re.fullmatch(r"(?:[A-Za-z0-9._:/-]+@)?sha256:[0-9a-f]{64}",image)):
+            raise Fault("configuration_invalid", f"Pin {key} to an installed sha256 image ID or repository digest.")
     if not isinstance(settings["docker_executable"], str) or not settings["docker_executable"]:
         raise Fault("configuration_invalid", "Choose the installed Docker executable.")
     for key in ("allowed_reference_hosts","allowed_subject_hosts"):
@@ -118,6 +120,10 @@ def load_configuration(path=None):
     if settings["package_index"] is not None and not valid_package_index(settings["package_index"]):
         raise Fault("configuration_invalid", "package_index must be null or an https:// index URL without "
                     "credentials, query or fragment.")
+    if settings["package_index"] is not None and settings["environment_base_image"] is None:
+        # Skill environments start from a plain base, never from sandbox_image and its tools.
+        raise Fault("configuration_invalid", "package_index needs environment_base_image: the pinned ID of a "
+                    "plain Python image, such as python:3.12-slim, that skill environments start from.")
     return settings
 
 

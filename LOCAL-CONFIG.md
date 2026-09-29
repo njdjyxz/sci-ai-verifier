@@ -30,6 +30,7 @@ Unknown settings are rejected so spelling mistakes cannot silently change access
 | `minimum_grade` | null, or A/B/C/D; reports state whether the requested minimum was met |
 | `catalogs` | Empty until you select exact shared bundles |
 | `package_index` | null (off). An `https://` package index, such as `https://pypi.org/simple`, lets a verification install the packages a skill declares for its subject trials |
+| `environment_base_image` | null. The exact `sha256:…` ID of a plain Python image that skill environments start from; required with `package_index` |
 | `max_package_bytes`, `max_packages` | 1 GiB and 200 wheel files per skill environment |
 
 Scientific packages belong in a reviewed custom Linux image. Build it before a
@@ -43,16 +44,22 @@ dependencies. Images must provide Python 3, `/bin/sh` and `cp`.
 
 With `package_index` set, a verification of a computational skill first installs the
 packages the skill itself declares (its `pip install` commands in code blocks, its
-`requirements*.txt` or its `pyproject.toml`) into a copy of `sandbox_image`. Only that
-skill's subject trials use the copy, and the verification never downloads packages at
-any other time. "Skill environment" in the local contract and "Packages a skill declares"
-in the resource policy describe the rules and the trust decision. The image must then also
-provide `python3 -m pip`, must not be an externally managed Python (PEP 668), and must let
-root write its site-packages. `python:3.12-slim` and the RDKit image below meet all
-three. The first verification of a new set of packages downloads it once; later ones reuse
-the image, tagged `sci-verifier-env:…`. Remove those images with
-`docker image rm sci-verifier-env:<tag>`; the next verification rebuilds what it needs,
-but a run that used a removed image cannot execute further trials.
+`requirements*.txt` or its `pyproject.toml`) into a copy of `environment_base_image`.
+Only that skill's subject trials use the copy, and the verification never downloads
+packages at any other time. "Skill environment" in the local contract and "Packages a
+skill declares" in the resource policy describe the rules and the trust decision.
+
+The base must:
+- be a plain Python image with no entrypoint;
+- provide `python3 -m pip`;
+- not be an externally managed Python (PEP 668);
+- let root write its site-packages.
+
+The pinned `python:3.12-slim` that `images/rdkit/` starts from meets all four. Pin its ID
+the same way as `sandbox_image`. Each verification downloads and installs the packages
+again, which took about 30 seconds for scikit-survival, and removes its image,
+`sci-verifier-env:…`, when it ends. Setup removes any such image a killed verification
+left behind once it is a day old.
 
 [`images/rdkit/`](images/rdkit/Dockerfile) is one such image, for skills that use RDKit
 and pandas, such as `examples/sar-analysis`. It holds the pinned `python:3.12-slim` base,

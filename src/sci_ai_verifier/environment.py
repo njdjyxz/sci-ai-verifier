@@ -474,39 +474,38 @@ def wheels_lock(result, settings):
     return lock, text
 
 
-def cached_build(docker, store, tag, key):
-    """(image ID, build record, record ref) for an image this verifier built under `key`, else None."""
-    code, out, _ = docker.invoke(["image", "inspect", tag], capture_output=False)
-    if code:
-        return None
+def base_config(docker, image):
+    """The environment base's image ID and config: a Linux image with no entrypoint.
+
+    The installer runs under the base's own entrypoint so that the commit keeps it: Docker
+    ignores `--change "ENTRYPOINT []"`, and the first live build kept the installer's.
+    """
+    code, out, _ = docker.invoke(["image", "inspect", image], capture_output=False)
     try:
         info = json.loads(out)[0]
-        labels = (info.get("Config") or {}).get("Labels") or {}
-        if info["Os"] != "linux" or labels.get(KEY_LABEL) != key or not IMAGE_ID.fullmatch(info["Id"]):
-            return None
-        build = store.get_json(labels[RECORD_LABEL])
-        return (info["Id"], build, labels[RECORD_LABEL]) if build.get("cache_key") == key else None
-    except (Fault, ValueError, KeyError, IndexError, TypeError, UnicodeError):
-        return None
+        config = info.get("Config") or {}
+        valid = not code and info["Os"] == "linux" and bool(IMAGE_ID.fullmatch(info["Id"]))
+    except (ValueError, KeyError, IndexError, TypeError, UnicodeError, AttributeError):
+        valid = False
+    if not valid:
+        raise unavailable("environment_base_image is not an installed Linux image. Pull a plain Python image, such "
+                          "as python:3.12-slim, and pin its ID.")
+    if config.get("Entrypoint"):
+        raise unavailable("environment_base_image has an entrypoint; pin a plain Python image without one.")
+    return info["Id"], config
 
 
 def _build(docker, store, record, settings, log):
     """Resolve with a network, install without one, commit. The only networked container is here."""
+    base, config = base_config(docker, settings["environment_base_image"])
     requirements = [item["requirement"] for item in record["requirements"]]
-    key = digest(canonical({"policy": POLICY, "scripts": SCRIPT_DIGESTS, "base_image": record["base_image"],
+    key = digest(canonical({"policy": POLICY, "scripts": SCRIPT_DIGESTS, "base_image": base,
                             "index": settings["package_index"], "requirements": requirements}))
-    tag = "sci-verifier-env:" + key[:12]
-    record["cache_key"] = key
-    cached = cached_build(docker, store, tag, key)
-    if cached:
-        image, build, ref = cached
-        if not within_caps(build["lock"], settings):
-            raise unavailable("The cached environment exceeds max_packages or max_package_bytes.")
-        report = manifest(docker, image, record["imports"], settings, required=True, log=log)
-        if lock_installed(report, build["lock"]):
-            record.update(status="reused", image_id=image, build_record_ref=ref, lock=build["lock"], manifest=report)
-            return
+    record.update(base_image=base, build_key=key)
+    # A tag of its own: the image lives for this verification only, and another one building the
+    # same requirements at the same time must not move it.
     suffix = uuid4().hex[:12]
+    tag = "sci-verifier-env:" + suffix
     volume, resolver, installer = ("sci-verifier-" + kind + "-" + suffix for kind in ("wheels", "resolve", "install"))
     limits = ["--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--user", "0:0",
               "--memory", str(BUILD_MEMORY_MIB) + "m", "--memory-swap", str(BUILD_MEMORY_MIB) + "m",
@@ -515,13 +514,13 @@ def _build(docker, store, record, settings, log):
         code, _, err = docker.invoke(["volume", "create", "--label", LABEL, volume], timeout=60)
         if code:
             raise unavailable("Docker could not create the package volume: " + err.decode("utf-8", "replace")[-300:])
-        # The resolver: the operator's image running pip download for wheels only. No package
-        # code runs here, and no container after this one has a network.
+        # The resolver: the plain base running pip download for wheels only. No package code
+        # runs here, and no container after this one has a network.
         code, out, err = docker.invoke(
             ["run", "--rm", "--pull", "never", "--name", resolver, "--label", LABEL, "--network", "bridge",
              "--read-only", *limits, "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=1777",
              "--mount", f"type=volume,source={volume},target={WHEELS}", "-e", "HOME=/tmp",
-             "-e", f"TMPDIR={WHEELS}/.tmp", "--entrypoint", "python3", record["base_image"], "-I", "-c", RESOLVE,
+             "-e", f"TMPDIR={WHEELS}/.tmp", "--entrypoint", "python3", base, "-I", "-c", RESOLVE,
              settings["package_index"], WHEELS, str(RESOLVE_TIMEOUT_SECONDS), *requirements],
             timeout=RESOLVE_TIMEOUT_SECONDS + 60, max_bytes=1024 * 1024)
         try:
@@ -532,39 +531,36 @@ def _build(docker, store, record, settings, log):
             raise unavailable("Resolving the skill's packages from " + settings["package_index"] + " failed: "
                               + str(result.get("error", ""))[-1500:])
         lock, text = wheels_lock(result, settings)
-        build = {"policy": POLICY, "cache_key": key, "scripts": SCRIPT_DIGESTS, "base_image": record["base_image"],
+        build = {"policy": POLICY, "build_key": key, "scripts": SCRIPT_DIGESTS, "base_image": base,
                  "index": settings["package_index"], "requirements": requirements, "lock": lock,
                  "built_at": utc_now(), "implementation_version": __version__}
         ref = store.put_json(build)
+        # No --entrypoint here: the command runs under the base's own (empty) entrypoint, which the
+        # commit then keeps.
         code, _, err = docker.invoke(
             ["run", "-i", "--pull", "never", "--name", installer, "--label", LABEL, "--network", "none", *limits,
              "--tmpfs", "/tmp:rw,nosuid,nodev,size=256m,mode=1777",
              "--mount", f"type=volume,source={volume},target={WHEELS},readonly",
-             "--entrypoint", "python3", record["base_image"], "-I", "-c", INSTALL, WHEELS],
+             base, "python3", "-I", "-c", INSTALL, WHEELS],
             timeout=INSTALL_TIMEOUT_SECONDS, prompt=text, max_bytes=1024 * 1024)
         if code:
-            raise unavailable("Installing the skill's packages into the operator's image failed: "
-                              + err.decode("utf-8", "replace")[-1500:] + " Use a base image without the conflicting "
-                              "packages, or set package_index to null to run on the operator's image.")
-        code, out, _ = docker.invoke(["image", "inspect", record["base_image"]], capture_output=False)
-        try:
-            config = json.loads(out)[0].get("Config") or {}
-        except (ValueError, IndexError, TypeError, UnicodeError, AttributeError):
-            config = None
-        if code or config is None:
-            raise unavailable("The operator's image could not be inspected before committing the environment.")
-        code, out, err = docker.invoke(
-            ["commit", "--change", "ENTRYPOINT " + json.dumps(config.get("Entrypoint") or []),
-             "--change", "CMD " + json.dumps(config.get("Cmd") or []), "--change", "USER " + (config.get("User") or "root"),
-             "--change", f"LABEL {KEY_LABEL}={key}", "--change", f"LABEL {RECORD_LABEL}={ref}", installer, tag],
-            timeout=300)
+            raise unavailable("Installing the skill's packages failed: " + err.decode("utf-8", "replace")[-1500:]
+                              + " Fix the skill's pins, or set package_index to null to run on sandbox_image.")
+        changes = ["--change", "USER " + (config.get("User") or "root"),
+                   "--change", f"LABEL {KEY_LABEL}={key}", "--change", f"LABEL {RECORD_LABEL}={ref}"]
+        if config.get("Cmd"):
+            changes = ["--change", "CMD " + json.dumps(config["Cmd"])] + changes
+        code, out, err = docker.invoke(["commit", *changes, installer, tag], timeout=300)
         image = out.decode("utf-8", "replace").strip()
         if code or not IMAGE_ID.fullmatch(image):
             raise unavailable("Docker could not commit the skill environment: " + err.decode("utf-8", "replace")[-300:])
-        report = manifest(docker, image, record["imports"], settings, required=True, log=log)
-        if not lock_installed(report, lock):
-            remove(docker, ["image", "rm", "--force", tag], log)
-            raise unavailable("The built image does not report every locked package as installed.")
+        try:
+            report = manifest(docker, image, record["imports"], settings, required=True, log=log)
+            if not lock_installed(report, lock):
+                raise unavailable("The built image does not report every locked package as installed.")
+        except BaseException:
+            remove(docker, ["image", "rm", "--force", image], log)  # a failed build leaves no image
+            raise
         record.update(status="built", image_id=image, build_record_ref=ref, lock=lock, manifest=report)
     except Fault as error:
         if error.code in PASS_THROUGH:
@@ -575,13 +571,42 @@ def _build(docker, store, record, settings, log):
             remove(docker, args, log)
 
 
+def sweep_environments(docker, log=None):
+    """Remove environment images a killed verification left behind, once they are a day old.
+
+    A verification removes its own image when it ends; only a process killed before that
+    leaves one. A younger image may belong to a verification still running.
+    """
+    code, _, err = docker.invoke(["image", "prune", "--all", "--force", "--filter", "label=" + KEY_LABEL,
+                                  "--filter", "until=24h"], timeout=120)
+    if code and log:
+        log.emit("environment_sweep_incomplete", stderr=err.decode("utf-8", "replace")[-300:])
+
+
+def remove_environment(record, settings, *, workspace, log=None, process=None):
+    """Remove the image one verification built, however that verification ended."""
+    if not record or record.get("status") != "built":
+        return
+    finishing()  # the verification is over; a cancellation must not stop its cleanup
+    try:
+        docker = DockerSandbox(workspace, settings, log=log, process=process)
+        docker.preflight()
+    except Fault as error:
+        if log:
+            log.emit("environment_cleanup_incomplete", operation=["image", "rm"], code=error.code)
+        return
+    remove(docker, ["image", "rm", "--force", record["image_id"]], log)
+
+
 def prepare_environment(source, source_root, settings, *, workspace, limits, log=None, process=None):
     """The record of "Skill environment"; its `image_id` is the image subject trials will use."""
     docker = DockerSandbox(workspace, settings, log=log, process=process)
-    base = docker.preflight()["image_id"]
+    operator = docker.preflight()["image_id"]
+    sweep_environments(docker, log)
     record = {"policy": POLICY, "status": None, "source_path": str(source), "snapshot_digest": None,
-              "base_image": base, "image_id": base, "index": settings["package_index"],
-              "requirements": [], "rejected": [], "notes": [], "imports": [], "manifest": None}
+              "operator_image": operator, "base_image": None, "image_id": operator,
+              "index": settings["package_index"], "requirements": [], "rejected": [], "notes": [], "imports": [],
+              "manifest": None}
     store = Store(workspace)
     state = {"source_path": str(source), "source_root": str(source_root), "limits": limits, "run_id": None,
              "updated_at": utc_now(), "implementation_version": __version__}
@@ -603,7 +628,7 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
     record["status"] = ("disabled" if record["requirements"] else "all_rejected" if record["rejected"]
                         else "not_needed")
     if record["imports"]:
-        record["manifest"] = manifest(docker, base, record["imports"], settings, required=False, log=log)
+        record["manifest"] = manifest(docker, operator, record["imports"], settings, required=False, log=log)
     return finish(record, log)
 
 
@@ -625,20 +650,20 @@ def planner_block(record):
     def image(value):
         return value if isinstance(value, str) and IMAGE_ID.fullmatch(value) else "(unrecorded)"
 
-    status, base = record["status"], image(record["base_image"])
+    status, operator = record["status"], image(record["operator_image"])
     lines = ["Subject environment for this run. It was fixed before the run began, and nothing can be "
              "installed during the run.", "Status: " + status + "."]
-    if status in ("built", "reused"):
+    if status == "built":
         host = urlsplit(record["index"]).hostname or "the configured index"
         entries = record["lock"]["entries"]
         shown = [entry["name"] + " " + entry["version"] for entry in entries
                  if SAFE_NAME.fullmatch(entry["name"]) and SAFE_VERSION.fullmatch(entry["version"])][:300]
-        lines.append(f"Subject trials run in image {image(record['image_id'])}: the operator's image {base} plus "
-                     f"{len(entries)} wheels from {host}, installed from a hash lock with no network: "
-                     + ", ".join(shown) + (f", and {len(entries) - len(shown)} more" if len(shown) < len(entries) else "")
-                     + ".")
+        lines.append(f"Subject trials run in image {image(record['image_id'])}: the plain Python base "
+                     f"{image(record['base_image'])} plus {len(entries)} wheels from {host}, installed from a hash "
+                     "lock with no network, and nothing else from the operator's image: " + ", ".join(shown)
+                     + (f", and {len(entries) - len(shown)} more" if len(shown) < len(entries) else "") + ".")
     else:
-        lines.append(f"Subject trials run in the operator's image {base}.")
+        lines.append(f"Subject trials run in the operator's image {operator}.")
         lines.append({"disabled": f"The skill declares {len(record['requirements'])} package requirements, but no "
                                   "package index is configured, so none was installed.",
                       "all_rejected": "Every package declaration in the skill was rejected, so none was installed.",
@@ -658,14 +683,15 @@ def planner_block(record):
 
 def report_line(summary):
     """report-card.md's Environment line, in plain text; the caller escapes it."""
-    status, base = summary["status"], summary["base_image"]
-    if status in ("built", "reused"):
-        text = (f"Environment: {status}. Subject trials ran in {summary['image_id']}, the operator's image {base} "
-                f"plus {summary['packages']} wheels from {summary['index']} (lock {summary.get('lock_digest')}), "
-                f"for {summary['requirements']} declared requirements, {summary['rejected']} rejected. "
-                "Calculations, evaluators and scoring used the operator's image.")
+    status = summary["status"]
+    if status == "built":
+        text = (f"Environment: {status}. Subject trials ran in {summary['image_id']}, the plain Python base "
+                f"{summary['base_image']} plus {summary['packages']} wheels from {summary['index']} (lock "
+                f"{summary.get('lock_digest')}), for {summary['requirements']} declared requirements, "
+                f"{summary['rejected']} rejected; the image was removed after the run. Calculations, evaluators "
+                f"and scoring used the operator's image {summary['operator_image']}.")
     else:
-        text = (f"Environment: {status}. Subject trials ran in the operator's image {base}. "
+        text = (f"Environment: {status}. Subject trials ran in the operator's image {summary['operator_image']}. "
                 f"The skill declared {summary['requirements']} installable requirements and "
                 f"{summary['rejected']} rejected ones" + ("; no package index was configured" if status == "disabled"
                                                           else "") + ".")
@@ -677,8 +703,8 @@ def report_line(summary):
 
 def report_summary(record):
     """The report card's `environment` summary and the setup log's preflight entry."""
-    summary = {"status": record["status"], "image_id": record["image_id"], "base_image": record["base_image"],
-               "index": record["index"], "requirements": len(record["requirements"]),
+    summary = {"status": record["status"], "image_id": record["image_id"], "operator_image": record["operator_image"],
+               "base_image": record["base_image"], "index": record["index"], "requirements": len(record["requirements"]),
                "rejected": len(record["rejected"]), "packages": len(record.get("lock", {}).get("entries", []))}
     if record.get("lock"):
         summary["lock_digest"] = record["lock"]["digest"]

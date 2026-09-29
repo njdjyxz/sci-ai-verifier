@@ -156,14 +156,20 @@ def verify(source_path, *, workspace, instructions, model="opus", auth="subscrip
     log = WorkflowLog(workspace)
     started = time.monotonic()
     log.emit("verification_started", source_path=str(source_path), model=model, auth_mode=auth)
+    cleanups = []
     try:
         result = _verify(source_path, workspace=workspace, instructions=instructions, model=model,
-                         auth=auth, executable=executable, timeout=timeout, log=log,config_path=config_path)
+                         auth=auth, executable=executable, timeout=timeout, log=log,config_path=config_path,
+                         cleanups=cleanups)
     except (Fault, OSError, ValueError, ConfigurationError, KeyboardInterrupt) as error:
         result = {"status": "unavailable", "error": {
             "code": error.code if isinstance(error, Fault) else "interrupted" if isinstance(error, KeyboardInterrupt) else "configuration_unavailable",
             "message": str(error) if isinstance(error, Fault) else "Local verification could not complete; inspect the workflow log.",
             "verification_complete": False}}
+    finally:
+        # A skill environment lives for one verification, however it ended ("Skill environment").
+        for cleanup in cleanups:
+            cleanup()
     try:
         log.emit("verification_finished", status=result["status"], error=result.get("error"),
                  duration_seconds=time.monotonic()-started)
@@ -173,7 +179,8 @@ def verify(source_path, *, workspace, instructions, model="opus", auth="subscrip
     return result
 
 
-def _verify(source_path, *, workspace, instructions, model, auth, executable, timeout, log, config_path=None):
+def _verify(source_path, *, workspace, instructions, model, auth, executable, timeout, log, config_path=None,
+            cleanups=None):
     from .execution_control import checkpoint
     checkpoint()
     log.emit("setup_started")
@@ -197,14 +204,16 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
     if settings["sandbox_image"]:
         # After the probe, so a CLI that cannot serve the model costs no download; before the run
         # exists, so nothing the planner does can reach the one step that downloads packages.
-        from .environment import prepare_environment, report_summary
+        from .environment import prepare_environment, remove_environment, report_summary
         from .local_config import source_limits
         from .tools import DEFAULT_LIMITS
         environment = prepare_environment(source, source if source.is_dir() else source.parent, settings,
                                           workspace=workspace, limits={**DEFAULT_LIMITS, **source_limits(settings)},
                                           log=log)
         preflight["environment"] = report_summary(environment)
-        if environment["image_id"] != environment["base_image"]:
+        if environment["status"] == "built":
+            if cleanups is not None:
+                cleanups.append(lambda: remove_environment(environment, settings, workspace=workspace, log=log))
             adapter = ClaudeCode(executable=adapter.executable, model=model, auth=auth, log=log, settings=settings,
                                  subject_image=environment["image_id"])
     log.emit("setup_finished", preflight=preflight)

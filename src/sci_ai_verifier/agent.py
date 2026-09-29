@@ -242,7 +242,7 @@ class Runtime:
                                 ["source_path"])
                 state["local_environment_ref"] = self.store.put_json(self.environment)
                 state["objects"].append(state["local_environment_ref"])
-                if self.environment["status"] in ("built", "reused"):
+                if self.environment["status"] == "built":
                     state["host_limitations"].append("skill_packages_from_configured_index")
         directory = self.store.run_dir(run_id)
         directory.mkdir(parents=True)
