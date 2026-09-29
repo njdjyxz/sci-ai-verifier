@@ -81,10 +81,13 @@ class Runtime:
         return f"Use start_verifier_run or resume_verifier_run, follow the pinned {self.profile} profile and current state token. Report only the outcome established by that profile."
 
     def __init__(self, workspace, source_root, instruction_root, *, limits=None,
-                 profile="stage2", registry_root=None, release_directory=None, subject_adapter=None):
+                 profile="stage2", registry_root=None, release_directory=None, subject_adapter=None,
+                 environment=None):
         if profile not in {"stage2", "stage3", "verification", "demo", "local"}:
             raise ConfigurationError("Unsupported run profile.")
         self.profile = profile
+        # The record setup prepared before this run existed ("Skill environment", local-contract.md).
+        self.environment = environment
         self.release_directory = release_directory
         from .execution import UnavailableSubject
         self.subject = subject_adapter or UnavailableSubject()
@@ -125,12 +128,11 @@ class Runtime:
         except OSError as error:
             raise ConfigurationError(f"Verifier data directory: {workspace} is not writable "
                                      f"({error.strerror}). Choose a writable folder.") from None
-        source_limits={}
+        local_limits={}
         if profile=="local" and getattr(self.subject,"settings",None):
-            source_limits={"max_file_bytes":self.subject.settings["max_file_bytes"],
-                           "max_total_bytes":self.subject.settings["max_artifact_bytes"],
-                           "max_files":self.subject.settings["max_artifacts"]}
-        self.limits = {**DEFAULT_LIMITS, **({"max_steps": 256} if profile != "stage2" else {}), **source_limits, **(limits or {})}
+            from .local_config import source_limits
+            local_limits=source_limits(self.subject.settings)
+        self.limits = {**DEFAULT_LIMITS, **({"max_steps": 256} if profile != "stage2" else {}), **local_limits, **(limits or {})}
         if profile == "demo":
             self.limits.update(max_steps=512, repair_retries=32, illegal_transitions=32,
                                max_files=1000, max_file_bytes=4 * 1024 * 1024, max_total_bytes=32 * 1024 * 1024,
@@ -234,10 +236,24 @@ class Runtime:
                                         "local_container_execution" if settings["sandbox_image"] else "text_session_not_an_os_sandbox",
                                         "evidence_grade_is_an_evidence_strength_indicator_not_an_endorsement", "live_cli_acceptance_required",
                                         "external_app_adapters_are_operator_trusted"]
+            if self.environment:
+                if self.environment["source_path"] != str(source):
+                    raise Fault("environment_mismatch", "The skill environment was prepared for another source.",
+                                ["source_path"])
+                state["local_environment_ref"] = self.store.put_json(self.environment)
+                state["objects"].append(state["local_environment_ref"])
+                if self.environment["status"] in ("built", "reused"):
+                    state["host_limitations"].append("skill_packages_from_configured_index")
         directory = self.store.run_dir(run_id)
         directory.mkdir(parents=True)
         with self.store.lock(run_id):
-            for identity, content in self._instruction_blocks():
+            blocks = list(self._instruction_blocks())
+            if self.profile == "local" and self.environment:
+                # Run-specific, so it is not one of the fixed blocks `__init__` pre-builds. It is
+                # rendered only from values the verifier checked; skill text stays in the record.
+                from .environment import planner_block
+                blocks.append(("subject-environment", planner_block(self.environment)))
+            for identity, content in blocks:
                 key = self.store.put(content.encode("utf-8"))
                 keep_object(state, key)
                 state["context_manifest"].append({
@@ -306,7 +322,7 @@ class Runtime:
         parts = {entry["identity"]: ("verifier_instruction", entry["digest"])
                  for entry in state["context_manifest"]}
         for name, ref in (("manifest", state["manifest_ref"]), ("report", state.get("report_ref")),
-                          ("snapshot", state["source_ref"])):
+                          ("snapshot", state["source_ref"]), ("environment", state.get("local_environment_ref"))):
             if ref:
                 parts[name] = ("committed_metadata", ref)
         if state["operational_refs"]:

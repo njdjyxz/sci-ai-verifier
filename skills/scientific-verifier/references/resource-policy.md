@@ -176,3 +176,13 @@ A cleanup failure does not change a scientific result. It produces an operationa
 ## Local candidate storage
 
 The personal/local profile stores fetched private reference evidence and mechanically qualified candidates under `.verifier/candidates/`, separately from `.verifier/subject-runs/` receipts. Temporary subject workspaces contain only pinned skill text, frozen inputs and harmless generated configuration, with authentication configuration outside the readable workspace. Publication is an explicit opt-in draft pull request; the agent records a redistribution assessment and a reviewer decides by merging. Unknown or restrictive licenses do not authorize redistribution, and recording an assessment of one does not change that. Local qualification does not modify reviewed registry entries or grant scientific grades.
+
+## Packages a skill declares
+
+The local profile may download the Python packages a submitted skill declares, so its trials can run them. The operator opts in with `package_index`, which is off by default. "Skill environment" in `local-contract.md` owns the mechanism.
+
+- **One step, before the run.** Nothing later can add a package or reach an index. Trials have no network.
+- **Names from the skill's snapshot only**, plus their dependencies. No model names a package, and no skill chooses the index.
+- **Gates.** Wheels only, from one HTTPS index, hashed by the verifier, installed offline from a lock, with count and size caps.
+- **Scope.** Subject trials only. Calculations, evaluators and scoring keep the operator's image.
+- **Residual risk.** Trust moves from vetting each package to "index, wheels and lock", as in ordinary CI. A compromised package still runs inside trials. The offline, capped, disposable sandbox contains it and must not be relaxed. The size cap applies only after download.

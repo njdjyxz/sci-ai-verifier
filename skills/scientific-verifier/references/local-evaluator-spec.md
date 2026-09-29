@@ -55,7 +55,9 @@ The other valid values are `fail` and `invalid`. A crash, timeout, malformed JSO
 or unknown status is an operational evaluator failure. Do not use `invalid` for
 missing infrastructure. The Python program runs in a new pinned container for
 each control and score. No package installation, network or host access is
-available. Put scientific dependencies in the operator-prepared image.
+available. Put scientific dependencies in the operator-prepared image. The packages
+a skill declares reach its subject trials only, never an evaluator ("Skill
+environment" in `local-contract.md`).
 
 Mechanical controls authorize provisional use only. Grade A/B/C requires the
 separate exact-candidate and exact-scope scientific review described in the local

@@ -93,11 +93,10 @@ ran for the first time**. That run also exposed three problems:
 - a code-fenced reply was misread;
 - the sandbox could not run scikit-survival at all.
 
-The last is answered by **skill environments**, built on branch `skill-environments` and not merged:
-they are tested with fake Docker only and not yet live. Calculated answers have still not met a
-run. The 2026-09-28 entry has the details.
+The last is now answered by **skill environments** (below), which are tested with fake Docker and
+**not yet live**. Calculated answers have still not met a run. The 2026-09-28 entry has the details.
 
-Automated suite: **351 tests, 349 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **382 tests, 380 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -169,7 +168,7 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
   local planner since 2026-09-21, was corrected (`a7f023b`). The pIC50 claim's B traced to its
   planner's pages rather than its duplicates, and calculated answers were drafted.
 
-## Claude: 2026-09-28 (reply schemas; calculated answers; run 0aeca4c6; long-path cleanup)
+## Claude: 2026-09-28 (reply schemas; calculated answers; run 0aeca4c6; skill environments)
 
 ### Current stage and status
 
@@ -185,13 +184,14 @@ glycoengineering:
 - no planner wrote a calculation;
 - the fallback D ran for the first time.
 
-The run could execute nothing, because the pinned image lacks scikit-survival. A Windows long-path
-fix to temp cleanup is committed and pushed to `main` with this entry. The operator also asked, by
-name, for the 2026-09-18 automatic dependency resolution design. It was built as **skill
-environments** (packages a skill declares, downloaded in one step before the run exists, installed
-offline for its subject trials only). At the operator's request it lives on branch
-`skill-environments`, not on `main`, until it has been tested. That branch's copy of this entry
-describes it.
+The run could execute nothing, because the pinned image lacks scikit-survival. So the operator
+asked, by name, for the 2026-09-18 automatic dependency resolution design. It is now built, contracts
+first, as **skill environments**: the packages a skill declares are downloaded in one step before
+the run exists, and installed offline into an image that only its subject trials use.
+**Skill environments are tested with fake Docker only: no live build and no run yet.** A Windows
+long-path fix to temp cleanup was also made. The long-path fix is on `main` (`f61a97b`). At the
+operator's request, skill environments live on this branch, `skill-environments`, until they have
+been tested; this copy of the entry describes them.
 
 ### What has been done
 
@@ -313,12 +313,39 @@ The fix:
 - The 25 leftover folders were sent to the Recycle Bin at the operator's request.
 - `local-contract.md` states the rule.
 
-**5. Skill environments** were built at the operator's request. Package downloads happen in one
-setup step only; the packages are installed offline, for subject trials only. The work is on branch
-`skill-environments`, kept off `main` until it has been tested. That branch's copy of this entry
-describes the design and its tests.
+**5. Skill environments**, the operator's request with the constraint that package downloads
+happen only in this step. `local-contract.md` "Skill environment" owns the mechanism;
+`resource-policy.md` "Packages a skill declares" owns the trust decision.
+- **Declarations** are read only from the skill's own snapshot, taken in setup exactly as
+  `load_submitted_skill` will take it. They come from install commands in fenced Markdown blocks,
+  `requirements*.txt` and `pyproject.toml` dependencies. Prose, URLs, paths, VCS references,
+  markers, index options and installer packages are rejected. Import-only names are never installed.
+  On the real skills: scikit-survival gives its 10 pins, sar-analysis nothing, and
+  glycoengineering's `uv pip install -e .` is rejected.
+- **The build** runs in setup, after the model probe and before the run or planner exists:
+  1. a resolver container, the only container with a network, runs `pip download` for wheels only;
+  2. Python checks and hash-locks the wheels;
+  3. an offline installer applies the lock with `--require-hashes`, then `pip check`;
+  4. `docker commit` makes the image, tagged `sci-verifier-env:<key>` and cached by labels.
 
-Verification of item 4: suite 349 → 351 tests, 349 passing, 2 skipped, none failing.
+  Any failure stops the run before a planner is spent.
+- **Only subject trials use the built image.** Calculations, evaluators, scoring and catalog
+  requalification keep the operator's image, so no package the skill chose runs where keys are
+  produced or trials scored. The image is folded into the subject identity (`--subject-image` to
+  the internal server) and `environment_digest` includes the record.
+- **The planner** gets a pinned block rendered only from checked values, and the full record as the
+  `environment` context section. A skill changed between setup and `load_submitted_skill` ends the
+  run as `source_changed`.
+- **Settings:** `package_index` (null by default), `max_package_bytes` and `max_packages`.
+
+Verification of items 4 and 5:
+- Suite 349 → 382 tests: 380 passing, 2 skipped, none failing.
+- 31 new tests in `test_environment.py` run on fake Docker. Among them, a guard checks that only
+  `environment.py` gives a container a network.
+- Twelve one-line mutations of the safeguards were each caught.
+- `resource-policy.md`'s new section was kept short so that the historical verification profile's
+  bootstrap stays under its 200,000-byte test bound (199,805).
+- **Not verified:** a real resolve and build, and a run in the built image.
 
 ### Decisions taken 2026-09-28
 
@@ -332,10 +359,15 @@ Verification of item 4: suite 349 → 351 tests, 349 passing, 2 skipped, none fa
   are what make it acceptable. The rubric's A is "traceable or mathematically exact", and the
   local profile had implemented only the first.
 - **Build automatic dependency resolution** (operator, by name, lifting the 2026-09-18
-  do-not-implement flag), **with package downloads only in that one step**. The operator also
-  decided that a failed build stops the run in setup, and that only declared installs count.
-- **Keep it on its own branch** (operator): `skill-environments`, until it has been tested.
-  The operator may still change it.
+  do-not-implement flag), **with package downloads only in that one step**. This supersedes the
+  "Deferred" entry and "Dependencies must already exist in the pinned image".
+- **A failed build stops the run in setup** (operator), before any planner cost; `package_index`
+  null runs on the operator's image instead.
+- **Only declared installs** (operator): names inferred from imports are never installed.
+- **Subject trials only** (approved in the plan). The verifier's own calculations, evaluators and
+  scoring keep the operator's image, which also leaves open question 2 open.
+- **Keep skill environments on their own branch** (operator): `skill-environments`, until they have
+  been tested. The operator may still change them before any merge.
 - **Delete the 25 leftover temp folders** (operator). They went to the Recycle Bin, not
   permanently.
 
@@ -354,9 +386,11 @@ Verification of item 4: suite 349 → 351 tests, 349 passing, 2 skipped, none fa
 4. **The working tree is clean** at that commit.
 5. **The plan's 5-hour window has room.** `0aeca4c6` cost about $27 and took the window from 26%
    to 77%, so plan one run per window.
-6. **The timeout.** The app passes 5,400 s. `0aeca4c6` used 3,827 s for five claims.
-7. **To test skill environments**, check out branch `skill-environments` and follow its copy of
-   this entry. That copy includes setting `package_index` and the live build check.
+6. **The timeout.** The app passes 5,400 s. `0aeca4c6` used 3,827 s for five claims, and a first
+   environment build adds a few minutes of setup.
+7. **For a skill environment:** the operator sets `package_index` (e.g. `https://pypi.org/simple`)
+   in `.verifier/local-settings.json`. The first build downloads the scikit-survival stack, about
+   100 MB of wheels, once. The live build check under "Recommended next action" should come first.
 
 ### Cleaning the previous run
 
@@ -367,8 +401,8 @@ Move, do not delete, into the session scratchpad:
 - the nine candidates it wrote at `local-reference-comparison-6`, dated 2026-09-28
 
 Keep the glycoengineering run `76ce4af1-…`, its attempt `a1ec3e49-…`, its subject-runs and its five
-candidates. Leave `.verifier/store/` alone. `d416f79d`'s files are already in an earlier session's
-scratchpad.
+candidates. Leave `.verifier/store/` alone: environment build records live there. `d416f79d`'s
+files are already in an earlier session's scratchpad.
 
 ### What to check in the run
 
@@ -388,6 +422,15 @@ scratchpad.
    `process_unparsed_output`, no claim-only `claude_incomplete`, late-run wall-time gap near 2 s.
    A reused claim-only answer shows its case's current ID.
 6. **The rest.** Refusals (quote `model_refusal_*`), `invalid` still zero, claim count, run time.
+7. **Skill environment.**
+   - The setup log's `preflight.environment` status. The first time should be `built`, a second
+     run `reused` with no networked container.
+   - The lock, and whether `pip check` passed with the skill's numpy/pandas pins over the RDKit base.
+   - The planner's pinned block.
+   - Whether subjects now run scikit-survival or the skill's scripts.
+   - Any docstring lookups of a key: trace `mcp__subject__run_command`, as with RDKit in `31b67427`.
+   - Whether any planner designs an executed case.
+   - That calculations and scoring still report the operator's image ID.
 
 ### Reading the results without fooling yourself
 
@@ -417,7 +460,11 @@ The 2026-09-25 list still holds (archived), with three additions:
    - **Coverage.** A run sampled five narrow API facts and none of the skill's workflow advice.
    - **Narrow claims.** Say in the report when a B was limited by the claim's size rather than its
      source.
-5. **Carried from 2026-09-25**, detail in the archive: the aggregation rule as a plan field; claim
+5. **From skill environments:**
+   - Subjects can read installed docstrings, so doc-keyed cases can be looked up.
+   - A fenced counter-example install line stops the run if it cannot resolve.
+   - Should library output ever key an answer? That is open question 2.
+6. **Carried from 2026-09-25**, detail in the archive: the aggregation rule as a plan field; claim
    coverage (three to six claims per run); the capitalisation residue; recognition cases passed on
    plausibility; planners and reviewers differing across runs (for pIC50 the cause was pages, now
    answered by calculated answers); claims Opus 5 refuses; a fallback for other operational
@@ -428,16 +475,14 @@ The 2026-09-25 list still holds (archived), with three additions:
 
 Unchanged from 2026-09-25: parallel trials, appending to the timelines, Opus 5.5 (until WinGet
 offers Claude Code 2.1.280), a longer subject limit and the case-level contract. Automatic
-dependency resolution left this list on 2026-09-28, when the operator asked for it; it is on branch
-`skill-environments` until tested.
+dependency resolution left this list on 2026-09-28, when the operator asked for it.
 
 ### Prompt for the next session
 
 ```text
-Before anything else, check out branch skill-environments and read the latest
-entry in its DEVELOPMENT-PLAN.md ("Claude: 2026-09-28"). Do its live build check
-once I confirm the download. Then follow its preflight, clean the previous run
-as it describes, and use scientific-verifier-local to verify this skill:
+Before anything else, read the latest entry in DEVELOPMENT-PLAN.md
+("Claude: 2026-09-28"). Follow its preflight, clean the previous run as it
+describes, and use scientific-verifier-local to verify this skill:
 "D:\Su Lab\verifier-submissions\examples\scikit-survival"
 
 Show me the report and workflow-log paths, a table with one row per claim
@@ -452,17 +497,28 @@ Do not change code, commit or push unless I ask.
 
 ### Urgent next steps, if any
 
-None blocking. The long-path fix is committed and pushed to `main` with this entry, and skill
-environments are on branch `skill-environments`. A run needs a new session started after the
-commit it runs on, because a session started earlier runs a `serve-local` with the old code.
+None blocking. Skill environments are committed on this branch with this entry and are not merged
+into `main`. Testing them needs this branch checked out, and a new session started after that,
+because a session started earlier runs a `serve-local` with the old code.
 
 ### Suggested next move
 
-Test skill environments on their branch. If they hold, merge them, then run scikit-survival again
-to see whether subjects execute the library once it is installed.
+Prove skill environments live, then run scikit-survival again. The question is whether subjects
+execute the library once it is installed, and whether planners design executed cases.
 
 ### Recommended next action
 
-Check out `skill-environments` and do its recommended next action, the live build check. It needs
-the operator's go-ahead, because it downloads about 100 MB from PyPI and edits the operator's
-settings. It is finished when that check passes or its first failure is named.
+With the operator's go-ahead (it downloads about 100 MB from PyPI and edits the operator's
+settings):
+1. Set `package_index`.
+2. Run `prepare_environment` alone on scikit-survival over the RDKit image.
+3. Confirm, in this order:
+   - the lock is written;
+   - `pip check` passes with the skill's numpy/pandas pins;
+   - the image carries its labels;
+   - a `--network none` container imports `sksurv`;
+   - a second call reuses the image with no networked container;
+   - `package_index: null` gives `disabled`.
+
+It is finished when all six hold, or the first that fails is named. After that, a scikit-survival
+run from a new session answers item 7 of "What to check in the run".

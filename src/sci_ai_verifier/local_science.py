@@ -97,12 +97,16 @@ def fingerprint(candidate):
     return digest(canonical({key: candidate[key] for key in keys if key in candidate}))
 
 
-def environment_digest(settings, subject):
+def environment_digest(settings, subject, environment=None):
     runner = subject["adapter_id"]
     if re.fullmatch(r"[0-9a-f]{64}", runner.rsplit("-", 1)[-1]):
         runner = runner.rsplit("-", 1)[0]
-    return digest(canonical({"model_requested": subject["model_id"], "runner": runner,
-                             "runtime_digest": digest(implementation_bytes()), "settings": settings}))
+    pinned = {"model_requested": subject["model_id"], "runner": runner,
+              "runtime_digest": digest(implementation_bytes()), "settings": settings}
+    if environment:
+        # The runner suffix stripped above carries the subject image; the record replaces it.
+        pinned["environment"] = environment
+    return digest(canonical(pinned))
 
 
 def token_exact(case):

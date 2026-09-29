@@ -19,10 +19,12 @@ def main():
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--attempt-id")
     parser.add_argument("--config")
+    parser.add_argument("--subject-image")
     args = parser.parse_args()
     log = WorkflowLog(args.workspace, attempt_id=args.attempt_id) if args.attempt_id else None
     from sci_ai_verifier.local_config import load_configuration
-    subject = ClaudeCode(executable=args.claude_executable, model=args.model, auth=args.auth, log=log,settings=load_configuration(args.config))
+    subject = ClaudeCode(executable=args.claude_executable, model=args.model, auth=args.auth, log=log,
+                         settings=load_configuration(args.config), subject_image=args.subject_image)
     runtime = Runtime(args.workspace, args.source_root, args.instructions, profile="local", subject_adapter=subject)
     serve(BoundRuntime(runtime, args.run_id, log), sys.stdin.buffer, sys.stdout.buffer)
 
