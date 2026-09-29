@@ -4,7 +4,7 @@ from html import escape
 import base64
 import re
 
-from .common import Fault, canonical, digest, utc_now
+from .common import Fault, canonical, digest, normalize, utc_now
 from .ingest import verified_snapshot
 from .storage import atomic_write, no_links
 from . import local_candidates as catalog
@@ -18,6 +18,18 @@ CLAIM_LEGAL = {
     "local_documentary":["fetch_local_reference","load_local_resource","fetch_local_asset","assess_local_documentary","record_local_unverified","record_local_limitation"],
     "terminal_result": [], "terminal_operational": [],
 }
+# "Claims" in local-contract.md owns the claim limit and the scope rule the planner's manifest
+# tool states; the earlier profiles keep their atomic claims and their own limit.
+MAX_CLAIMS = 5
+CLAIM_MANIFEST_DESCRIPTION = (
+    "In source_ready only: commit claims quoted from delivered snapshot ranges. Each claim is one behaviour the "
+    "skill tells its user to rely on, stating every fact the skill gives about it, broad enough for about six "
+    "independent questions; take them section by section, at most " + str(MAX_CLAIMS) + ", as \"Claims\" in "
+    "local-contract.md says. Use Not specified for absent scope/behavior; add no background definitions. Empty list "
+    "is valid. No grading.")
+CLAIM_LIMIT_MESSAGE = ("A local manifest holds at most " + str(MAX_CLAIMS) + " claims (\"Claims\" in "
+                       "local-contract.md). Merge claims about one behaviour, or keep the behaviours the skill's "
+                       "workflow depends on most.")
 OPERATIONS = ("list_local_candidates", "fetch_local_reference", "qualify_local_candidate",
               "select_local_candidate", "execute_local_claim", "record_local_limitation", "load_local_resource", "fetch_local_asset", "qualify_local_evaluator", "assess_local_documentary", "record_local_unverified")
 # The planner may end a claim operationally only for one of these named causes. Codes
@@ -42,7 +54,8 @@ def legal(state):
 
 def schemas(base, obj, string):
     from .local_science import PLANNER_JUSTIFICATION
-    from .local_candidates import MINIMUM_OPTIONS
+    from .local_candidates import INSTALLED_METHODS, MINIMUM_OPTIONS
+    from .answers import MAX_UNIT
 
     def choice(values, maximum=100):
         return {"type": "string", "minLength": 1, "maxLength": maximum, "enum": list(values)}
@@ -54,7 +67,9 @@ def schemas(base, obj, string):
               "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000),
               "options": {"type": "array", "minItems": MINIMUM_OPTIONS, "maxItems": 9, "items": string(4000)},
               # Only in a `mixed` design, where each case names its own installed method.
-              "method": choice(("exact", "numeric", "choice"), 20),
+              "method": choice(INSTALLED_METHODS, 20),
+              # Only a numeric case: the unit a reply may write after the number.
+              "unit": string(MAX_UNIT),
               # A calculated case gives these, and Python supplies its expected answer and quote.
               "arguments": string(4000), "decimals": {"type": "integer", "minimum": 0, "maximum": 6}}
     # Python requires the answer and its quote of every case it does not calculate.
@@ -344,6 +359,9 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                          # lists its options at the end of its input and its expected value is
                          # only an index, so a clipped input left the verdict unjudgeable.
                          "cases": [{"case_id": case["case_id"], "answer_form": answer_form(candidate, case),
+                                    "answer_type": (catalog.case_method(candidate, case)
+                                                    if candidate["method"] != "python" else "python"),
+                                    **({"unit": case["unit"]} if case.get("unit") else {}),
                                     "input": clip(case["input"], 2000),
                                     **({"options": [clip(option, 400) for option in case["options"]]}
                                        if case.get("options") else {}),
@@ -541,7 +559,7 @@ def check_reference_host(settings,url):
 
 def compare(candidate,case,text,settings,subject,artifacts=None):
     if candidate["method"]!="python":
-        return catalog.compare(catalog.case_method(candidate,case),text,case["expected"])
+        return catalog.case_compare(candidate,case,text)
     from .local_evaluators import score
     return score(candidate,case,text,settings,log=getattr(subject,"log",None),artifacts=artifacts)["status"]
 
@@ -709,17 +727,23 @@ def execute(store, state, claim_id, subject, retry=False):
     for entry in snapshot["files"]:
         raw=store.get(entry["digest"])
         source.append({"path":entry["path"],**({"content":raw.decode("utf-8")} if entry["encoding"]=="utf-8" else {"base64":base64.b64encode(raw).decode()})})
-    receipts, observations = [], []
+    receipts, observations, scored_trials = [], [], []
     for index, (case,trial) in enumerate(((case,trial) for case in candidate["cases"] for trial in range(1,trials+1)),1):
+        # The line Python writes from the case's answer type ("Reading a reply", tool-contracts.md).
+        # A generated evaluator reads free output, so its cases carry none.
+        case_input = {"input": case["input"]}
+        if candidate["method"] != "python":
+            from .answers import instruction
+            case_input["answer_format"] = instruction(catalog.case_method(candidate, case), case.get("unit"))
         request = {"kind": "local-subject-request", "snapshot_ref": state["source_ref"],
-                   "selection_ref": work["selection_ref"], "case_id": case["case_id"], "input": case["input"],
+                   "selection_ref": work["selection_ref"], "case_id": case["case_id"], **case_input,
                    "subject": state["subject_config"], "trial":trial,"created_at": utc_now()}
         request_ref = keep(store, state, request)
         atomic_write(directory / f"{index:03}-request.json", canonical(request))
         receipts.append(request_ref)
         state["subject_calls_used"] += 1
         try:
-            response = subject.observe(source=source, case_input={"input": case["input"]},
+            response = subject.observe(source=source, case_input=case_input,
                                        config=state["subject_config"], timeout_seconds=settings["subject_timeout_seconds"])
             catalog.safe_payload(response)
             if (not isinstance(response, dict) or not isinstance(response.get("text"), str) or len(response["text"].encode("utf-8")) > 16384
@@ -778,11 +802,8 @@ def execute(store, state, claim_id, subject, retry=False):
             status=compare(candidate,case,response["text"],settings,subject,evaluation_artifacts)
         except Fault as error:
             return limitation(store,state,claim_id,error.code,"The evaluator did not complete. Saved subject observations were not retried.",receipts)
-        scored={"case_id":case["case_id"],"trial":trial,"request_ref":request_ref,"response_ref":response_ref,"comparison_status":status,"model_ids":models}
-        score_ref=keep(store,state,scored)
-        receipts.append(score_ref)
-        atomic_write(directory/f"{index:03}-score.json",canonical(scored))
-        observations.append(scored)
+        scored_trials.append({"index":index,"case":case,"trial":trial,"request_ref":request_ref,
+                              "response_ref":response_ref,"status":status,"models":models,"text":response["text"]})
     # Cases the critique did not count ran and stay in the receipts, but a case measuring
     # something other than the claim cannot pass or fail it. An audit written before case
     # verdicts existed counted every case.
@@ -790,6 +811,32 @@ def execute(store, state, claim_id, subject, retry=False):
     counted = audit_record.get("counted_cases")
     counted = set(counted if counted is not None else (case["case_id"] for case in candidate["cases"]))
     cases = [case for case in candidate["cases"] if case["case_id"] in counted]
+    # A counted trial Python's reader does not pass is read by the AI reader ("Reading replies",
+    # local-contract.md). A generated evaluator's status is final, and a synthetic run's status is
+    # withheld whatever its trials say, so neither is read.
+    readings = {}
+    if candidate["method"] != "python" and not subject.identity["synthetic"]:
+        from .documentary import read_replies
+        unread = [item for item in scored_trials if item["case"]["case_id"] in counted and item["status"] != "pass"]
+        records = read_replies(subject, [{"method": catalog.case_method(candidate, item["case"]), "case": item["case"],
+                                          "reply": item["text"], "python_status": item["status"]} for item in unread])
+        readings = {item["index"]: record for item, record in zip(unread, records)}
+    for item in scored_trials:
+        record = readings.get(item["index"])
+        scored = {"case_id": item["case"]["case_id"], "trial": item["trial"], "request_ref": item["request_ref"],
+                  "response_ref": item["response_ref"], "python_status": item["status"],
+                  "comparison_status": record["final_status"] if record else item["status"],
+                  "read_by": "ai_reader" if record and record["status"] == "used" else "python",
+                  "model_ids": item["models"]}
+        if record:
+            reading_ref = keep(store, state, record)
+            receipts.append(reading_ref)
+            atomic_write(directory / f"{item['index']:03}-reading.json", canonical(record))
+            scored.update(reading_ref=reading_ref, reading_status=record["status"], reading=record.get("reading"))
+        score_ref = keep(store, state, scored)
+        receipts.append(score_ref)
+        atomic_write(directory / f"{item['index']:03}-score.json", canonical(scored))
+        observations.append(scored)
     scored = [row for row in observations if row["case_id"] in counted]
     result = {"kind": "local-comparison", "claim_id": claim_id, "candidate_ref": work["candidate_ref"],
               "selection_ref": work["selection_ref"], "observations": observations, "receipts": receipts,
@@ -969,7 +1016,46 @@ def axis_lines(terminal, cell):
     return lines + [""] if lines else []
 
 
+def reader_cell(test):
+    """Who settled one trial's status, for the report table."""
+    reading = test.get("reading")
+    if not reading:
+        return "Python" if test.get("read_by") else ""
+    if reading["status"] == "used":
+        return "AI reader: " + reading["reading"] + " (Python: " + reading["python_status"] + ")"
+    return "Python; AI reading " + reading["status"] + " (" + (reading.get("refusal") or reading.get("error") or "") + ")"
+
+
+def reading_lines(terminal, tests, cell):
+    """The claim's AI-reader disclosure ("Reading replies", local-contract.md): what it read and
+    changed, the status Python's reader alone gives, and every reading with its reason."""
+    summary = terminal.get("reading_summary")
+    read = [test for test in tests if test.get("reading")]
+    if not summary or not summary.get("read"):
+        return []
+    alone = summary["python_reader"]
+    changes = ", ".join(str(count) + " " + change for change, count in sorted(summary["changes"].items()))
+    status = alone["scientific_status"] or "withheld (" + str(alone["status_withheld_reason"]) + ")"
+    lines = ["AI reader: read " + str(summary["read"]) + " counted trial" + ("" if summary["read"] == 1 else "s")
+             + " Python's reader did not pass, and changed " + str(summary["changed"])
+             + (" (" + changes + ")" if changes else "") + "; " + str(summary["refused"]) + " reading(s) refused, "
+             + str(summary["unavailable"]) + " unavailable. By Python's reader alone the status would be "
+             + cell(status) + ", accuracy " + str(alone["accuracy"]["matched"]) + " of "
+             + str(alone["accuracy"]["evaluated"]) + ".", ""]
+    for test in read:
+        reading = test["reading"]
+        detail = (reading.get("reading", "") + (", answer " + repr(reading["answer"]) if reading.get("answer") else "")
+                  + (": " + reading["reason"] if reading.get("reason") else "")) if reading["status"] != "unavailable" else ""
+        lines.append("- Case " + cell(test["case_id"]) + ", trial " + str(test["trial"]) + ": " + cell(reading["status"])
+                     + (" (" + cell(reading.get("refusal") or reading.get("error")) + ")" if reading["status"] != "used" else "")
+                     + (" -- " + cell(detail) if detail else "") + ".")
+    return lines + [""]
+
+
 def report(store, state):
+    from .documentary import reading_note
+    from .local_science import size_limit
+
     def cell(value):
         return escape(str(value)).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
 
@@ -983,12 +1069,29 @@ def report(store, state):
         from .environment import report_line, report_summary
         environment = report_summary(store.get_json(state["local_environment_ref"]))
         lines.extend([cell(report_line(environment)), ""])
+    # Which of the skill's sections the claims cover ("Claims" in local-contract.md).
+    coverage = None
+    if claims:
+        from .claims import section_coverage
+        snapshot = verified_snapshot(store, state)
+        coverage = section_coverage({entry["path"]: normalize(store.get(entry["digest"]).decode("utf-8"))
+                                     for entry in snapshot["files"] if entry["encoding"] == "utf-8"}, claims)
+    covering = {}
+    if coverage:
+        for section in coverage["sections"]:
+            for claim_id in section["claims"]:
+                covering.setdefault(claim_id, []).append(section["heading"] or "(before the first heading)")
+        covered = sum(bool(section["claims"]) for section in coverage["sections"])
+        lines.extend([cell("Skill sections: the claims cover " + str(covered) + " of the " + str(len(coverage["sections"]))
+                           + " sections of SKILL.md" + ("; no claim covers " + "; ".join(coverage["uncovered"])
+                                                        if coverage["uncovered"] else "") + "."), ""])
     for claim in claims:
         work = state["local_work"][claim["claim_id"]]
         terminal = store.get_json(work.get("result_ref") or work["outcome_ref"])
         candidate = store.get_json(work["candidate_ref"]) if work.get("candidate_ref") else None
         responses = [store.get_json(key) for key in terminal["receipts"]]
         answers = {(item["case_id"],item.get("trial",1)): item for item in responses if item.get("request_ref") and "text" in item}
+        scores = {(item["case_id"],item.get("trial",1)): item for item in responses if "comparison_status" in item}
         tests, sources = [], {}
         audit_record = store.get_json(work["audit_ref"]) if work.get("audit_ref") else None
         counted = (audit_record or {}).get("counted_cases")
@@ -999,10 +1102,16 @@ def report(store, state):
                 sources[ref] = {key: reference[key] for key in ("url", "version", "license", "raw_ref", "retrieved_at", "authority", "redistribution")}
             for case,trial in ((case,trial) for case in candidate["cases"] for trial in range(1,trials+1)):
                 observed = answers.get((case["case_id"],trial))
+                score = scores.get((case["case_id"],trial)) or {}
+                status = score.get("comparison_status","not_obtained")
                 tests.append({"case_id": case["case_id"],"trial":trial, "input": case["input"], "expected": case["expected"],
                               "artifacts":observed.get("artifacts",[]) if observed else [],
                               "observed": observed["text"] if observed else None,
-                              "comparison_status": next((item["comparison_status"] for item in responses if item.get("case_id")==case["case_id"] and item.get("trial",1)==trial and "comparison_status" in item),"not_obtained"),
+                              "comparison_status": status,
+                              # "Reading replies" in local-contract.md: Python's own verdict, and the AI reading.
+                              "python_status": score.get("python_status",status),
+                              "read_by": score.get("read_by","python") if score else None,
+                              "reading": reading_note(store.get_json(score["reading_ref"])) if score.get("reading_ref") else None,
                               "reference_ref": case["reference_ref"], "reference_quote": case["source_quote"],
                               **({"calculated": {"arguments": case["arguments"], "decimals": case["decimals"]}}
                                  if "arguments" in case else {}),
@@ -1025,14 +1134,22 @@ def report(store, state):
                      "retry": retry, "fallback": fallback,
                      "required_grade":required_grade,"meets_required_grade":meets_required,
                      "audit":audit_record,
+                     "sections":covering.get(claim["claim_id"],[]) if coverage else None,
+                     "size_limited":size_limit(audit_record,candidate) if audit_record and candidate else None,
                      "documentary_assessment":store.get_json(work["assessment_ref"]) if work.get("assessment_ref") else None,
                      "candidate_scope": candidate["scope"] if candidate else None,
                      "calculation": {**candidate["calculation"], "receipts": candidate["calculation_receipts"]}
                      if candidate and candidate.get("calculation") else None})
-        lines.extend(["## " + cell(claim["statement"]), "",
+        lines.extend(["## " + cell(claim["statement"]), ""])
+        if coverage:
+            lines.extend([("Skill section: " + cell("; ".join(covering[claim["claim_id"]]))
+                           if claim["claim_id"] in covering else "Skill section: none; it quotes a file no section of "
+                           "SKILL.md names."), ""])
+        lines.extend([
                       "Outcome: " + terminal.get("comparison_status", terminal.get("documentary_status",terminal.get("code",terminal.get("scientific_status") or "unavailable"))), "",
                       "Scientific status: "+cell(terminal.get("scientific_status") or "unassigned")+"; evidence grade: "+cell(terminal.get("evidence_grade") or "unassigned"),""])
         lines.extend(axis_lines(terminal, cell))
+        lines.extend(reading_lines(terminal, tests, cell))
         if retry:
             first_attempt = "First attempt stopped by " + cell(retry["fault"]) + ": " + cell(retry["first_attempt"].get("reason", "")) + " "
             lines.extend([first_attempt + ("Re-run once at the end of the run, with the same plan, model and inputs: "
@@ -1061,6 +1178,12 @@ def report(store, state):
             limits=settled.get("case_limits",settled.get("evidence_limits"))
             if limits:
                 lines.extend(["Grade limited by: "+cell(", ".join(limits))+".",""])
+            size=rows[-1]["size_limited"]
+            if size:
+                lines.extend(["Limited by its number of independent cases, not its source: the source supports "
+                              +size["source_supports"]+", but "+str(size["counting"])+" cases counted, "
+                              +str(size["generated"])+" of them generated, where "+size["source_supports"]+" needs "
+                              +str(size["counting_needed"])+" with "+str(size["generated_needed"])+" generated.",""])
             for label,field in (("Coverage","coverage"),("Uncertainty","uncertainty"),
                                 ("Oracle independence","oracle_independence")):
                 lines.extend([label+": "+cell(justification.get(field,"unrecorded")),""])
@@ -1093,6 +1216,13 @@ def report(store, state):
                                  +" cases reached their key from the claim alone"
                                  +"".join("; "+str(outcomes.count(name))+" "+name for name in ("missed","unmeasured")
                                           if outcomes.count(name))+".")
+                    # Claim-only answers the AI reader read, as trials are ("Reading replies", local-contract.md).
+                    read=[sample for item in probe["cases"] for sample in item.get("samples",[]) if sample.get("reading")]
+                    if read:
+                        changed=sum(sample["reading"].get("final_status")!=sample["reading"].get("python_status")
+                                    for sample in read)
+                        lines.append("- The AI reader read "+str(len(read))+" claim-only answer"+("" if len(read)==1 else "s")
+                                     +" Python's reader did not pass, and changed "+str(changed)+".")
                 lines.append("")
             else:
                 lines.extend(["No independent critique ran for this plan; no grade is assigned.",""])
@@ -1101,9 +1231,11 @@ def report(store, state):
         if tests:
             if terminal.get("fault") and terminal.get("asserted_by") != "planner":
                 lines.extend(["A runner fault stopped this claim, so no trial below enters accuracy, status or grade.", ""])
-            lines.extend(["| Input | Expected | Observed | Comparison | Case | Trial | Counted |", "| --- | --- | --- | --- | --- | --- | --- |"])
+            lines.extend(["| Input | Expected | Observed | Comparison | Read by | Case | Trial | Counted |",
+                          "| --- | --- | --- | --- | --- | --- | --- | --- |"])
             for case in tests:
-                lines.append("| " + " | ".join(cell(case[key]) for key in ("input", "expected", "observed", "comparison_status","case_id","trial"))
+                lines.append("| " + " | ".join(cell(case[key]) for key in ("input", "expected", "observed", "comparison_status"))
+                             + " | " + cell(reader_cell(case)) + " | " + cell(case["case_id"]) + " | " + cell(case["trial"])
                              + " | " + ("yes" if case["counted"] else "no") + " |")
             if any(case["artifacts"] for case in tests):
                 from urllib.parse import quote
@@ -1127,7 +1259,7 @@ def report(store, state):
         lines.append("")
     if not rows:
         lines.append("No scientific claims were extracted. No subject was executed.")
-    document = {"schema_version": 1, "profile": "local", "run_id": state["run_id"],
+    document = {"schema_version": 1, "profile": "local", "run_id": state["run_id"], "coverage": coverage,
                 "snapshot_ref": state["source_ref"], "manifest_ref": state["manifest_ref"],
                 "claims": rows, "verification_complete": True, "overall_scientific_grade": None,
                 "synthetic": state["subject_config"]["synthetic"], "subject": state["subject_config"],

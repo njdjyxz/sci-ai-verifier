@@ -14,7 +14,7 @@ from .common import Fault, canonical
 from .local import DEADLINE_ENV, OPERATIONS
 from .local_candidates import safe_payload
 from .storage import atomic_write, no_links
-from .tools import DEFINITIONS, obj, string
+from .tools import local_definitions, obj, string
 from .runlog import WorkflowLog, recorded_call
 
 INTERNAL_NAMES = {"get_verifier_context", "load_submitted_skill", "read_snapshot_file", "commit_claim_manifest",
@@ -34,7 +34,9 @@ read them before acting. get_verifier_context returns your current state, token 
 authorized path, and takes an optional `section` to re-read one pinned document or
 committed artifact if you lose this message.
 
-1. Read every submitted text file, then commit the claim manifest quoting only what you read.
+1. Read every submitted text file, then commit the claim manifest quoting only what you read:
+   at most five claims, each one behaviour broad enough for about six independent questions,
+   taken section by section as "Claims" in the local contract says.
 2. For each claim, look up existing candidates first, then use WebSearch to find independent
    primary references and import them with the reference, resource or asset tools. Python
    retrieves the bytes; your own summary of a source is not evidence.
@@ -141,7 +143,7 @@ def closing_for(error):
 class BoundRuntime:
     """The planner's server can act only on the one operator-created run."""
     instructions = "Get the pinned context for your supplied run ID, then complete the local verification workflow."
-    definitions = [item for item in DEFINITIONS if item["name"] in INTERNAL_NAMES]
+    definitions = local_definitions(INTERNAL_NAMES)
 
     def __init__(self, runtime, run_id, log=None):
         self.runtime, self.run_id, self.log = runtime, run_id, log

@@ -143,16 +143,27 @@ DESCRIPTIONS = {
     "record_demo_observation": "In demo_execution: record the actual same-chat example output, or not_tested for unavailable capabilities. Never invent external execution. Deterministic check failures override proposed success.",
 }
 from .local import schemas as local_schemas, OPERATIONS as LOCAL_OPERATIONS
+from .local import CLAIM_MANIFEST_DESCRIPTION as local_claim_description
 SCHEMAS.update(local_schemas(BASE, obj, string))
 DESCRIPTIONS.update({name: "Internal local verification operation: " + name.replace("_", " ") +
                      ". Follow the pinned local contract and current claim state. Never grants scientific approval."
                      for name in LOCAL_OPERATIONS})
+# The local planner sizes its claims by "Claims" in local-contract.md, so its manifest tool says so.
+LOCAL_DESCRIPTIONS = {"commit_claim_manifest": local_claim_description}
 DEFINITIONS = [
     # No tool is read-only: every one of them can write the journal or repair a projection.
     {"name": name, "description": DESCRIPTIONS[name], "inputSchema": schema,
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}}
     for name, schema in SCHEMAS.items()
 ]
+
+
+def local_definitions(names):
+    """The tool definitions a local planner is given: the shared ones, with its own descriptions."""
+    return [{**item, "description": LOCAL_DESCRIPTIONS.get(item["name"], item["description"])}
+            for item in DEFINITIONS if item["name"] in names]
+
+
 # Named explicitly: a positional slice of this tuple used to decide dispatch, so
 # inserting a tool in the wrong place silently rerouted it.
 PLAN_TOOLS = ("commit_evaluation_plan", "find_resources", "materialize_resources",
@@ -366,7 +377,9 @@ class Dispatcher:
                 data = {"outcome": "snapshot_file_returned", "untrusted_payload": payload}
             else:
                 if len(arguments["claims"]) > state["limits"]["max_claims"]:
-                    raise Fault("too_many_claims", "The run claim limit was exceeded.", ["claims"])
+                    from .local import CLAIM_LIMIT_MESSAGE
+                    raise Fault("too_many_claims", CLAIM_LIMIT_MESSAGE if state["profile"] == "local"
+                                else "The run claim limit was exceeded.", ["claims"])
                 manifest = build_manifest(self.store, state, source, arguments["claims"])
                 state["manifest_ref"] = self.store.put_json(manifest)
                 keep_object(state, state["manifest_ref"])

@@ -19,16 +19,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sci_ai_verifier.claude_runner import NO_SUBSTITUTION, ClaudeCode, parse_events, refusal_category
 from sci_ai_verifier.common import Fault, canonical, digest, validate
 from sci_ai_verifier.documentary import (CLAIM_PROBE_SCHEMA, CRITIC_TIMEOUT_SECONDS, CRITIQUE_REF, CRITIQUE_RUBRIC,
-    REPLY_TOOL, critique, critique_schema, validate_assessment, validate_critique)
+    READER_SCHEMA, READER_TIMEOUT_SECONDS, REPLY_TOOL, critique, critique_schema, read_reply, validate_assessment,
+    validate_critique)
 from sci_ai_verifier.local_candidates import SECRET_BYTES, compare
 from sci_ai_verifier.local_config import load_configuration
 
 RECORDED = Path(__file__).resolve().parent / "recorded"
-# The verifier's own sessions answering through their reply schemas, captured live on
-# 2026-09-28 through the code that reads them. In two of the three the first reply broke
-# the schema and the session corrected it; each maps to the key its refused reply added.
-STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "$PARAMETER_NAME", "assessor-structured.jsonl": None,
-                         "claim-probe-structured.jsonl": "a"}
+# The verifier's own sessions answering through their reply schemas, captured live through the
+# code that reads them: the assessor and the claim-only answer on 2026-09-28, the critique under
+# rubric v9 and the two readings on 2026-09-29. Where the first reply broke the schema and the
+# session corrected it, the recording maps to the key its refused reply added.
+STRUCTURED_RECORDINGS = {"critic-structured.jsonl": None, "assessor-structured.jsonl": None,
+                         "claim-probe-structured.jsonl": "a", "reader-matches.jsonl": None,
+                         "reader-differs.jsonl": None}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
                     "subject-refusal-fallback.jsonl", "subject-refusal-recovered.jsonl"]
@@ -94,8 +97,9 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_a_reply_the_schema_refused_was_corrected_in_the_same_session(self):
         """The slips a free-text reader met one lost claim at a time. Run 0a243b7e lost a claim to an
-        empty extra key; here the critique wrapped its reply in a stray `$PARAMETER_NAME` and a
-        claim-only answer added a stray `a`. Claude Code refused each and the session resent it."""
+        empty extra key; here a claim-only answer added a stray `a`, as the critique recorded under
+        rubric v8 had wrapped its reply in a stray `$PARAMETER_NAME` (Git history keeps it). Claude
+        Code refused each and the session resent it."""
         for name, stray in STRUCTURED_RECORDINGS.items():
             with self.subTest(recording=name):
                 attempts = reply_attempts(recorded(name))
@@ -145,6 +149,43 @@ class RecordedReplyTests(unittest.TestCase):
         case_ids = [case["case_id"] for case in sent["evidence"]["cases"]]
         self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), critique_schema(case_ids))
 
+    def test_the_recorded_readings_answer_their_real_packets(self):
+        """Two real replies from run 1bb3f07a, read live on 2026-09-29 ("Reading replies" in
+        local-contract.md): a namespace-qualified function name the reader took for the expected
+        function, and a paraphrase of a documented sentence it took for another answer."""
+        packets = packet("reader-packets.json")
+        for name, item, reading in (("reader-matches.jsonl", packets[0], "matches"),
+                                    ("reader-differs.jsonl", packets[1], "differs")):
+            with self.subTest(recording=name):
+                raw = recorded(name)
+                value = parse_events(raw, expected_session=session_of(raw))["structured_output"]
+                validate(value, READER_SCHEMA)
+                self.assertEqual(value["reading"], reading)
+                self.assertIn(value["answer"], item["packet"]["reply"])
+
+    def test_a_reading_end_to_end_over_a_replayed_recording(self):
+        """read_reply with only the child process replaced: the recorded packet is exactly what
+        today's code sends, and the reading decides the trial."""
+        for name, item, final in (("reader-matches.jsonl", packet("reader-packets.json")[0], "pass"),
+                                  ("reader-differs.jsonl", packet("reader-packets.json")[1], "fail")):
+            raw, seen = recorded(name), {}
+
+            def replay(command, **kwargs):
+                self.assertEqual(kwargs["timeout"], READER_TIMEOUT_SECONDS)
+                seen["command"], seen["prompt"] = command, kwargs["prompt"]
+                return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
+
+            sent = item["packet"]
+            case = {"case_id": item["case"], "input": sent["question"], "expected": sent["expected_answer"]}
+            with self.subTest(recording=name), \
+                 patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+                record = read_reply(ClaudeCode(auth="subscription", model="claude-opus-5", process=replay),
+                                    sent["answer_type"], case, sent["reply"], item["python_status"])
+                self.assertEqual(json.loads(seen["prompt"]), sent)
+                command = seen["command"]
+                self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), READER_SCHEMA)
+                self.assertEqual((record["status"], record["final_status"]), ("used", final))
+
     def test_the_recorded_assessment_cites_its_own_real_packet(self):
         raw, sent = recorded("assessor-structured.jsonl"), packet("assessor-packet.json")
         value = validate_assessment(parse_events(raw, expected_session=session_of(raw))["structured_output"], sent)
@@ -164,9 +205,13 @@ class RecordedReplyTests(unittest.TestCase):
     def test_the_live_rubric_gives_the_critique_what_earlier_reviewers_lacked(self):
         """v7 is the first rubric a critique can use to reject a style tell among options, a
         narrower key a subject applying the claim could meet with "none of these", and an
-        effect-to-setting case mistaken for naming; v8 says how to judge a calculated answer.
+        effect-to-setting case mistaken for naming; v8 says how to judge a calculated answer; v9
+        says what each answer type compares, so the comparison rule can be judged against the claim.
         Each rule is the mirror of a contract passage, which owns it."""
-        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v8")
+        from sci_ai_verifier.answers import TYPES
+        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v9")
+        self.assertEqual(set(CRITIQUE_RUBRIC["answer_types"]), set(TYPES))
+        self.assertIn("reading which answer a reply gives", CRITIQUE_RUBRIC["grades"]["A"])
         shapes = CRITIQUE_RUBRIC["leak_shapes"]
         self.assertEqual(len(shapes), 5)
         self.assertIn("leading word or article", shapes[-1])

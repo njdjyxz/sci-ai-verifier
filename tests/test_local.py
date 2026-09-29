@@ -40,7 +40,8 @@ class Subject:
         if self.mode == "unavailable":
             raise Fault("claude_unavailable", "Unavailable fixture")
         answer = {"alpha": "1.0", "beta": "2.0", "gamma": "3.0", "zeta": "4.0", "eta": "5.0"}[request["case_input"]["input"]]
-        observation = {"text": "999" if self.mode == "wrong" else answer,
+        # "prose" gives the right number inside a sentence, which Python's reader never reads.
+        observation = {"text": "999" if self.mode == "wrong" else "The value is " + answer if self.mode == "prose" else answer,
                        "response_id": "synthetic-" + str(len(self.requests)), "model_id": "synthetic",
                        "invocation_verified": self.mode != "unverified", "synthetic": True}
         if self.models is not None:
@@ -180,7 +181,10 @@ class LocalTests(unittest.TestCase):
         self.assertIn("local", report["content"])
         self.assertTrue(report_path.exists())
         for request in self.subject.requests:
-            self.assertEqual(set(request["case_input"]), {"input"})
+            # The case input and the line Python writes from its answer type, never the key.
+            self.assertEqual(set(request["case_input"]), {"input", "answer_format"})
+            self.assertEqual(request["case_input"]["answer_format"],
+                             "Write only the answer on the first line of your reply: the number.")
             self.assertNotIn(REFERENCE, canonical(request).decode())
             self.assertNotIn("candidate_ref", canonical(request).decode())
         self.data = self.runtime.call("start_verifier_run", {"source_path": str(self.source)})["data"]
@@ -270,36 +274,42 @@ class LocalTests(unittest.TestCase):
         return lambda index: "Row %d? Reply with the number of: %s" % (
             index, "; ".join("%d) %s" % (n, value) for n, value in enumerate(options, 1)))
 
-    def test_a_plain_word_needs_an_indexed_choice(self):
-        # "molar" answered as "Molar" failed 3 of 3 in live run fb64115f. A single-case
-        # word has more than one surface form, so string equality cannot judge it.
+    def test_a_plain_word_is_a_term_not_an_exact_token(self):
+        # "molar" answered as "Molar" failed 3 of 3 in live run fb64115f. A single-case word
+        # has more than one surface form, so it is compared as a term, regardless of case.
         self.reference()
         self.candidate(lookup=False, method="exact", cases=self.rows("alpha"))
         self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("one possible surface form" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
+        self.assertTrue(any("is a `term`" in problem for problem in self.data["candidate"]["qualification_problems"]))
+        self.candidate(lookup=False, method="term", cases=self.rows("alpha"))
+        self.assertEqual(self.data["outcome"], "qualified_local", self.data["candidate"]["qualification_problems"])
 
     def test_an_open_answer_whose_surface_form_is_forced_still_qualifies(self):
         # Generation beats recognition, so a number stays an open answer rather than a menu.
         self.reference()
         self.candidate(lookup=False, method="exact", cases=self.rows("1.0"))
         self.assertEqual(self.data["outcome"], "qualified_local")
-        # Prefix, suffix and truncation near misses, plus the answer-then-explanation reply
-        # that must pass and the answer-inside-a-sentence reply that must not.
+        # The key, a truncation and inline code; a suffix, a prefix and a sentence, which must
+        # not pass; and bold, bold then an explanation, a fence, a label and an explanation below.
         self.assertEqual({control["positive_negative_boundary_checks"]
-                          for control in self.data["candidate"]["controls"]}, {6})
+                          for control in self.data["candidate"]["controls"]}, {11})
 
-    def test_an_exact_answer_is_read_from_its_first_line_with_every_character_kept(self):
-        """Run 0a243b7e: `R1` then an explanation, which the prompt invited, scored fail."""
+    def test_an_exact_answer_is_read_from_its_answer_line_with_every_character_kept(self):
+        """Run 0a243b7e: `R1` then an explanation, which the prompt invited, scored fail. Presentation
+        comes off the line's ends one layer at a time; the token itself is never changed."""
         from sci_ai_verifier.local_candidates import compare
-        self.assertEqual(compare("exact", "R1\n\nThe fragment is stored under R1.", "R1"), "pass")
-        self.assertEqual(compare("exact", "\n  R1  \n", "R1"), "pass")
-        for reply in ("**R1**", "`R1`", "The key is R1", "R1.", "R2\n\nR1", ""):
+        for reply in ("R1\n\nThe fragment is stored under R1.", "\n  R1  \n", "**R1**", "`R1`", "R1.",
+                      "```\nR1\n```", "Answer: R1", "**Answer:** R1\n\nexplained", "## Answer\n\nR1"):
+            with self.subTest(reply=reply):
+                self.assertEqual(compare("exact", reply, "R1"), "pass")
+        for reply in ("The key is R1", "R2\n\nR1", "r1", "R 1", "R1 and R2"):
             with self.subTest(reply=reply):
                 self.assertEqual(compare("exact", reply, "R1"), "fail")
+        self.assertEqual(compare("exact", "", "R1"), "invalid")
         # Characters that look like markdown are content in an exact token.
         self.assertEqual(compare("exact", "rgroup_label\n\nexplained", "rgroup_label"), "pass")
         self.assertEqual(compare("exact", "[*]", "[*]"), "pass")
+        self.assertEqual(compare("exact", "Answer: __init__", "__init__"), "pass")
 
     def test_an_indexed_choice_probes_every_other_option(self):
         self.reference()
@@ -307,11 +317,12 @@ class LocalTests(unittest.TestCase):
         cases[1]["expected"] = "2"  # answers may not all sit at one position
         self.candidate(lookup=False, method="choice", cases=cases)
         self.assertEqual(self.data["outcome"], "qualified_local")
-        # Correct index, a non-numeric reply, an out-of-range number, each other option,
-        # and the three presentation probes that prove how a reply is read.
+        # The index, a non-numeric reply, an out-of-range number, a sentence, the option named four
+        # other ways, each other option, a number with another option's text, and the five
+        # presentation probes that prove how a reply is read.
         for control in self.data["candidate"]["controls"]:
             self.assertTrue(control["passed"])
-            self.assertEqual(control["positive_negative_boundary_checks"], 10)
+            self.assertEqual(control["positive_negative_boundary_checks"], 19)
 
     def test_a_choice_answer_indexes_the_option_that_is_quoted(self):
         """The index is the planner's ordering; the option behind it carries provenance."""
@@ -525,7 +536,7 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(self.data["outcome"], "qualified_local")
         # Numeric and choice controls each ran on their own cases.
         checks = [control["positive_negative_boundary_checks"] for control in self.data["candidate"]["controls"]]
-        self.assertEqual(checks, [9, 9, 10, 10, 10])
+        self.assertEqual(checks, [13, 13, 19, 19, 19])
         self.assertEqual(self.data["candidate"]["absolute_tolerance"], "0.000001")
         unnamed = self.mixed_cases()
         del unnamed[0]["method"]
@@ -544,10 +555,57 @@ class LocalTests(unittest.TestCase):
         candidate = self.data["candidate"]
         numeric, closed = candidate["cases"][0], candidate["cases"][2]
         # "1" is the right number for the open case and the right option for the closed one;
-        # "1.0000001" is only a number, so as an option index it fails rather than passing.
+        # "1.0000001" is only a number, and names no option, so the closed case cannot read it.
         self.assertEqual(compare(candidate, numeric, "1.0000001", {}, None), "pass")
-        self.assertEqual(compare(candidate, closed, "1.0000001", {}, None), "fail")
+        self.assertEqual(compare(candidate, closed, "1.0000001", {}, None), "invalid")
         self.assertEqual(compare(candidate, closed, "1", {}, None), "pass")
+        # A closed reply may name its option by text, which only the closed case reads that way.
+        self.assertEqual(compare(candidate, closed, "alpha is 1.0", {}, None), "pass")
+        self.assertEqual(compare(candidate, numeric, "alpha is 1.0", {}, None), "invalid")
+
+    def test_every_open_answer_type_qualifies_through_the_published_tool(self):
+        """Each type's key, quoted from the fixture reference, qualifies with every control passing."""
+        self.reference()
+        designs = {"term": ["alpha", "beta", "gamma"], "expression": ["alpha", "beta", "gamma"],
+                   "list": ["alpha, beta", "beta, gamma", "gamma, zeta"], "set": ["alpha, beta", "beta, gamma", "zeta, eta"]}
+        for method, keys in designs.items():
+            with self.subTest(method=method):
+                cases = [{**case, "expected": key} for case, key in zip(self.rows("x"), keys)]
+                self.candidate(lookup=False, method=method, cases=cases)
+                self.assertEqual(self.data["outcome"], "qualified_local", self.data["candidate"]["qualification_problems"])
+                self.assertTrue(all(control["passed"] for control in self.data["candidate"]["controls"]))
+        cases = [{**case, "unit": "nM"} for case in self.rows("1.0")]
+        self.candidate(lookup=False, method="numeric", cases=cases)
+        self.assertEqual(self.data["outcome"], "qualified_local", self.data["candidate"]["qualification_problems"])
+
+    def test_a_key_its_type_would_misjudge_is_refused_with_the_reason(self):
+        self.reference()
+        refused = [("set", self.rows("alpha, alphas"), "must be distinct"),
+                   ("exact", [{**case, "unit": "nM"} for case in self.rows("1.0")], "Only a numeric case takes a unit"),
+                   ("term", self.rows("delta"), "exact quote from a fetched reference")]
+        for method, cases, message in refused:
+            with self.subTest(method=method, message=message):
+                self.candidate(lookup=False, method=method, cases=cases)
+                problems = self.data["candidate"]["qualification_problems"]
+                self.assertEqual(self.data["outcome"], "rejected")
+                self.assertTrue(any(message in problem for problem in problems), problems)
+
+    def test_an_option_that_reads_as_another_option_s_number_is_refused(self):
+        self.reference()
+        for first in ("3", "3.0"):
+            with self.subTest(first=first):
+                options = [first, "beta is 2.0", "delta is 4.0", "epsilon is 5.0", "none of these"]
+                cases = self.rows("2", options=options, prompt=self.menu(options))
+                self.candidate(lookup=False, method="choice", cases=cases)
+                self.assertEqual(self.data["outcome"], "rejected")
+                self.assertTrue(any("reads as the number of option 3" in problem
+                                    for problem in self.data["candidate"]["qualification_problems"]))
+        # A number that is its own position, or no position at all, names one option only.
+        options = ["1.0", "beta is 2.0", "0.0", "3600", "none of these"]
+        cases = self.rows("2", options=options, prompt=self.menu(options))
+        self.candidate(lookup=False, method="choice", cases=cases)
+        self.assertFalse(any("reads as the number" in problem
+                             for problem in self.data["candidate"]["qualification_problems"]))
 
     def test_only_the_choice_method_takes_options(self):
         self.reference()
@@ -709,6 +767,14 @@ class LocalTests(unittest.TestCase):
             bounded_download(b"page " + b"sk-ant-" + b"x" * 30, 1000)
         self.assertEqual(caught.exception.code, "reference_credential_material")
 
+    def test_every_pinned_instruction_document_fits_one_section_reply(self):
+        """The planner reads each pinned document as one section, cut at the reply limit it cannot
+        read past, so a document that outgrew the limit would lose its tail without a sign."""
+        from sci_ai_verifier.local_candidates import REPLY_TEXT_BYTES
+        for identity, content in self.runtime._instruction_blocks():
+            with self.subTest(identity=identity):
+                self.assertLessEqual(len(content.encode("utf-8")), REPLY_TEXT_BYTES)
+
     def test_a_long_page_is_pinned_whole_and_only_its_reply_is_cut(self):
         """A host spills a long reply to a file, and the planner has no tool to open it."""
         from sci_ai_verifier.local_candidates import REPLY_TEXT_BYTES
@@ -749,6 +815,85 @@ class LocalTests(unittest.TestCase):
         cancelled = self.runtime.call("cancel_verifier_run", {"run_id": second["run_id"]})
         self.assertEqual((cancelled["error"]["code"], cancelled["error"]["message"]),
                          ("cancelled", "The operator cancelled this run."))
+
+
+class ClaimScopeTests(unittest.TestCase):
+    """"Claims" in local-contract.md: one behaviour per claim, section by section, at most five."""
+
+    def setUp(self):
+        self.h = LocalTests()
+        self.h.setUp()
+        self.addCleanup(self.h.doCleanups)
+
+    def claims(self, count):
+        return [{"statement": "The skill returns decimal number %d." % index, "scope": "Reference-table queries",
+                 "expected_behavior": "Plain decimal", "source_path": "SKILL.md", "source_quote": QUOTE,
+                 "report_note": "Synthetic acceptance"} for index in range(count)]
+
+    def test_a_local_manifest_holds_at_most_five_claims(self):
+        from sci_ai_verifier.local import CLAIM_LIMIT_MESSAGE, MAX_CLAIMS
+        h = self.h
+        arguments = {"run_id": h.data["run_id"], "state_token": h.data["state_token"],
+                     "snapshot_id": h.snapshot["id"], "snapshot_digest": h.snapshot["digest"]}
+        refused = h.runtime.call("commit_claim_manifest", {**arguments, "claims": self.claims(MAX_CLAIMS + 1)})
+        self.assertEqual(refused["status"], "retryable")
+        self.assertEqual((refused["error"]["code"], refused["error"]["message"]), ("too_many_claims", CLAIM_LIMIT_MESSAGE))
+        h.data["state_token"] = refused["error"]["state_token"]
+        h.call("commit_claim_manifest", **{key: value for key, value in arguments.items() if key not in ("run_id", "state_token")},
+               claims=self.claims(MAX_CLAIMS))
+        self.assertEqual(h.data["manifest"]["count"], 5)
+
+    def test_the_local_planner_is_told_the_claim_scope_and_other_profiles_keep_theirs(self):
+        from sci_ai_verifier.local_entry import BoundRuntime, PLANNER_PROMPT
+        from sci_ai_verifier.tools import DEFINITIONS
+        local = next(item for item in BoundRuntime.definitions if item["name"] == "commit_claim_manifest")
+        self.assertIn("one behaviour", local["description"])
+        self.assertIn("at most 5", local["description"])
+        shared = next(item for item in DEFINITIONS if item["name"] == "commit_claim_manifest")
+        self.assertIn("atomic", shared["description"])
+        pinned = dict(self.h.runtime._instruction_blocks())["tool-definitions"]
+        self.assertIn(json.dumps(local["description"])[1:-1], pinned)
+        self.assertIn("at most five claims", PLANNER_PROMPT)
+
+    def test_a_skill_file_s_sections_are_its_headings_outside_code(self):
+        from sci_ai_verifier.claims import sections
+        text = ("---\nname: fixture\n---\nIntro line.\n# Title\nAbout.\n## Concepts\n### Rings\nRing text.\n"
+                "```python\n# not a heading\nx = 1\n```\n## Workflow ##\nSteps.\n")
+        found = [(item["heading"], item["level"], item["line"]) for item in sections(text)]
+        # Frontmatter is no section, an empty parent heading is skipped, and a closing `##` is dropped.
+        self.assertEqual(found, [(None, 0, 4), ("Title", 1, 5), ("Rings", 3, 8), ("Workflow", 2, 14)])
+        self.assertEqual(sections(text)[0]["body"], ["Intro line."])
+        # Frontmatter straight before the first heading, as in sar-analysis, leaves no section behind.
+        self.assertEqual([item["heading"] for item in sections("---\nname: fixture\n---\n# Title\nAbout.\n")],
+                         ["Title"])
+
+    def test_a_reference_file_belongs_to_the_first_section_that_names_it(self):
+        from sci_ai_verifier.claims import section_coverage
+        skill = ("# Skill\n## Models\nSee references/cox.md for Cox models.\n## Metrics\nUse the C-index.\n"
+                 "## Other\nNothing testable.\n## Reference files\n- references/cox.md\n")
+        files = {"SKILL.md": skill, "references/cox.md": "l1_ratio lies in (0, 1].", "notes.md": "Unnamed."}
+        claims = [{"claim_id": "a", "source_path": "references/cox.md", "source_quote": "l1_ratio lies in (0, 1]."},
+                  {"claim_id": "b", "source_path": "SKILL.md", "source_quote": "Use the C-index."},
+                  {"claim_id": "c", "source_path": "notes.md", "source_quote": "Unnamed."}]
+        coverage = section_coverage(files, claims)
+        self.assertEqual({item["heading"]: item["claims"] for item in coverage["sections"]},
+                         {"Models": ["a"], "Metrics": ["b"], "Other": [], "Reference files": []})
+        self.assertEqual(coverage["uncovered"], ["Other", "Reference files"])
+        self.assertEqual(coverage["claims_outside_sections"], ["c"])
+        self.assertEqual(coverage["sections"][0]["files"], ["references/cox.md"])
+        self.assertIsNone(section_coverage({"README.md": "x"}, claims))
+
+    def test_the_report_says_which_sections_the_claims_cover(self):
+        h = self.h
+        h.ready()
+        h.call("execute_local_claim", claim_id=h.claim_id)
+        h.call("write_report_card")
+        report = h.data["report"]
+        self.assertEqual(report["coverage"]["uncovered"], [])
+        self.assertEqual(report["claims"][0]["sections"], ["(before the first heading)"])
+        markdown = Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Skill sections: the claims cover 1 of the 1 sections of SKILL.md.", markdown)
+        self.assertIn("Skill section: (before the first heading)", markdown)
 
 
 class ReportAxisTests(unittest.TestCase):
@@ -862,11 +1007,14 @@ class ReplyReadingTests(unittest.TestCase):
         self.assertEqual(self.compare("choice", "**2**", "1"), "fail")
         self.assertEqual(self.compare("numeric", "**7.61**", "7.60"), "fail")
 
-    def test_exact_replies_are_never_normalized(self):
-        # There the same characters are content: an identifier's underscore, SMARTS `[*]`.
+    def test_exact_replies_lose_presentation_but_never_a_character_of_the_token(self):
+        # The same characters are content inside a token: an identifier's underscore, SMARTS `[*]`.
         self.assertEqual(self.compare("exact", "rgroup_label", "rgroup_label"), "pass")
-        self.assertEqual(self.compare("exact", "**rgroup_label**", "rgroup_label"), "fail")
+        self.assertEqual(self.compare("exact", "**rgroup_label**", "rgroup_label"), "pass")
+        self.assertEqual(self.compare("exact", "rgroup label", "rgroup_label"), "fail")
+        self.assertEqual(self.compare("exact", "Rgroup_label", "rgroup_label"), "fail")
         self.assertEqual(self.compare("exact", "[*]", "[*]"), "pass")
+        self.assertEqual(self.compare("exact", "__init__", "__init__"), "pass")
 
 
 if __name__ == "__main__":

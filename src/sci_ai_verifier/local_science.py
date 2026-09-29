@@ -11,6 +11,7 @@ propose again. No human sign-off is required and none is implied.
 import re
 from collections import Counter
 
+from .answers import OPEN_TYPES, TYPES, in_quote
 from .common import Fault, canonical, digest
 from .storage import implementation_bytes
 
@@ -22,8 +23,13 @@ STRONG_TRIALS = 3
 DIRECT_CASES = 5
 DIRECT_GENERATED = 2
 EXTERNAL_GENERATED = 1
+# Reasons a design's case count gives; every other limiting reason is the reference's or the trials'.
+CASE_REASONS = {"insufficient_distinct_cases", "fewer_than_five_counting_cases", "no_generated_case",
+                "fewer_than_two_generated_cases"}
+# Reasons that keep a reference out of A but still allow B.
+EXTERNAL_REASONS = {"expected_answers_not_independently_retrieved", "scoring_code_authored_by_planner"}
 # The subject produces the answer for these methods; `choice` only asks it to recognise one.
-GENERATED_METHODS = {"exact", "numeric", "python"}
+GENERATED_METHODS = {*OPEN_TYPES, "python"}
 # Revisions a claim may spend replacing cases the critique did not count.
 REPLACEMENT_ROUNDS = 2
 # The installed aggregation rule. It is recorded on every card because `fail` cannot be
@@ -36,7 +42,7 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v6",
+    "id": "evidence-strength-v7",
     "minimum_cases": MINIMUM_CASES,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
@@ -57,6 +63,9 @@ POLICY = {
                  "the aggregation rule, never applied to the grade",
     "aggregation_rule": AGGREGATION_RULE,
     "verdict": "all cases unanimously pass; anything else fails; any invalid inconclusive",
+    "reading": "Python's reader scores each trial by its case's answer type; a counted trial it does not pass is "
+               "read by a fresh AI session whose reading, unless Python's checks refuse it, decides that trial; "
+               "the grade is unaffected and the status by Python's reader alone is recorded",
     "status_withheld": "no_reference_grade, synthetic_observations, not_executed, "
                        "unattributable_observations, incomplete_coverage",
     "axes": "grade reports the reference and test bundle only; accuracy, consistency, "
@@ -109,29 +118,30 @@ def environment_digest(settings, subject, environment=None):
     return digest(canonical(pinned))
 
 
-def token_exact(case):
+def token_exact(case, method=None):
     """True when the expected answer is a complete token of its reference quote.
 
     A substring match lets `1.0` be read out of `21.09`, so a substring supports
     only indirect evidence. Numeric qualification already requires this; the check
-    is repeated here because exact-match and generated evaluators do not.
+    is repeated here because exact-match and generated evaluators do not. A term is
+    found as its words, and a list or set item by item, as qualification finds them.
     """
     expected = answer_text(case)
     if not expected:
         return False
-    if expected == case["source_quote"].strip():
-        return True
-    return bool(re.search(r"(?<![\w.+-])" + re.escape(expected) + r"(?!\w|\.\d)", case["source_quote"]))
+    kind = method if method in TYPES and method != "choice" else "exact"
+    return in_quote(kind, expected, case["source_quote"], tokens=True)
 
 
 def traceable(candidate, case):
     """True when an expected answer traces to retrieved bytes exactly: as a complete token of
     its quote, or calculated from a quoted formula whose program reproduced every quoted
     anchor (`qualify_local_candidate` in tool-contracts.md)."""
+    from .local_candidates import case_method
     if "arguments" in case:
         anchors = (candidate.get("calculation_receipts") or {}).get("anchors") or []
         return bool(anchors) and all(item["reproduced"] for item in anchors)
-    return token_exact(case)
+    return token_exact(case, case_method(candidate, case) if candidate["method"] != "python" else None)
 
 
 def answer_text(case):
@@ -190,7 +200,7 @@ def evidence_ceiling(candidate, references, trials, counted=None):
     # Names the *comparison*, not the subject. The subject of a local run is always a
     # fresh model session and is never deterministic; reading this as a statement about
     # the subject would wrongly make a single trial look sufficient.
-    comparison_deterministic = (candidate["method"] in {"exact", "numeric", "choice", "mixed"}
+    comparison_deterministic = (candidate["method"] in {*TYPES, "mixed"}
                                 or all(item["passed"] for item in candidate.get("controls_receipts", [])))
     reasons = []
     if any(origin not in pinned for origin in origins):
@@ -207,19 +217,39 @@ def evidence_ceiling(candidate, references, trials, counted=None):
         reasons.append("expected_value_not_token_exact_in_source")
     if trials < STRONG_TRIALS:
         reasons.append("model_subject_trial_count_below_three")
-    blocking = set(reasons)
-    if not blocking:
-        reference = "A"
-    elif blocking <= {"expected_answers_not_independently_retrieved", "scoring_code_authored_by_planner"}:
-        reference = "B"
-    elif comparison_deterministic:
-        # A previously qualified candidate reused offline keeps a reproducible
-        # comparison against its pinned quote even when its origin is unrecorded.
-        reference = "C"
-    else:
-        reference = None
     cases, case_reasons = case_grade(candidate, counted)
-    return weaker(reference, cases), sorted(blocking | set(case_reasons))
+    return weaker(reference_grade(reasons), cases), sorted(set(reasons) | set(case_reasons))
+
+
+def reference_grade(reasons):
+    """The grade the reference and trial facts alone support, whatever the cases: the first half of
+    `evidence_ceiling`, which also reads it back from a recorded audit's limiting reasons."""
+    blocking = set(reasons) - CASE_REASONS
+    if not blocking:
+        return "A"
+    if blocking <= EXTERNAL_REASONS:
+        return "B"
+    # A previously qualified candidate reused offline keeps a reproducible comparison
+    # against its pinned quote even when its origin is unrecorded.
+    return None if "comparison_not_deterministic" in blocking else "C"
+
+
+def size_limit(audit_record, candidate):
+    """How the number of independent cases alone held a claim below its source's grade, or `None`.
+
+    "Claims" in local-contract.md sizes claims to their tests; this says when one was still too small.
+    """
+    source = reference_grade(audit_record.get("evidence_limits") or [])
+    settled = audit_record.get("settled_ceiling")
+    if (source is None or "case_ceiling" not in audit_record or audit_record["case_ceiling"] != settled
+            or (settled is not None and ORDER.index(settled) <= ORDER.index(source))
+            or not set(audit_record.get("case_limits") or []) & CASE_REASONS):
+        return None
+    cases = [case for case in candidate["cases"] if case["case_id"] in audit_record["counted_cases"]]
+    need = POLICY["cases"][source]
+    return {"source_supports": source, "settled": settled, "counting": len(cases),
+            "generated": sum(answer_form(candidate, case) == "generated" for case in cases),
+            "counting_needed": need["counting"], "generated_needed": need["generated"]}
 
 
 def proposal_problem(target, ceiling, accepted=None):
@@ -372,6 +402,34 @@ def verdict_for(*, ceiling, synthetic, constant, usable_cases, evaluated, per_ca
     return ("pass" if satisfied else "fail"), None
 
 
+def tallies(observations, cases, trials, field="comparison_status"):
+    """Each case's statuses and agreement, and the overall counts, read from `field`."""
+    statuses = [row.get(field, row["comparison_status"]) for row in observations]
+    if not set(statuses) <= {"pass", "fail", "invalid"}:
+        raise Fault("score_invalid", "Scored trials contain an unknown outcome.")
+    per_case = []
+    for case in cases:
+        values = Counter(row.get(field, row["comparison_status"]) for row in observations
+                         if row["case_id"] == case["case_id"])
+        per_case.append({"case_id": case["case_id"], "planned": trials, "obtained": sum(values.values()),
+                         "counts": dict(values), "agreement": max(values.values()) / trials})
+    return per_case, Counter(statuses)
+
+
+def reading_summary(observations, python_status, python_withheld, python_counts):
+    """What the AI reader of "Reading replies" (local-contract.md) did to these counted trials."""
+    read = [row for row in observations if row.get("reading_status")]
+    changed = [row for row in observations if row.get("python_status", row["comparison_status"]) != row["comparison_status"]]
+    evaluated = len(observations)
+    return {"read": len(read), "changed": len(changed),
+            **{name: sum(row["reading_status"] == name for row in read) for name in ("used", "refused", "unavailable")},
+            "readings": dict(Counter(row["reading"] for row in read if row["reading_status"] == "used")),
+            "changes": dict(Counter(row["python_status"] + " to " + row["comparison_status"] for row in changed)),
+            "python_reader": {"scientific_status": python_status, "status_withheld_reason": python_withheld,
+                              "accuracy": {"matched": python_counts["pass"], "evaluated": evaluated,
+                                           "ratio": round(python_counts["pass"] / evaluated, 4) if evaluated else None}}}
+
+
 def decide(audit_record, observations, cases, trials, *, synthetic=False):
     """Apply the installed policy to scored trials. The planner cannot change this outcome."""
     planned = len(cases) * trials
@@ -379,15 +437,7 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     obtained = [(row["case_id"], row["trial"]) for row in observations]
     if len(obtained) != len(set(obtained)) or set(obtained) != expected:
         raise Fault("incomplete_trial_set", "Missing or duplicate trial observations cannot become a scientific verdict.")
-    statuses = [row["comparison_status"] for row in observations]
-    if not set(statuses) <= {"pass", "fail", "invalid"}:
-        raise Fault("score_invalid", "Scored trials contain an unknown outcome.")
-    counts = Counter(statuses)
-    per_case = []
-    for case in cases:
-        values = Counter(row["comparison_status"] for row in observations if row["case_id"] == case["case_id"])
-        per_case.append({"case_id": case["case_id"], "planned": trials, "obtained": sum(values.values()),
-                         "counts": dict(values), "agreement": max(values.values()) / trials})
+    per_case, counts = tallies(observations, cases, trials)
     models = sorted({model for row in observations for model in row.get("model_ids", [])})
     constant = len({tuple(sorted(row.get("model_ids", []))) for row in observations}) == 1
     ceiling = audit_record["settled_ceiling"]
@@ -400,6 +450,12 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     status, withheld = verdict_for(ceiling=ceiling, synthetic=synthetic, constant=constant,
                                    usable_cases=len(per_case), evaluated=evaluated,
                                    per_case=per_case, counts=counts, trials=trials)
+    # The same rule over Python's reader alone, so a reader can see what the AI reader changed.
+    python_cases, python_counts = tallies(observations, cases, trials, "python_status")
+    python_status, python_withheld = verdict_for(ceiling=ceiling, synthetic=synthetic, constant=constant,
+                                                 usable_cases=len(python_cases), evaluated=evaluated,
+                                                 per_case=python_cases, counts=python_counts, trials=trials)
+    readings = reading_summary(observations, python_status, python_withheld, python_counts)
     # Two lists, never merged: a reader must be able to tell a weak reference from a
     # wobbling skill without reading the raw trials.
     # The limits over the cases the critique counted, so a grade lowered by rejected cases
@@ -416,6 +472,8 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
         execution_reasons.append("trial_agreement_below_policy")
     if not constant:
         execution_reasons.append("observed_model_identity_changed")
+    if readings["changed"]:
+        execution_reasons.append("trials_decided_by_ai_reader")
     unanimous = sum(1 for row in per_case if row["agreement"] == 1)
     calculated = sum("arguments" in case for case in cases)
     sourced = ("a reference Python retrieved." if audit_record["evidence_ceiling"] == "A"
@@ -443,7 +501,7 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
         "next_target_grade": None if grade else "D",
         "trial_counts": {"planned": planned, "attempted": planned, "obtained": evaluated,
                          "evaluated": evaluated, "invalid": counts["invalid"], "missing": 0},
-        "case_agreement": per_case, "observed_model_ids": models,
+        "case_agreement": per_case, "observed_model_ids": models, "reading_summary": readings,
         "ai_involvement": {
             "orchestration": True,
             "evidence_generation": "The planner selected the cases; every expected answer is quoted from " + sourced
@@ -453,6 +511,13 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
                                    "a formula quoted from a reference Python retrieved; before any case was keyed, the "
                                    "program reproduced that reference's quoted worked examples. Every other expected "
                                    "answer is quoted from " + sourced,
-            "verdict": False,
+            # A reading establishes what a reply says, never what the right answer is, so it is
+            # disclosed here and leaves the grade alone ("Reading replies", local-contract.md).
+            "verdict": False if not readings["changed"] else
+                       "An AI reader read " + str(readings["read"]) + " counted trial" + ("" if readings["read"] == 1 else "s")
+                       + " that Python's reader did not pass and changed " + str(readings["changed"]) + " ("
+                       + ", ".join(str(count) + " " + change for change, count in sorted(readings["changes"].items()))
+                       + "). By Python's reader alone the status would be "
+                       + str(python_status or "withheld (" + str(python_withheld) + ")") + ".",
         },
     }

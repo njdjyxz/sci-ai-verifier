@@ -57,7 +57,9 @@ missing infrastructure. The Python program runs in a new pinned container for
 each control and score. No package installation, network or host access is
 available. Put scientific dependencies in the operator-prepared image. The packages
 a skill declares reach its subject trials only, never an evaluator ("Skill
-environment" in `local-contract.md`).
+environment" in `local-contract.md`). An evaluator's status is final: the AI reader of
+"Reading replies" in `local-contract.md` reads only replies scored by an installed
+comparison method.
 
 Mechanical controls authorize provisional use only. Grade A/B/C requires the
 separate exact-candidate and exact-scope scientific review described in the local

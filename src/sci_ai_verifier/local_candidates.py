@@ -11,6 +11,8 @@ from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
 from . import __version__
+from .answers import (NONE_OF_THESE, TOLERANCE, TYPES, compare, in_quote, item_type, key_items, key_problem,
+                      number, parsed, probe_passed, probes, singular, whole_token_in)
 from .common import Fault, canonical, digest, utc_now
 from .ingest import SECRET_BYTES
 from .storage import atomic_write, no_links
@@ -27,15 +29,12 @@ REPLY_TEXT_BYTES = 40 * 1024
 # reply_number() and adds the controls that prove it; -5 reads exact replies from their
 # first line and requires a design's choice answers to vary in position; -6 rejects a
 # correct option that alone starts differently from the others or alone repeats a word
-# from the question.
-METHOD_VERSION = "local-reference-comparison-6"
-# Reserved final option. Never the answer, so scoring stays ungameable, but a case whose
-# trials all select it is far more likely to have a broken option set than a wrong subject.
-NONE_OF_THESE = "none of these"
+# from the question; -7 adds the term, expression, list and set answer types, a numeric
+# unit, and the reader and controls of answers.py.
+METHOD_VERSION = "local-reference-comparison-7"
 # Four real alternatives plus the reserved one. Two options let a coin flip carry a case
 # 12.5% of the time across three trials; four drops that to 1.6%.
 MINIMUM_OPTIONS = 5
-TOLERANCE = Decimal("0.000001")
 QUALIFICATION_LIMITS = [
     "Mechanical qualification only; source authority and input/reference applicability are planner assertions.",
     "Cases are illustrative, not a representative scientific benchmark.",
@@ -64,15 +63,8 @@ def content_words(text):
     found = set()
     for word in re.findall(r"[A-Za-z]+", re.sub(r"([a-z])([A-Z])", r"\1 \2", text)):
         word = word.lower()
-        if len(word) < 4 or word in COMMON_WORDS:
-            continue
-        if word.endswith("ies") and len(word) > 4:
-            word = word[:-3] + "y"
-        elif word.endswith(("sses", "shes", "ches", "xes", "zes")):
-            word = word[:-2]
-        elif word.endswith("s") and not word.endswith("ss") and len(word) > 4:
-            word = word[:-1]
-        found.add(word)
+        if len(word) >= 4 and word not in COMMON_WORDS:
+            found.add(singular(word))
     return found
 
 
@@ -221,46 +213,7 @@ def fetch_public(url):
     return raw, text
 
 
-def number(text):
-    if not isinstance(text, str) or not re.fullmatch(r"[+-]?(?:\d{1,32}(?:\.\d{0,32})?|\.\d{1,32})(?:[eE][+-]?\d{1,2})?", text.strip()):
-        raise ValueError("Not a bounded decimal")
-    try:
-        value = Decimal(text.strip())
-        if not value.is_finite():
-            raise ValueError("Not finite")
-        return value
-    except InvalidOperation:
-        raise ValueError("Not a decimal") from None
-
-
-def reply_number(text):
-    """The number a subject's reply gives: presentation removed, content never searched.
-
-    Live run 7efbdd8c answered 57 of 57 cases correctly and still scored five invalid,
-    because the subject wrote `**1**` and sometimes explained itself below. So the first
-    non-empty line is read, with whitespace and markdown emphasis stripped from its
-    ends. Nothing is extracted from inside it: `The answer is 1` stays invalid, since
-    pulling a number out of prose is how a wrong reply becomes a false pass. A number
-    cannot contain these characters, so stripping them cannot change its meaning.
-    """
-    return number(first_line(text).strip("*_`").strip())
-
-
-def first_line(text):
-    """The first non-empty line of a reply, with surrounding whitespace removed."""
-    lines = [line for line in text.strip().split("\n") if line.strip()]
-    return lines[0].strip() if lines else ""
-
-
-def presentation_probes(answer):
-    """Controls proving reply_number(): a formatted right answer reads as right, and a
-    sentence containing the right answer does not -- the guard against greedy parsing."""
-    return [("**%s**" % answer, "pass"),
-            ("**%s**\n\nThe reference states this value." % answer, "pass"),
-            ("The answer is %s" % answer, "invalid")]
-
-
-INSTALLED_METHODS = ("exact", "numeric", "choice")
+INSTALLED_METHODS = TYPES
 
 
 def case_method(candidate, case):
@@ -270,33 +223,13 @@ def case_method(candidate, case):
     return case.get("method") if candidate["method"] == "mixed" else candidate["method"]
 
 
-def compare(method, actual, expected):
-    if method == "exact":
-        # Read from the first line like the numeric methods, so an explanation below the
-        # answer cannot fail it: run 0a243b7e scored six correct `R1`-style answers as
-        # fails. Characters are never removed: `_` and `*` are content here --
-        # `rgroup_label`, SMARTS `[*]` -- so `**R1**` still fails.
-        return "pass" if first_line(actual) == expected.strip() else "fail"
-    if method == "choice":
-        # The reply is an option number, so no wording, casing or plural of a right
-        # answer can score as a wrong one. A reply that is not a number is `invalid`,
-        # which reports a harness problem rather than a verdict about the skill.
-        try:
-            return "pass" if reply_number(actual) == number(expected) else "fail"
-        except ValueError:
-            return "invalid"
-    if method != "numeric":
-        raise ValueError("Unknown installed comparison method")
-    try:
-        return "pass" if abs(reply_number(actual) - number(expected)) <= TOLERANCE else "fail"
-    except ValueError:
-        return "invalid"
+def case_compare(candidate, case, text):
+    """One reply to one case, read by the case's own answer type ("Reading a reply" in tool-contracts.md)."""
+    return compare(case_method(candidate, case), text, case["expected"], case.get("options"), case.get("unit"))
 
 
-def whole_number_in(value, quote):
-    """True when `value` appears in `quote` as a complete number, not inside a longer one:
-    `1.0` is not read out of `21.09`."""
-    return bool(re.search(r"(?<![\w.+-])" + re.escape(value) + r"(?!\w|\.\d)", quote))
+# A number's complete-token test is every value's: `1.0` is not read out of `21.09`.
+whole_number_in = whole_token_in
 
 
 def at_precision(value, printed):
@@ -398,24 +331,6 @@ def recorded(candidate):
     return replay
 
 
-def forced_surface_form(text):
-    """True when an open answer has exactly one way to write it.
-
-    A number, or a token whose own casing is fixed by a case change, digit or
-    underscore. A plain single-case word like `molar` is not: a subject answering in
-    one word naturally capitalises it, and string equality then reports a correct
-    answer as wrong. Those belong in an indexed choice.
-    """
-    if not text or re.search(r"\s", text):
-        return False
-    try:
-        number(text)
-        return True
-    except ValueError:
-        pass
-    return bool(re.search(r"[0-9_]", text) or (re.search(r"[a-z]", text) and re.search(r"[A-Z]", text)))
-
-
 def qualify(proposal, references, calculate=None):
     """Check a proposed design mechanically. `calculate` runs a calculation's program; see `calculated`."""
     from .common import validate
@@ -426,7 +341,8 @@ def qualify(proposal, references, calculate=None):
     problems, controls, positions = [], [], []
     design = proposal["method"]
     if design not in {*INSTALLED_METHODS, "mixed"}:
-        problems.append("Only installed exact, numeric and choice comparison methods, or a mixed design of them, are available.")
+        problems.append("Only the installed comparison methods (" + ", ".join(INSTALLED_METHODS) + "), or a mixed "
+                        "design of them, are available.")
     if len({case["input"] for case in proposal["cases"]}) != len(proposal["cases"]):
         problems.append("Case inputs must be distinct.")
     keyed, receipts = calculated(proposal, references, calculate, problems)
@@ -453,6 +369,9 @@ def qualify(proposal, references, calculate=None):
         if method != "choice" and options:
             problems.append("Only the choice method takes options; an open answer is compared directly.")
             continue
+        if method != "numeric" and "unit" in case:
+            problems.append("Only a numeric case takes a unit.")
+            continue
         # The answer key must come from the retrieved bytes rather than the planner. For a
         # choice the index is the planner's own ordering, so the option it selects carries
         # that guarantee instead: same anchor, one level down.
@@ -464,9 +383,10 @@ def qualify(proposal, references, calculate=None):
                 problems.append("A choice case lists its options in `options`, the last being the reserved "
                                 + repr(NONE_OF_THESE) + ".")
                 continue
-            # The option count is enforced by the schema this function validates against.
-            if len(set(options)) != len(options):
-                problems.append("Choice options must be distinct.")
+            # The option count is enforced by the schema this function validates against. A reply
+            # may name an option by its text regardless of case, so case alone cannot tell two apart.
+            if len({value.casefold() for value in options}) != len(options):
+                problems.append("Choice options must be distinct, and not only in their case.")
                 continue
             if options[-1] != NONE_OF_THESE:
                 problems.append("The last option must be the reserved " + repr(NONE_OF_THESE) + " and is never the answer.")
@@ -477,6 +397,16 @@ def qualify(proposal, references, calculate=None):
                 index = 0
             if str(index) != trimmed or not 1 <= index < len(options):
                 problems.append("A choice answer must be the 1-based number of an option, never the reserved last one.")
+                continue
+            # A reply of that number would name the option at that position, not this text.
+            numbered = [(value, position) for position, value in enumerate(options, 1)
+                        if parsed(value) is not None and parsed(value) == parsed(value).to_integral_value()
+                        and 1 <= parsed(value) <= len(options) and parsed(value) != position]
+            if numbered:
+                value, position = numbered[0]
+                problems.append("In case " + case["case_id"] + " option " + str(position) + ", " + repr(value)
+                                + ", reads as the number of option " + str(int(parsed(value))) + ", so a reply of it "
+                                "names two options. Write it with its unit or in words, or put it at that position.")
                 continue
             absent = [value for value in options if value not in case["input"]]
             if absent:
@@ -498,46 +428,28 @@ def qualify(proposal, references, calculate=None):
         # A calculated answer's provenance is its quoted formula and reproduced anchors.
         quoted = "arguments" not in case
         if quoted and (not reference or case["source_quote"] not in reference["text"]
-                       or answer not in case["source_quote"]):
-            problems.append("Each expected value needs an exact quote from a fetched reference.")
+                       or not in_quote(method, answer, case["source_quote"])):
+            problems.append("Each expected value needs an exact quote from a fetched reference"
+                            + (": a term's words, and each item, must appear in it." if method in ("term", "list", "set")
+                               else "."))
             continue
-        if method == "numeric":
-            try:
-                center = number(expected)
-            except ValueError:
-                problems.append("Numeric expected answers must be bounded plain decimal numbers.")
-                continue
-            if quoted and not whole_number_in(trimmed, case["source_quote"]):
-                problems.append("Expected numeric values must be complete tokens in the reference quote.")
-                continue
-            probes = [(expected, "pass"), (str(center + TOLERANCE), "pass"),
-                      (str(center - TOLERANCE), "pass"), (str(center + 2*TOLERANCE), "fail"),
-                      (str(center - 2*TOLERANCE), "fail"), ("not-a-number", "invalid")]
-            probes += presentation_probes(trimmed)
-        elif method == "choice":
+        problem = key_problem(method, case)
+        if problem:
+            problems.append("Case " + case["case_id"] + ": " + problem)
+            continue
+        if method == "numeric" and quoted and not whole_number_in(trimmed, case["source_quote"]):
+            problems.append("Expected numeric values must be complete tokens in the reference quote.")
+            continue
+        if method == "choice":
             positions.append(index)
-            # Every other option number must be rejected, including the reserved one, so a
-            # case has to separate its own alternatives; a non-numeric reply is `invalid`.
-            probes = [(expected, "pass"), ("not-a-number", "invalid"), (str(len(options) + 1), "fail")]
-            probes += [(str(other), "fail") for other in range(1, len(options) + 1) if other != index]
-            probes += presentation_probes(trimmed)
-        else:
-            if not forced_surface_form(trimmed):
-                problems.append("An open answer must have one possible surface form -- a number, or a "
-                                "token fixed by a case change, digit or underscore. Use an indexed choice.")
-                continue
-            # A single appended-suffix probe only tests that `==` works. Probe a
-            # prefix, a suffix and a truncation so a near miss has to be rejected.
-            probes = [(expected, "pass"), (expected + " __incorrect_control__", "fail"),
-                      ("__incorrect_control__ " + expected, "fail"),
-                      (trimmed[:-1] or "__empty_control__", "fail"),
-                      # The answer on its own line with an explanation below it passes; the
-                      # answer inside a sentence does not, since nothing is searched for.
-                      (trimmed + "\n\nThe reference spells it this way.", "pass"),
-                      ("The answer is " + trimmed, "fail")]
-        passed = all(compare(method, actual, expected) == wanted for actual, wanted in probes)
+        # Controls ("Reading a reply" in tool-contracts.md): the answer in every form the reader
+        # accepts must pass, and near misses -- a sentence, a suffix, a truncation, every other
+        # option, the tolerance boundary -- must not.
+        checks = probes(method, case)
+        passed = all(probe_passed(compare(method, actual, expected, options or None, case.get("unit")), wanted)
+                     for actual, wanted in checks)
         controls.append({"case_id": case["case_id"], "passed": passed,
-                         "positive_negative_boundary_checks": len(probes)})
+                         "positive_negative_boundary_checks": len(checks)})
         if not passed:
             problems.append("A comparison control failed.")
     if len({case["case_id"] for case in proposal["cases"]}) != len(proposal["cases"]):
@@ -554,8 +466,10 @@ def qualify(proposal, references, calculate=None):
             "scientific_approval": "provisional", "qualification_problems": sorted(set(problems)),
             "controls": controls, "qualification_limitations": QUALIFICATION_LIMITS,
             "qualified_at": utc_now(),
-            "absolute_tolerance": str(TOLERANCE) if any(case_method(proposal, case) == "numeric"
-                                                        for case in proposal["cases"]) else None}
+            "absolute_tolerance": str(TOLERANCE) if any(
+                case_method(proposal, case) == "numeric" or (case_method(proposal, case) in ("list", "set") and any(
+                    item_type(item) == "numeric" for item in key_items(case.get("expected") or "")))
+                for case in proposal["cases"]) else None}
 
 
 def save_candidate(store, candidate):

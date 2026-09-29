@@ -53,6 +53,43 @@ class CeilingTests(unittest.TestCase):
         self.assertEqual(grade,"C")
         self.assertEqual(reasons,["no_generated_case"])
 
+    def test_every_open_answer_type_is_generated_and_only_choice_is_recognised(self):
+        from sci_ai_verifier.answers import TYPES
+        from sci_ai_verifier.local_science import answer_form
+        for method in TYPES:
+            with self.subTest(method=method):
+                self.assertEqual(answer_form({"method": method}, {}), "recognised" if method == "choice" else "generated")
+
+    def test_a_term_traces_to_its_quote_whatever_its_case(self):
+        """A term is quoted as its words, so a key written in lower case still traces exactly to a
+        sentence that capitalises it, and a design of such terms reaches A."""
+        cases=[{**case,"expected":"molar","source_quote":"Molar concentration is used in row "+case["case_id"]}
+               for case in self.candidate["cases"]]
+        self.assertEqual(self.ceiling(method="term",cases=cases),("A",[]))
+        cases=[{**case,"expected":"molar","source_quote":"Molarity is used in row "+case["case_id"]}
+               for case in self.candidate["cases"]]
+        self.assertIn("expected_value_not_token_exact_in_source",self.ceiling(method="term",cases=cases)[1])
+
+    def test_the_grade_a_source_alone_supports_is_read_back_from_an_audit(self):
+        from sci_ai_verifier.local_science import reference_grade, size_limit
+        self.assertEqual(reference_grade(["fewer_than_five_counting_cases"]),"A")
+        self.assertEqual(reference_grade(["expected_answers_not_independently_retrieved","no_generated_case"]),"B")
+        self.assertEqual(reference_grade(["reference_origin_unknown"]),"C")
+        self.assertIsNone(reference_grade(["comparison_not_deterministic"]))
+        audit={"evidence_limits":["fewer_than_five_counting_cases"],"case_limits":["fewer_than_five_counting_cases"],
+               "case_ceiling":"B","settled_ceiling":"B","counted_cases":["0","1","2","3"]}
+        self.assertEqual(size_limit(audit,self.candidate),{"source_supports":"A","settled":"B","counting":4,
+                                                           "generated":4,"counting_needed":5,"generated_needed":2})
+        # A critique grade below the case ceiling is what held it down, not the claim's size.
+        self.assertIsNone(size_limit({**audit,"settled_ceiling":"C"},self.candidate))
+        # A source that supports only B is not held below itself.
+        self.assertIsNone(size_limit({**audit,"evidence_limits":["expected_answers_not_independently_retrieved"]},
+                                     self.candidate))
+        # Too few cases for any grade is still the claim's size.
+        few={**audit,"case_limits":["insufficient_distinct_cases"],"case_ceiling":None,"settled_ceiling":None,
+             "counted_cases":["0","1"]}
+        self.assertEqual(size_limit(few,self.candidate)["settled"],None)
+
     def test_only_counted_cases_enter_the_ceiling(self):
         """Run d87a6d5c: five cases, two of them counted, still graded A. The count now decides."""
         self.assertEqual(self.ceiling(counted=["0","1","2","3","4"])[0],"A")
@@ -419,13 +456,22 @@ class ClaimProbeTests(unittest.TestCase):
              "options":["a","b","c","d","none of these"]}]}
         self.adapter=type("Pinned",(),{"model":"pinned-model"})()
 
-    def probe(self,table,cache=None):
+    def probe(self,table,cache=None,readings=None):
         """Each question pops its next scripted reply; an exception is raised instead of answered,
-        and a (text, models) pair names who answered."""
+        and a (text, models) pair names who answered. An answer the case's reader does not pass
+        goes to the AI reader, which reads `readings[answer]`, or by default that it differs."""
         from threading import Lock
         from sci_ai_verifier.documentary import claim_probe
         lock,seen=Lock(),[]
+        self.read=[]
         def answer(adapter,packet,*,role,system_prompt,schema,timeout,limit=64000):
+            if role=="reader":
+                with lock:
+                    self.read.append(packet)
+                value=(readings or {}).get(packet["reply"],{"reading":"differs","answer":packet["reply"],
+                                                            "reason":"Scripted."})
+                return ({"structured_output":value,"observed_model_ids":["pinned-model"],"usage":None,
+                         "total_cost_usd":0.01},"reader-"+str(len(self.read)))
             with lock:
                 seen.append(packet)
                 reply=table[packet["question"]].pop(0)
@@ -446,8 +492,16 @@ class ClaimProbeTests(unittest.TestCase):
         probe,seen=self.probe({"How many atoms?":["3","2"],self.closed:["2","**2**"]})
         self.assertEqual(self.outcomes(probe),{"open":"missed","closed":"reached"})
         self.assertEqual(len(seen),4)
-        # Each session saw the claim and one question, never the skill or the key.
-        self.assertTrue(all(set(packet)=={"claim","question"} for packet in seen))
+        # Each session saw the claim, one question and its answer form, never the skill or the key.
+        self.assertTrue(all(set(packet)=={"claim","question","answer_format"} for packet in seen))
+        self.assertEqual({packet["answer_format"] for packet in seen},
+                         {"Write only the answer on the first line of your reply: the number.",
+                          "Write only the answer on the first line of your reply: the number of the correct option."})
+        # The miss was read once more, and the reading that it differs kept it a miss.
+        self.assertEqual([packet["reply"] for packet in self.read],["2"])
+        missed_sample=next(sample for item in probe["cases"] for sample in item["samples"] if sample["answer"]=="2")
+        self.assertEqual((missed_sample["python_status"],missed_sample["status"]),("fail","fail"))
+        self.assertEqual(missed_sample["reading"]["reading"],"differs")
         self.assertEqual(seen[0]["claim"],{"statement":self.claim["statement"],
                                            "expected_behavior":self.claim["expected_behavior"]})
         missed=next(item for item in probe["cases"] if item["case_id"]=="open")
@@ -493,6 +547,32 @@ class ClaimProbeTests(unittest.TestCase):
                                    {"case_id":"closed","verdict":"counts","reason":"r","replacement":""}],
                   "claim_probe":probe}
         self.assertEqual(counted_cases(critique),["closed"])
+
+    def test_an_answer_the_reader_reads_as_the_key_reaches_it(self):
+        """Python's reader cannot read `3 atoms` as a number; the AI reader can, so a claim-only
+        answer that gave the key in words does not reject a fair case."""
+        probe,_=self.probe({"How many atoms?":["3 atoms","3"],self.closed:["2","2"]},
+                           readings={"3 atoms":{"reading":"matches","answer":"3 atoms","reason":"It says 3."}})
+        self.assertEqual(self.outcomes(probe),{"open":"reached","closed":"reached"})
+        sample=next(sample for item in probe["cases"] for sample in item["samples"] if sample["answer"]=="3 atoms")
+        self.assertEqual((sample["python_status"],sample["status"],sample["reading"]["status"]),
+                         ("invalid","pass","used"))
+        # The reader saw the question, its form, the key and the reply, and nothing of the claim.
+        self.assertEqual(set(self.read[0]),{"question","answer_format","answer_type","expected_answer","reply"})
+
+    def test_an_answer_saying_the_claim_does_not_settle_the_case_is_not_read_again(self):
+        probe,_=self.probe({"How many atoms?":["UNDETERMINED","3"],self.closed:["5","2"]})
+        self.assertEqual(self.outcomes(probe),{"open":"missed","closed":"missed"})
+        self.assertEqual(self.read,[])
+
+    def test_a_reading_python_can_contradict_is_refused(self):
+        """A reader claiming `2` is the key 3 is overruled: Python reads 2 as another number."""
+        probe,_=self.probe({"How many atoms?":["2","3"],self.closed:["2","2"]},
+                           readings={"2":{"reading":"matches","answer":"2","reason":"Wrong."}})
+        self.assertEqual(self.outcomes(probe)["open"],"missed")
+        sample=next(sample for item in probe["cases"] for sample in item["samples"] if sample["answer"]=="2")
+        self.assertEqual((sample["reading"]["status"],sample["reading"]["refusal"],sample["status"]),
+                         ("refused","python_reads_another_answer","fail"))
 
     def test_a_stop_the_caller_asked_for_ends_the_probe(self):
         with self.assertRaises(Fault) as caught:

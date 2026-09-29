@@ -289,8 +289,26 @@ class GradeNegotiationTests(unittest.TestCase):
         patcher=patch("sci_ai_verifier.documentary.claim_probe",side_effect=self.probe())
         patcher.start()
         self.addCleanup(patcher.stop)
+        # The AI reader agrees with Python's reader unless a test scripts it: the real reader starts
+        # Claude Code sessions, which the fixture subject cannot run.
+        from sci_ai_verifier import documentary
+        self.readings,self.reading,self.isolated=[],None,documentary.isolated_answer
+        reader=patch("sci_ai_verifier.documentary.isolated_answer",side_effect=self.reader)
+        reader.start()
+        self.addCleanup(reader.stop)
         # Three trials of a retrieved, token-exact, installed-method comparison: ceiling A.
         self.key=self.build(3)
+
+    def reader(self,adapter,packet,*,role,**kwargs):
+        """One AI reading: `self.reading(packet)` when a test scripts one, otherwise agreement. Every
+        other session role goes to the real function, as it did before the reader existed."""
+        if role!="reader":
+            return self.isolated(adapter,packet,role=role,**kwargs)
+        self.readings.append(packet)
+        value=self.reading(packet) if self.reading else {"reading":"differs","answer":packet["reply"].strip(),
+                                                          "reason":"Scripted agreement."}
+        return ({"structured_output":value,"observed_model_ids":["fixture-model"],"usage":None,
+                 "total_cost_usd":0.01},"reader-"+str(len(self.readings)))
 
     def probe(self,missed=()):
         """Claim-only answers shaped as documentary.claim_probe returns them; `missed` names the
@@ -354,6 +372,9 @@ class GradeNegotiationTests(unittest.TestCase):
         with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
             h.select(self.key,target_grade="A")
         self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        # The critique judges the comparison rule, so it sees each case's answer type.
+        self.assertEqual({case["answer_type"] for case in self.packets[0]["evidence"]["cases"]},{"numeric"})
+        self.assertIn("term",self.packets[0]["rubric"]["answer_types"])
         self.assertEqual(h.data["audit"]["evidence_ceiling"],"A")
         self.assertEqual(h.data["audit"]["settled_ceiling"],"A")
         self.assertEqual(h.data["audit"]["critique_rounds"],1)
@@ -363,6 +384,9 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertEqual(result["scientific_status"],"pass")
         self.assertEqual(result["grade_limit_reasons"],[])
         self.assertFalse(result["ai_involvement"]["verdict"])
+        # A trial Python's reader passed is never read again.
+        self.assertEqual(self.readings,[])
+        self.assertEqual(result["reading_summary"]["read"],0)
         h.call("write_report_card")
         self.assertIn("evidence grade: A",Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
 
@@ -421,6 +445,73 @@ class GradeNegotiationTests(unittest.TestCase):
         h.call("execute_local_claim",claim_id=h.claim_id)
         self.assertEqual(h.data["result"]["evidence_grade"],"A")
         self.assertEqual(h.data["result"]["scientific_status"],"fail")
+        # Every failed trial was read again, and the readings that it differs changed nothing.
+        self.assertEqual(len(self.readings),15)
+        summary=h.data["result"]["reading_summary"]
+        self.assertEqual((summary["read"],summary["changed"],summary["used"]),(15,0,15))
+        self.assertEqual(summary["python_reader"]["scientific_status"],"fail")
+        self.assertFalse(h.data["result"]["ai_involvement"]["verdict"])
+
+    def test_the_ai_reader_decides_trials_python_cannot_read_and_the_grade_stays(self):
+        """A right number inside a sentence is never extracted by Python ("Reading a reply",
+        tool-contracts.md). The AI reader reads it, its reading decides those trials, and the
+        report says so beside the status Python's reader alone would give."""
+        h=self.h
+        h.subject.mode="prose"
+        self.reading=lambda packet:{"reading":"matches","answer":packet["reply"].rsplit(" ",1)[-1],
+                                    "reason":"The sentence gives the expected value."}
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
+            h.select(self.key,target_grade="A")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        result=h.data["result"]
+        self.assertEqual((result["evidence_grade"],result["scientific_status"]),("A","pass"))
+        summary=result["reading_summary"]
+        self.assertEqual((summary["read"],summary["changed"],summary["changes"]),(15,15,{"invalid to pass":15}))
+        self.assertEqual(summary["python_reader"]["scientific_status"],"inconclusive")
+        self.assertEqual(summary["python_reader"]["accuracy"]["matched"],0)
+        self.assertIn("trials_decided_by_ai_reader",result["execution_limit_reasons"])
+        self.assertIn("By Python's reader alone the status would be inconclusive",result["ai_involvement"]["verdict"])
+        # The reader saw the question, its answer form, the key and the reply: never the claim.
+        packet=self.readings[0]
+        self.assertEqual(set(packet),{"question","answer_format","answer_type","expected_answer","reply"})
+        self.assertEqual((packet["answer_type"],packet["expected_answer"],packet["reply"]),("numeric","1.0","The value is 1.0"))
+        h.call("write_report_card")
+        row=json.loads(Path(h.data["report_json_path"]).read_bytes())["claims"][0]
+        test=row["tests"][0]
+        self.assertEqual((test["comparison_status"],test["python_status"],test["read_by"]),("pass","invalid","ai_reader"))
+        self.assertEqual((test["reading"]["reading"],test["reading"]["answer"]),("matches","1.0"))
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("AI reader: read 15 counted trials Python's reader did not pass, and changed 15 (15 invalid to pass)",markdown)
+        self.assertIn("By Python's reader alone the status would be inconclusive, accuracy 0 of 15.",markdown)
+        self.assertIn("| pass | AI reader: matches (Python: invalid) |",markdown)
+        self.assertIn("- Case alpha, trial 1: used -- matches, answer &#x27;1.0&#x27;: The sentence gives the expected value.",markdown)
+
+    def test_a_reading_python_can_contradict_is_refused_and_the_trial_keeps_its_verdict(self):
+        """A reader that calls 999 the expected 1.0 is overruled by Python's own reading of 999."""
+        h=self.h
+        h.subject.mode="wrong"
+        self.reading=lambda packet:{"reading":"matches","answer":"999","reason":"Mistaken."}
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
+            h.select(self.key,target_grade="A")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        result=h.data["result"]
+        self.assertEqual(result["scientific_status"],"fail")
+        self.assertEqual((result["reading_summary"]["refused"],result["reading_summary"]["changed"]),(15,0))
+        self.assertNotIn("trials_decided_by_ai_reader",result["execution_limit_reasons"])
+        self.assertFalse(result["ai_involvement"]["verdict"])
+
+    def test_a_reader_session_that_fails_leaves_python_s_verdict(self):
+        h=self.h
+        h.subject.mode="prose"
+        def fail(packet):
+            raise Fault("reader_unavailable","fixture")
+        self.reading=fail
+        with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
+            h.select(self.key,target_grade="A")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        result=h.data["result"]
+        self.assertEqual(result["scientific_status"],"inconclusive")
+        self.assertEqual((result["reading_summary"]["unavailable"],result["reading_summary"]["changed"]),(15,0))
 
     def test_critique_lowers_the_grade_and_the_planner_settles_at_what_it_supports(self):
         h=self.h
@@ -934,6 +1025,16 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertEqual(h.data["result"]["scientific_status"],"pass")
         self.assertEqual(h.data["result"]["comparison_status"],"pass")
         self.assertEqual(h.data["result"]["accuracy"],{"matched":12,"evaluated":12,"ratio":1.0})
+        # Only counted trials are read again, so the uncounted case's failures were not.
+        self.assertEqual(self.readings,[])
+        # Its source supports A; only its four independent cases held it at B, and the report says so.
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual(row["size_limited"],{"source_supports":"A","settled":"B","counting":4,"generated":4,
+                                              "counting_needed":5,"generated_needed":2})
+        self.assertIn("Limited by its number of independent cases, not its source: the source supports A, but 4 "
+                      "cases counted, 4 of them generated, where A needs 5 with 2 generated.",
+                      Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
 
     def test_critique_supporting_no_grade_leaves_the_comparison_ungraded(self):
         h=self.h

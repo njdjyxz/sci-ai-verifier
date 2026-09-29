@@ -162,7 +162,7 @@ Successful data: manifest ID and accepted claims with Python-assigned claim IDs.
 
 Side effects: writes the run's claim manifest.
 
-Retryable conditions: missing fields, non-atomic or duplicate submissions identified structurally, a source path not present in the committed manifest, or a source quote not present in the recorded content of the file the claim names. Quote validation is per-claim against the named file's digest, so a claim quoting a bundled reference document is validated exactly as strictly as one quoting the top-level `SKILL.md`.
+Retryable conditions: missing fields, non-atomic or duplicate submissions identified structurally, a source path not present in the committed manifest, a source quote not present in the recorded content of the file the claim names, or more claims than the profile allows ("Claims" in `local-contract.md` for the local profile). Quote validation is per-claim against the named file's digest, so a claim quoting a bundled reference document is validated exactly as strictly as one quoting the top-level `SKILL.md`.
 
 Fatal conditions: source-snapshot ID or digest mismatch, storage failure, or corrupted run state.
 
@@ -562,20 +562,37 @@ The Local profile matrix in workflow.md governs their legality.
 - `qualify_local_candidate`: in local_discovery, propose a name, scope, method,
   limitations and at least three source-backed cases. Python checks provenance,
   answer form, controls and fixed comparison rules. Save qualified_local or
-  rejected evidence. An expected answer must have exactly one correct surface
-  form, or the case scores a paraphrase of a right answer as a wrong one and
-  measures wording rather than the claim. Three installed methods provide that:
-  `numeric` for an open number within the installed tolerance; `exact` for an open
-  token whose own casing is fixed by a case change, digit or underscore; and
-  `choice`, where the case lists `options`, its `input` presents every one of them
-  verbatim, and `expected` is the 1-based number of one. A plain single-case word
-  such as `molar` is not a legal `exact` answer, because a subject answering in one
-  word naturally capitalises it; it belongs in a `choice`. Only `choice` takes
-  `options`. A design's `method` is one of those three, applied to every case, or
-  `mixed`, in which every case names its own `method` and is qualified and scored by
-  it. Outside a `mixed` design no case names a method, so each case's method has one
-  source. Mixing lets a design combine open and closed cases, which matters because
-  the case requirements count each case's answer form.
+  rejected evidence. An expected answer must have exactly one correct answer under
+  its comparison, or the case scores a paraphrase of a right answer as a wrong one
+  and measures wording rather than the claim. Seven installed methods, one per
+  answer type, provide that:
+  - `numeric`: an open number within the installed tolerance. A case may give a
+    `unit`, which a reply may write after the number;
+  - `exact`: an open token compared character for character, whose own casing is
+    fixed by a case change, digit or underscore: an identifier, a symbol, a code;
+  - `term`: an open word or phrase of at most eight words, made of letters, digits,
+    hyphens and apostrophes, compared regardless of case, punctuation, hyphens,
+    spacing, a leading article and plural endings, so `Molar` answers `molar` and
+    `any-atom query` answers `any-atom queries`. A lone letter, or a word with a
+    capital after its first letter (`nM`, `pKa`), carries meaning in its case and is
+    `exact`;
+  - `expression`: an open one-line Python expression or statement, compared by
+    syntax tree, so spacing, quote style and redundant parentheses do not matter;
+  - `list` and `set`: two to twenty open items separated by commas in `expected`,
+    compared in order or in any order. Each item is compared as `numeric` when it is
+    a number, `exact` when its form is forced, and `term` otherwise;
+  - `choice`: the case lists `options`, its `input` presents every one of them
+    verbatim, and `expected` is the 1-based number of one.
+
+  Only `choice` takes `options`, and only `numeric` takes `unit`. A design's `method`
+  is one of those seven, applied to every case, or `mixed`, in which every case names
+  its own `method` and is qualified and scored by it. Outside a `mixed` design no case
+  names a method, so each case's method has one source. An answer a subject can state
+  belongs in an open type; `choice` is for a question that is genuinely about
+  recognising one of several alternatives, and the case requirements count each
+  case's answer form. A `term`, and a `term` item, is found in its quote as the same
+  words whatever their case, plural or hyphenation; every other expected value
+  appears in its quote verbatim.
 
   A `choice` needs at least four alternatives plus a reserved final
   `none of these`, which can never be the answer. It is scored wrong like any other
@@ -584,9 +601,11 @@ The Local profile matrix in workflow.md governs their legality.
   way: either its options omit the right answer, or it asks about something the claim
   never asserts, so a subject applying the skill has nothing to choose from. Because the index is the planner's own ordering and appears in no
   reference, the option it selects carries the quotation requirement instead: the
-  same provenance anchor, one level down. Controls probe every other option number,
-  an out-of-range number and a non-numeric reply, which is `invalid` rather than a
-  verdict. Whether a distractor is genuinely wrong or merely implausible remains a
+  same provenance anchor, one level down. Options may not differ only in case, since
+  a reply naming an option by its text is read regardless of case, and no option's
+  text may read as another option's number, such as `3` at position 1, since a reply
+  of it would name two options. Whether a
+  distractor is genuinely wrong or merely implausible remains a
   planner assertion, like the rest of case applicability; a subject that recognises
   the conventional-looking option can pass a `choice` without knowing. Across a
   design's `choice` cases the correct answers may not all sit at the same option
@@ -608,25 +627,41 @@ The Local profile matrix in workflow.md governs their legality.
   shapes under "Common leaks" in `evidence-rubric.md`; the rest stays the critique's to
   judge.
 
-  A `choice` or `numeric` reply is read from its **first non-empty line, with
-  surrounding whitespace and markdown emphasis (`*`, `_`, a backtick) removed from
-  both ends**, and is then parsed as a number. So `**1**`, and `**1**` followed by a
-  paragraph of explanation, both read as `1`. Nothing is ever searched for inside the
-  line: `The answer is 1` is `invalid`, because extracting a number from prose is how
-  a wrong reply becomes a false pass. A number cannot legitimately contain those
-  characters, so removing them cannot change its meaning. Controls for both methods
-  probe a bold reply, a bold reply with an explanation, and a sentence containing the
-  right number, which must stay `invalid`.
+  **Reading a reply.** Python finds a reply's answer line and compares it by type. The
+  answer line is the first non-empty line. When that line opens a code fence, it is
+  the first non-empty line inside the fence; when it is only a label such as
+  `Answer:`, it is the next one; and a label that starts it (`Answer: 7.6`,
+  `**Final answer:** 7.6`) is removed. Anything below the answer line is ignored, so
+  an explanation never fails a right answer. The line is read whole, then again with
+  one layer of presentation taken off both ends at a time: emphasis (`**`, `__`, `*`,
+  `_`), inline code, quotation marks or a final full stop. The comparison passes when
+  any of those readings matches, so `**R1**` answers `R1` while `rgroup_label` and
+  `__init__` keep their underscores. Nothing is ever searched for inside the line:
+  `The answer is 1` is not read as `1`, because extracting an answer from prose is how
+  a wrong reply becomes a false pass. A `choice` also reads `Option 2`, `(2)`, `2)`,
+  its option's own text, or the number followed by that option's text; the number
+  followed by another option's text is `invalid`. A `list` or `set` reads its items
+  from the answer line, or from consecutive bullet or numbered lines, ignoring a
+  final `and`. An empty reply, a `numeric` reply with no number or in another unit,
+  a `choice` reply that names no option, and an `expression` that does not parse are
+  `invalid`; a number past the last option names a wrong one. A reply Python's reader does not pass goes on to the AI reader of
+  "Reading replies" in `local-contract.md`. Five reply forms turned correct answers
+  into false verdicts: a plural in e13f50ee, `Molar` in fb64115f, `**1**` in 7efbdd8c,
+  an explanation below the answer in 0a243b7e and a code fence in 0aeca4c6. Replaying
+  all 945 saved replies of seventeen runs, kept in
+  `tests/recorded/subject-replies.json`, every right answer now passes, among them the
+  19 trials those forms misread, and no wrong answer does.
 
-  An `exact` reply is read from its **first non-empty line, with surrounding
-  whitespace removed**, and that line must equal the expected token character for
-  character. Nothing else is removed, because here those characters are content —
-  `rgroup_label` carries an underscore and `[*]` is a dummy atom in SMARTS — so
-  `**R1**` fails. `R1` followed by a paragraph of explanation passes; it used to be
-  compared whole and failed, which in run 0a243b7e turned six correct answers into two
-  false `fail` verdicts. `The key is R1` fails, because the token is never searched
-  for inside the line. Controls probe the token followed by an explanation, which
-  must pass, and a sentence containing it, which must fail.
+  Python adds one line to each case's subject input, written from its answer type,
+  for example `Write only the answer on the first line of your reply: the number of
+  the correct option.` A claim-only session receives the same line, so a case's
+  `input` states its question and needs no reply instructions of its own.
+
+  Controls probe every case with its answer in the forms above, which must pass, and
+  with near misses, which must not: for every type the answer inside a sentence, with
+  a suffix and truncated; the answer's case changed for an `exact`; another order for
+  a `list`; every other option number, an out-of-range number and a non-numeric reply
+  for a `choice`; and the tolerance boundaries for a `numeric`.
 
   A `numeric` case may take a **calculated** answer instead of a quoted one, for a claim
   whose answer is mathematically exact, such as a unit conversion or a logarithm. The
@@ -676,7 +711,10 @@ The Local profile matrix in workflow.md governs their legality.
   the claim answers, for a design scored by installed methods. Each case goes twice to
   a fresh no-tool session on the pinned model that sees only the claim's statement and
   expected behaviour and the case input, four sessions at a time, two minutes each, and
-  each answer is scored by the case's own method. A case every answer reaches is
+  each answer is scored by the case's own method. An answer that method does not pass
+  is read by the AI reader like a trial ("Reading replies" in `local-contract.md`),
+  unless it is `UNDETERMINED` or the reserved `none of these`, which say what they
+  mean. A case every answer reaches is
   `reached`; a case any answer misses is `missed`; a case with no miss whose sessions did
   not all complete is `unmeasured`, and the critique's verdict stands for it. A case
   unchanged since an earlier round of the same claim, meaning the same input, key and
@@ -717,7 +755,8 @@ The Local profile matrix in workflow.md governs their legality.
   settled grade is fixed rather than offered. An unavailable critique is an
   operational limitation, never a grade.
 
-  The critique, the documentary assessment and each claim-only answer are model replies,
+  The critique, the documentary assessment, each claim-only answer and each reading of
+  a reply are model replies,
   so Python hands each session its reply's shape as a JSON Schema (`--json-schema`)
   instead of describing it in prose and parsing text. Claude Code adds one
   `StructuredOutput` tool to the otherwise tool-free session, checks the reply against the
@@ -725,7 +764,8 @@ The Local profile matrix in workflow.md governs their legality.
   session corrects its own shape within its turn limit. Any other tool call is a boundary
   violation. A session that ends without a reply in shape is `critic_response_invalid` or
   `assessor_response_invalid`, an operational failure, never a grade and never a
-  scientific finding; for a claim-only answer it leaves the case unmeasured. A critique
+  scientific finding; for a claim-only answer it leaves the case unmeasured, and for a
+  reading it keeps Python's verdict. A critique
   holds `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string
   per rubric criterion, in order), `objections` and `required_revisions` (each at most
   eight strings, empty when there are none), and `case_verdicts`: one entry for every case
@@ -734,7 +774,9 @@ The Local profile matrix in workflow.md governs their legality.
   otherwise describes a case that would test the claim instead. An assessment holds
   `status`, `findings` (one string per documentary criterion), one to eight `citations`
   naming packet references, and `limitations`, a single string. A claim-only answer holds
-  `answer`, in the form its question asks for, and a short `reason`. No string may be
+  `answer`, in the form its question asks for, and a short `reason`. A reading holds
+  `reading` (`matches`, `differs` or `no_single_answer`), `answer`, copied exactly from
+  the reply and empty for `no_single_answer`, and a short `reason`. No string may be
   blank and no object may carry a key its schema does not name. Python checks the reply
   against the same shape again before using it, and checks what a schema cannot: that
   every citation quotes the packet exactly, a judgement that is never retried
@@ -744,7 +786,10 @@ The Local profile matrix in workflow.md governs their legality.
   and an empty extra key in a case verdict lost a claim in run 0a243b7e.
 - `execute_local_claim`: in local_ready, run every fixed case for its audited trial count in fresh
   answer-blind subject session, save requests before invocation, and score returned
-  observations. Accuracy, consistency, comparison status and scientific status are
+  observations. Python's reader scores each trial, and a counted trial it does not
+  pass is then read by the AI reader, whose accepted reading decides that trial;
+  "Reading replies" in `local-contract.md` owns that rule and what the result records
+  about it. Accuracy, consistency, comparison status and scientific status are
   computed over the audit's `counted_cases`; the result lists the others under
   `uncounted_cases` with their verdicts, and their observations stay in the receipts. No uncertain trial retries. Produce a result or operational record.
   A provider safety refusal is recorded as `subject_refused`, naming the refusal

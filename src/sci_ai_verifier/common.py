@@ -29,6 +29,37 @@ def normalize(text):
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+# A CommonMark fence opener: up to three spaces, then three or more backticks or tildes.
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+
+
+def fenced_blocks(text):
+    """(first body line number, info string, body lines) for each fenced code block, CommonMark style.
+
+    A skill's install commands count only inside fenced blocks ("Skill environment" in
+    local-contract.md): glycoengineering's prose says "`uv pip install glycoshield` fails", and
+    inline code in a sentence is not a declaration. A reply's answer line may sit inside one
+    ("Reading a reply" in tool-contracts.md).
+    """
+    blocks, lines, index = [], text.split("\n"), 0
+    while index < len(lines):
+        opening = FENCE.fullmatch(lines[index])
+        if not opening or (opening.group(1)[0] == "`" and "`" in opening.group(2)):
+            index += 1
+            continue
+        marker, body, start = opening.group(1), [], index + 2
+        index += 1
+        while index < len(lines):
+            closing = re.fullmatch(r" {0,3}(`{3,}|~{3,})\s*", lines[index])
+            if closing and closing.group(1)[0] == marker[0] and len(closing.group(1)) >= len(marker):
+                break
+            body.append(lines[index])
+            index += 1
+        blocks.append((start, opening.group(2).strip(), body))
+        index += 1
+    return blocks
+
+
 def validate(value, schema, field="arguments"):
     """Validate only the JSON Schema vocabulary used by our published tools and reply schemas.
 

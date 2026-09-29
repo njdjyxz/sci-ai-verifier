@@ -95,9 +95,13 @@ ran for the first time**. That run also exposed three problems:
 
 The last is now answered by **skill environments** (below). They are live-checked on a blank
 `python:3.12-slim` base but have not yet been used in a verifier run. Calculated answers have still
-not met a run. The 2026-09-28 entry has the details.
+not met a run. The 2026-09-28 entry has the details. The code fence, and reply format in general,
+is now answered by **typed answers and an AI reader** (the 2026-09-29 entry): seven answer types
+read by one reader, and a fresh session that reads again what that reader does not pass. Replayed
+over all 945 saved replies they read every right answer as right and no wrong one, but neither
+has met a verifier run.
 
-Automated suite: **385 tests, 383 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **425 tests, 423 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -552,3 +556,244 @@ With the operator's go-ahead:
 4. Run scikit-survival once.
 
 It is finished when every item under "What to check in the run" has a recorded answer.
+
+## Claude: 2026-09-29 (typed answers and the AI reader, on skill-environments)
+
+### Current stage and status
+
+Version 0.7.0, local workflow, on the `skill-environments` branch. The operator asked for one
+general fix for replies that give the right answer in a form the scorer cannot read. The earlier
+fixes had turned good open questions into multiple choice: `choice` went from no cases at method
+versions 1 and 2 to 52–71% at versions 3 to 6, and 13 claim grades in 17 runs were capped for
+want of generated cases. Two parts are built, contracts first, on top of the skill environments
+of the 2026-09-28 entry:
+- **Typed answers.** Seven installed answer types, one reader that finds the answer line past a
+  code fence or an `Answer:` label, controls generated for each type, and one line Python adds to
+  each case's input stating its answer form.
+- **The AI reader.** A counted trial Python's reader does not pass is read again by a fresh no-tool
+  session. Its reading decides that trial unless Python's checks refuse it. The grade stays, and
+  the report shows every reading beside the status Python's reader alone gives.
+
+Later the same day, at the operator's request, claims were sized to their tests (**Claim scope**
+below). **None of this has been used in a verifier run, and nothing is committed yet.** The whole
+suite passes, and three live sessions recorded the new critique rubric and two AI readings.
+
+### What has been done
+
+This session, 2026-09-29, after the work of the 2026-09-28 entry:
+
+**1. The format history.** A replay of 945 saved replies from 17 report cards found five forms
+that had misread right answers: a plural (`e13f50ee`), `Molar` (`fb64115f`), `**1**`
+(`7efbdd8c`), an explanation below the answer (`0a243b7e`) and a code fence (`0aeca4c6`). Only
+the two fenced replies were still misread by the old reader.
+
+**2. Contracts.**
+- `tool-contracts.md`, under `qualify_local_candidate`, owns the types and "Reading a reply".
+  The types are `numeric` (with an optional `unit`), `exact`, `term`, `expression`, `list`, `set`
+  and `choice`. It also owns the answer-format line and the controls.
+- `local-contract.md` gains "Reading replies", which owns the AI reader. The same file points to
+  it where grades, verdicts and subject input are described.
+- `evidence-rubric.md`:
+  - A's row allows an AI reading of which answer a reply gives;
+  - "generated" points to the open types;
+  - AI-involvement says a reading does not lower A.
+- `artifact-contracts.md`, `local-evaluator-spec.md` and `LOCAL-INSTALL.md` are updated to match.
+
+**3. Code.**
+- The new `answers.py` holds the reader, the types, the controls and the answer-format lines. The
+  fence parser moved from `environment.py` to `common.py`, so both use it.
+- `local_candidates.py` qualifies each case by its type; method version `-6` → `-7`.
+- `local_science.py`:
+  - counts every open type as generated;
+  - traces a term to its quote by its words;
+  - policy `evidence-strength-v6` → `v7`;
+  - `decide` records `reading_summary`, with the status and accuracy Python's reader alone gives.
+- `documentary.py`:
+  - adds the reader session, and reads claim-only misses except `UNDETERMINED` and
+    `none of these`;
+  - critique rubric v8 → v9, adding `answer_types` and wording A as the rubric's row now does.
+- `local.py`: the tool schema, the answer-format line, readings after each claim's trials,
+  reading receipts, and a report with a "Read by" column and an AI-reader paragraph per claim.
+
+**4. Verification.**
+- Suite: 385 → 419 tests, 417 passing and 2 skipped, none failing (425 after claim scope below).
+- `tests/recorded/subject-replies.json` keeps all 945 replies, labelled right, wrong or
+  paraphrase; `test_answers.py` replays them:
+  - every right answer passes, including the 19 trials misread when they ran;
+  - the 10 wrong trials still fail, and the 3 paraphrases are left to the AI reader.
+- 32 one-line mutations were each caught, and the baseline and restored trees passed:
+  - 30 of the reader, the type rules, the AI reader, the Python-only status and the disclosure;
+  - 2 of the follow-ups below.
+- Follow-ups the new tests found or prompted:
+  - a label's emphasis closing after the answer (`**Answer: 42**`) is now removed;
+  - an option whose text reads as another option's number (`3` at position 1) is refused;
+  - `term` refuses a number with the right message.
+- **Live recordings**, about $0.23 on the operator's go-ahead, through the code that reads them:
+  - `d416f79d`'s critique packet under rubric v9 settled at B with all three cases counted, as
+    under v8.
+  - The AI reader called `MolOps::adjustQueryProperties` `matches` for key
+    `adjustQueryProperties`, "a formatting difference". It did so although the question asked for
+    no namespace prefix.
+  - It called a paraphrase of a sentence the question wanted verbatim `differs`.
+  - All three first replies met their schemas.
+- The verification bootstrap is 199,824 of its 200,000 bytes. Each document pinned for the local
+  planner fits the 40 KiB section reply, now tested.
+- Not verified: any of this in a verifier run.
+
+### Decisions taken 2026-09-29
+
+- **Build the full typed-answer system and the AI reader together, on this branch** (operator),
+  to be tested with skill environments in one run.
+- **An AI reading counts, and the grade stays** (operator). The other options were capping the
+  claim at B, or lowering it to C. A reading establishes what a reply says, never what the right
+  answer is, so the rubric's A row now allows it. It is disclosed on every trial and claim.
+- Proposed here and built:
+  - the reader reads only counted trials Python did not pass;
+  - Python refuses a reading whose copied answer is not in the reply, that another model gave,
+    or that its own reader settles the other way;
+  - no reading is ever retried;
+  - Python, not the planner, writes the answer-format line;
+  - the critique learns the answer types but not the reader.
+
+### Claim scope
+
+The operator asked why extracted claims are so narrow, and why they vary so much between runs.
+A survey of the 17 report cards answered both:
+- **Narrow claims cap grades.** Since per-case verdicts began (`28d19f8a`), 24 of 41 graded claims
+  settled below their source's grade only because of their case count, most often one counting
+  case short of A.
+- **They also produce padding.** Critiques rejected 17 cases as `duplicate`, the same fact asked
+  from the other direction. The critique of one `0a243b7e` claim wrote that it was "narrow enough
+  (two documented constants plus one corollary) that five genuinely independent counting cases may
+  not be constructible".
+- **The variety is in the cutting, not the facts.** The 13 sar-analysis runs drew their claims from
+  the same few passages: the FindMCS settings at `SKILL.md:37` in all 13, pIC50 in 12, dummy atoms
+  in 12, RGroupDecompose in 10. That one passage became one, two or three claims, and runs had
+  three to six claims. No claim ever tested the skill's workflow advice; `0aeca4c6`'s five were
+  narrow scikit-survival facts too.
+- **Cause.** The local planner's only guidance is the tool description "commit atomic claims".
+  Nothing says how broad a claim is, how many to write, or what to cover.
+
+Proposed changes, of which 1 to 3 are built:
+1. Replace "atomic" with a scope rule, owned by `local-contract.md`. A claim is one behaviour the
+   skill tells its user to rely on: a procedure step, a documented rule, or one function's
+   behaviour. It includes every fact the skill states about that behaviour, and is broad enough
+   for about six independent questions (A's five plus a spare). A behaviour that cannot support
+   that merges with a neighbouring one; unrelated behaviours never merge.
+2. A fixed procedure:
+   - walk the skill's sections in order and take one claim per section that makes a testable
+     promise;
+   - prefer what the skill tells its user to do over library trivia;
+   - write at most five claims, because broader claims mean more trials, and runs are near the
+     90-minute limit.
+3. Report lines: "limited by the claim's size, not its source" where only the case count held a
+   grade down (open question 4 of the 2026-09-28 entry), and the skill's sections that received
+   no claim.
+4. Optional: start a re-run of an unchanged skill from the previous run's claims, keeping or
+   replacing each with a reason. Runs become comparable, but earlier mistakes carry over.
+
+**Decided** (operator): first "not before the next run"; then, superseding that, build items 1
+to 3 before it and save item 4 for later.
+
+Built:
+- **Contract.** `local-contract.md` gains "Claims", which owns the scope rule, the
+  section-by-section procedure and the limit of five. A section is the text under one heading
+  of `SKILL.md`, and a reference file belongs to the first section that names it.
+  `tool-contracts.md` lists a manifest over the limit as retryable, and `artifact-contracts.md`
+  lists the new report fields.
+- **The planner's tools.**
+  - The shared `commit_claim_manifest` description still says "atomic" for the older profiles.
+    The local planner's copy states the local rule instead: `local_definitions` in `tools.py`,
+    used for both the served tools and the pinned block.
+  - Step 1 of the planner prompt points to "Claims".
+  - `MAX_CLAIMS = 5` is the local `max_claims` limit, with its own refusal message.
+- **Coverage.** `claims.sections` reads `SKILL.md`'s sections, skipping frontmatter, a `#` inside
+  a code fence, and headings with no text of their own. `claims.section_coverage` maps each
+  claim to the section it covers.
+- **Report.**
+  - A "Skill sections" line near the top lists the sections no claim covers, and each claim has
+    a "Skill section" line. The JSON gains `coverage` and each row gains `sections`.
+  - `local_science.size_limit` gives a claim held below its source's grade only by its case
+    count a "Limited by its number of independent cases, not its source" line, and its row a
+    `size_limited` record.
+  - `reference_grade` now holds the half of `evidence_ceiling` that the report reads back.
+- **Replayed on real claims,** the coverage shows the problem:
+  - `d416f79d`'s four claims covered two sections, two claims each;
+  - three of `3dc02567`'s six came from the one MCS section;
+  - three of `0aeca4c6`'s five came from "Model choice".
+- **Verification.** Suite 419 → 425 tests. Ten one-line mutations were each caught, after one test
+  was tightened: the first pass missed frontmatter handling, because the section test gave the
+  frontmatter an intro line. It now also checks frontmatter directly before a heading.
+
+**Across all 15 sar-analysis runs**, the claims covered 2 to 4 sections each, and 14 runs put a
+second claim on a section already covered. Workflow was tested in 3 runs, Decision Framework and
+Best Practices in 1 each, and Substructure Alignment and Activity Heatmap never. Two causes:
+- **Splitting one passage.** The MCS section is one paragraph (`SKILL.md:37`), and 7 of the 17
+  manifests split it into two or three claims (definition, threshold, ring options). Those split
+  claims are the ones capped by their case count.
+- **Chasing the easy oracles.** MCS parameters, pIC50 and dummy atoms have crisp API
+  documentation; the workflow advice does not.
+
+**Drafted, decide after the run: one claim per paragraph.** Python would refuse, as retryable, a
+local manifest in which two claims quote the same paragraph, telling the planner to merge them.
+Replayed over the 17 saved manifests, it refuses exactly the 7 that split the MCS paragraph and
+nothing else. Claims on separate "Common Pitfalls" items, and on different scikit-survival
+reference files, still pass. It enforces the "one behaviour" rule where planners broke it.
+Python cannot tell which sections are testable, so it cannot force coverage of the hard ones.
+The operator chose to run first on the instructions and the coverage line, and add this only if
+the run still splits a passage.
+
+### Open questions for the operator
+
+1. **How lenient the AI reader should be.** It may judge `7.6e-9 M` to match 7.6 nM. That is a
+   scientific equivalence rather than presentation. Live, it also ignored a question's "without the
+   namespace prefix". Both are allowed under "an AI reading counts", and both should be watched in
+   the run.
+2. **Uncounted trials are not read**, to save time near the 90-minute limit. Their report rows keep
+   Python's verdict.
+3. **List and set items are typed by their own form**, so a capitalised item such as `Core` is
+   compared exactly.
+4. The 2026-09-28 entry's open questions stand.
+
+### Urgent next steps, if any
+
+None blocking. The work is uncommitted on `skill-environments`; commit when the operator asks.
+
+### Suggested next move
+
+Run scikit-survival once with skill environments, typed answers and the AI reader together.
+The run tests claim scope too: compare its case-count caps, `duplicate` verdicts and sections
+covered with the survey under "Claim scope".
+Planners should now write open cases where they used to write choices, and the run shows whether
+subjects answer them in forms the reader accepts.
+
+### Recommended next action
+
+With the operator's go-ahead:
+1. Commit this branch.
+2. Follow "Before the next run" and "Cleaning the previous run" in the 2026-09-28 entry. The
+   candidates at method version `-6` are no longer offered, since `-7` supersedes them, so moving
+   them is tidying only.
+3. Start a new session, so `serve-local` loads this code, and run scikit-survival.
+
+Check, beyond the 2026-09-28 list, whose item 1 this replaces:
+- every critique's `rubric_ref` is v9,
+  `0ae090e44124cc46a30433b188bd93a1ea1ba1cd81140c146cda33af6d1788e3`, audits carry policy
+  `evidence-strength-v7`, and every reading's `reader_ref` is
+  `738e3dbe40c8c3fbd00a5f6a727324b86b6fdef1bacca2ea3779ecec5d54ea65`;
+- the share of `choice` cases, and each open type the planners used;
+- every trial the AI reader read, quoting the reply, the copied answer and the reason;
+- any refused reading, and why;
+- any status that differs from Python's reader alone;
+- the claim-only answers the reader changed;
+- claim scope, against the survey's baseline:
+  - how many claims there are, and how many of the skill's sections they cover;
+  - how many settled below their source only for their case count (24 of 41 before), which is
+    now each claim's "Limited by its number of independent cases" line;
+  - how many cases were `duplicate` (17 in 17 runs before);
+  - whether any claim became a vague summary of the skill;
+  - whether two claims quote the same paragraph, which decides the drafted rule above;
+  - whether Workflow, Decision Framework, Best Practices, Substructure Alignment and Activity
+    Heatmap (or the scikit-survival equivalents) now get claims.
+
+It is finished when each has a recorded answer.

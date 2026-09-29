@@ -141,7 +141,8 @@ both overclaiming and aiming low are refused before any session is spent:
   cannot reach A, because direct validation excludes AI judgment in scoring. A
   calculated answer is not a scorer: the planner writes the program that produces a
   key, the quoted worked examples check it mechanically, scoring stays installed, and
-  the report says the planner wrote it.
+  the report says the planner wrote it. Nor is the AI reader of "Reading replies": it
+  reports which answer a reply gives, against a key and a rule fixed before any trial.
 - **C** covers any reproducible comparison, including a single trial, a substring
   rather than token-exact quote, and a candidate reused offline whose reference origin
   was never recorded.
@@ -206,7 +207,8 @@ between a case's trials can change the status, never the grade, and each is reco
 among the execution limits. `evidence-rubric.md` owns that rule; a skill failing every
 trial against an A-grade reference keeps grade A. The verdict is pass only
 if all scored trials pass, fail if at least one fails and none is invalid, and
-inconclusive if any is invalid. No eligible grade grants no scientific verdict and
+inconclusive if any is invalid, each trial's status being the one "Reading replies"
+settles. No eligible grade grants no scientific verdict and
 requests a separate documentary assessment; it never silently invents a weaker grade.
 Synthetic fixture observations never receive a grade.
 
@@ -270,8 +272,9 @@ The local implementation supports text and computational skills, pinned resource
 installed comparison methods and qualified generated Python evaluators. Those methods
 and the answer form each one requires are enumerated in `tool-contracts.md` under
 `qualify_local_candidate`, which owns that list; do not restate it here.
-The planner extracts source-grounded claims, searches for independent primary
-references with WebSearch, and proposes known-answer cases in one of those forms.
+The planner extracts source-grounded claims, as "Claims" below describes, searches for
+independent primary references with WebSearch, and proposes known-answer cases in one of
+those forms.
 Python retrieves public HTTPS reference bytes itself; agent-authored quotes or
 search summaries alone cannot qualify a candidate. Reference quotes must occur in
 retrieved material, and so must every expected value except one Python calculated from
@@ -289,6 +292,34 @@ No local registration changes the reviewed global registry.
 An empty catalog initiates discovery without a manual seed. Inadequate evidence,
 unavailable execution environments/tools and uncertain scope produce
 claim-local limitations. Every accepted claim must be accounted for.
+
+## Claims
+
+The planner extracts the claims; Python checks their quotes, never their meaning. The
+earlier profiles ask for atomic claims, which made local claims too small to test. Since
+per-case verdicts began, 24 of 41 graded claims settled below the grade their source
+supported only because they had too few independent cases, and critiques rejected 17
+cases as restatements of another. A local claim is therefore sized to its tests:
+
+- **One behaviour.** A claim is one behaviour the skill tells its user to rely on: a
+  procedure step, a documented rule, or one function's behaviour. It states every fact
+  the skill gives about that behaviour, so that about six independent questions can test
+  it: the five an A needs, plus a spare ("Cases each grade requires" in
+  `evidence-rubric.md`). A behaviour too small for that joins the neighbouring behaviour
+  it serves. Unrelated behaviours never share a claim, and no claim summarises the whole
+  skill.
+- **Section by section.** A section is the text under one heading of `SKILL.md`, down to
+  the next heading of any level; a reference file belongs to the first section that
+  names it. List the sections that promise a testable behaviour. Take one claim from each
+  of them, preferring what the skill tells its user to do and conclude over facts about a
+  library it calls, in the skill's order.
+- **At most five.** Broader claims need more trials, and a run of six narrower claims
+  used all but 8 of its 90 minutes, so a manifest holds at most five claims and Python
+  refuses a larger one. When more sections qualify, keep those whose behaviour the
+  skill's workflow depends on most.
+
+The report lists the sections no claim covers, and says when only its number of
+independent cases held a claim below the grade its source supports.
 
 ## Legal operations
 
@@ -344,7 +375,8 @@ third itself.
 
 No reference answer, candidate, evaluator file, verifier conversation or arbitrary
 planner instruction is included in subject input. Subject input is the frozen
-case input plus the pinned skill. A process deadline and output ceiling are
+case input, the answer-format line Python writes from the case's answer type, and the
+pinned skill. A process deadline and output ceiling are
 enforced; timeout/cancellation terminates the process tree. A trial that reaches its
 deadline is `claude_timeout`, and its record names the case, the trial and the
 `subject_timeout_seconds` it reached. That limit is this verifier's setting, not a
@@ -364,6 +396,51 @@ cover it, or when less time remains before the attempt deadline than one minute 
 trial plus five for the report. A claim the re-run does not clear, or that is not
 re-run, then receives the fallback documentary assessment described under
 "Independent documentary path".
+
+## Reading replies
+
+Every reply scored by an installed comparison method is read in two steps.
+
+**Python's reader** finds the reply's answer line and compares it with the expected
+answer by the case's answer type, under the rules `qualify_local_candidate` in
+`tool-contracts.md` owns. A reply it passes is a pass, and nothing overturns that.
+
+**The AI reader** reads every other trial of a counted case, one Python's reader
+failed or could not read, once all of the claim's trials have run. Each reading is a
+fresh no-tool session on the pinned model, two minutes long, four at a time. It sees
+the case's question, the answer-format line, the answer type, the expected answer and
+the reply. It never sees the claim, the skill, the design, the grade, any other trial
+or Python's verdict. Its reply has a fixed schema, enforced like the critique's: it
+says whether the answer the reply commits to `matches` the expected answer, `differs`
+from it, or is `no_single_answer` (several answers, a hedge, a refusal or none), and
+gives that answer copied from the reply, with a reason. It never judges whether the
+expected answer is right, and it cannot change it.
+
+An accepted reading decides the trial: `matches` is `pass`, `differs` is `fail` and
+`no_single_answer` is `invalid`. Python refuses a reading, and the trial keeps Python's
+verdict, when:
+- the copied answer is not in the reply;
+- another model answered;
+- or Python's reader settles the copied answer the other way. A `matches` whose copied
+  answer Python reads as a different number or option is refused, and so is a
+  `differs` whose copied answer Python's reader passes.
+
+A reader session that fails also leaves Python's verdict. No reading is ever retried,
+because reading again until the answer changes is verdict shopping. A synthetic run has
+no reader, since its status is withheld anyway. The claim-only answers under
+`select_local_candidate` are read the same way, except `UNDETERMINED` and the reserved
+`none of these`, which say what they mean.
+
+**What a reading changes.** The expected answers and the comparison rule are fixed
+before any trial runs. A reading only establishes what a reply says, so it never moves
+the grade; "AI-involvement disclosure" in `evidence-rubric.md` owns that rule. Every
+reading is disclosed:
+- each AI-read trial's score receipt and report row carry the reading, the copied
+  answer, the reason and Python's own verdict;
+- the result's `reading_summary` counts the counted trials the AI reader read and
+  changed, and gives the status and accuracy Python's reader alone would give;
+- a reading that changed a counted trial makes `ai_involvement.verdict` a sentence
+  saying so, and adds `trials_decided_by_ai_reader` to the execution limits.
 
 ## Authentication and storage
 

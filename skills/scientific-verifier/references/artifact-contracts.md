@@ -416,14 +416,30 @@ environment" in `local-contract.md`, with these fields:
   marked `reported_by_image` because it is untrusted.
 
 The report card carries `environment_ref` and an `environment` summary, and
-report-card.md opens with an Environment line. A run whose subject image was built lists
+report-card.md opens with an Environment line. It also carries `coverage`: each section of
+`SKILL.md` ("Claims" in `local-contract.md`) with its heading, level, line, the files it
+names and the claims that cover it, and the sections no claim covers, which report-card.md
+lists near the top. Each claim row carries the `sections` it covers and, when only its
+number of independent cases held it below its source's grade, `size_limited`: the grade the
+source supports and the counting and generated cases it had and needed. A run whose subject image was built lists
 `skill_packages_from_configured_index` among its host limitations. A plan audit records the proposed grade, the evidence
 ceiling Python computed with its limiting reasons, the independent critique with its
 per-case verdicts, the `counted_cases` and the `case_ceiling` recomputed over them, the
 round number and the settled ceiling; `negotiation_refs` retains every round's audit,
 so the negotiation is readable after the fact. Each trial has request, response and
 score receipts; new or changed files are immutable objects with readable copies in
-that trial's artifact directory. Reports include attempted/obtained/evaluated/
+that trial's artifact directory. A request carries the case's `answer_format` line. A
+score receipt holds `python_status`, the verdict of Python's reader, and
+`comparison_status`, the trial's status once "Reading replies" in `local-contract.md`
+has applied, with `read_by` (`python` or `ai_reader`) and, for a trial the AI reader
+read, `reading_ref`. That reading record holds its packet, the session's `reading`,
+copied `answer` and `reason`, the session and model identities, and `status`: `used`,
+`refused` with the check it failed, or `unavailable` with the fault. A comparison
+result carries `reading_summary`: the counted trials the AI reader read and changed,
+its readings by outcome, the refused and unavailable ones, and the status and accuracy
+of Python's reader alone. Report rows carry `python_status`, `read_by` and the
+reading, and report-card.md marks each AI-read trial. A claim-only answer the AI
+reader read keeps its reading inline, with `python_status`. Reports include attempted/obtained/evaluated/
 invalid/missing counts, whether each tested case was counted, the settled grade
 negotiation, required-grade satisfaction
 and independent critique and documentary packet/assessment references. Limitation

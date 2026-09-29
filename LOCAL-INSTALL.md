@@ -225,7 +225,9 @@ and actual answers, references, outcomes, and limitations.
 
 Completion is not automatically a scientific pass. Scripts, binary inputs and
 generated files use the configured container; the installed comparison methods and
-generated Python evaluators compare the observations. The default is three trials per case.
+generated Python evaluators compare the observations. A reply the installed reader
+does not pass is read again by a fresh AI session, and the report marks every trial
+that session decided. The default is three trials per case.
 Generated files have saved paths in the JSON report.
 
 The evidence grade in the report says how strong the evidence was, not whether

@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from . import __version__
-from .common import Fault, canonical, digest, utc_now
+from .common import Fault, canonical, digest, fenced_blocks, utc_now
 from .execution_control import CURRENT
 from .ingest import snapshot
 from .local_candidates import safe_payload
@@ -48,7 +48,6 @@ INDEX_OPTIONS = {"-i", "--index-url", "--extra-index-url", "-f", "--find-links",
 INSTALL_PREFIXES = (["pip", "install"], ["pip3", "install"], ["python", "-m", "pip", "install"],
                     ["python3", "-m", "pip", "install"], ["py", "-m", "pip", "install"],
                     ["uv", "pip", "install"], ["%pip", "install"], ["!pip", "install"])
-FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 SPECIFIER = r"(?:===|==|!=|<=|>=|~=|<|>)\s*[A-Za-z0-9.*+!_-]+"
 REQUIREMENT = re.compile(
     r"(?P<name>[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*"
@@ -142,31 +141,6 @@ def parse_requirement(text):
     specifiers = sorted(re.sub(r"\s+", "", match.group("spec")).split(",")) if match.group("spec") else []
     return {"requirement": name + ("[" + ",".join(extras) + "]" if extras else "") + ",".join(specifiers),
             "name": name}, None
-
-
-def fenced_blocks(text):
-    """(first body line number, info string, body lines) for each fenced code block, CommonMark style.
-
-    Only fenced blocks count: glycoengineering's prose says "`uv pip install glycoshield` fails",
-    and inline code in a sentence is not a declaration.
-    """
-    blocks, lines, index = [], text.split("\n"), 0
-    while index < len(lines):
-        opening = FENCE.fullmatch(lines[index])
-        if not opening or (opening.group(1)[0] == "`" and "`" in opening.group(2)):
-            index += 1
-            continue
-        marker, body, start = opening.group(1), [], index + 2
-        index += 1
-        while index < len(lines):
-            closing = re.fullmatch(r" {0,3}(`{3,}|~{3,})\s*", lines[index])
-            if closing and closing.group(1)[0] == marker[0] and len(closing.group(1)) >= len(marker):
-                break
-            body.append(lines[index])
-            index += 1
-        blocks.append((start, opening.group(2).strip(), body))
-        index += 1
-    return blocks
 
 
 def logical_lines(first, lines):

@@ -132,6 +132,9 @@ class Runtime:
         if profile=="local" and getattr(self.subject,"settings",None):
             from .local_config import source_limits
             local_limits=source_limits(self.subject.settings)
+        if profile=="local":
+            from .local import MAX_CLAIMS
+            local_limits["max_claims"]=MAX_CLAIMS
         self.limits = {**DEFAULT_LIMITS, **({"max_steps": 256} if profile != "stage2" else {}), **local_limits, **(limits or {})}
         if profile == "demo":
             self.limits.update(max_steps=512, repair_retries=32, illegal_transitions=32,
@@ -314,7 +317,9 @@ class Runtime:
             yield relative, sections(relative, text, wanted)
         from .local import OPERATIONS
         names = {"get_verifier_context", "load_submitted_skill", "read_snapshot_file", "commit_claim_manifest", "write_report_card", *OPERATIONS}
-        definitions = [item for item in DEFINITIONS if (item["name"] in names if self.profile == "local" else item["name"] not in OPERATIONS)]
+        from .tools import local_definitions
+        definitions = (local_definitions(names) if self.profile == "local"
+                       else [item for item in DEFINITIONS if item["name"] not in OPERATIONS])
         yield "tool-definitions", canonical(definitions).decode("utf-8")
 
     def _sections(self, state):
