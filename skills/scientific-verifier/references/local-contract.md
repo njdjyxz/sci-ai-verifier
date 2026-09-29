@@ -314,8 +314,8 @@ cases as restatements of another. A local claim is therefore sized to its tests:
   of them, preferring what the skill tells its user to do and conclude over facts about a
   library it calls, in the skill's order.
 - **At most five.** Broader claims need more trials, and a run of six narrower claims
-  used all but 8 of its 90 minutes, so a manifest holds at most five claims and Python
-  refuses a larger one. When more sections qualify, keep those whose behaviour the
+  used all but 8 seconds of its 90 minutes, so a manifest holds at most five claims and
+  Python refuses a larger one. When more sections qualify, keep those whose behaviour the
   skill's workflow depends on most.
 
 The report lists the sections no claim covers, and says when only its number of

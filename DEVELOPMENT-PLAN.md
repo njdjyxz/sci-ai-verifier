@@ -421,8 +421,9 @@ Verification of items 4 and 5:
 4. **The working tree is clean** at that commit.
 5. **The plan's 5-hour window has room.** `0aeca4c6` cost about $27 and took the window from 26%
    to 77%, so plan one run per window.
-6. **The timeout.** The app passes 5,400 s. `0aeca4c6` used 3,827 s for five claims, and each
-   environment build adds about 30 s of setup.
+6. **The timeout.** The app passes 7,200 s, the most `serve-local` accepts; the operator raised it
+   from 5,400 s on 2026-09-29, and a session started before that still serves 5,400 s. `0aeca4c6`
+   used 3,827 s for five claims, and each environment build adds about 30 s of setup.
 7. **For a skill environment**, the operator adds two settings to `.verifier/local-settings.json`:
    - `package_index: "https://pypi.org/simple"`;
    - `environment_base_image:
