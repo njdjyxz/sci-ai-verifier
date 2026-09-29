@@ -494,8 +494,7 @@ def select(store, state, claim_id, work, args, subject):
                  **{name: args[name] for name in PLANNER_JUSTIFICATION},
                  "snapshot_ref": state["source_ref"], "subject_config": state["subject_config"],
                  "source_digest": store.get_json(state["source_ref"])["digest"],
-                 "environment_digest": environment_digest(settings, state["subject_config"],
-                                                          state.get("local_environment_ref")),
+                 "environment_digest": environment_digest(settings, state["subject_config"]),
                  "method_version": candidate["method_version"], "trials_per_case": trials,
                  "claim_id": claim_id}
     work["selection_ref"] = keep(store, state, selection)
@@ -978,11 +977,6 @@ def report(store, state):
     lines = ["# Local skill verification", "", "SYNTHETIC FIXTURE RUN" if state["subject_config"]["synthetic"]
              else "Personal/local reference comparisons", "",
              "Scientific status and evidence grade are separate from operational completion. Mechanical qualification alone is ungraded.", ""]
-    environment = None
-    if state.get("local_environment_ref"):
-        from .environment import report_line, report_summary
-        environment = report_summary(store.get_json(state["local_environment_ref"]))
-        lines.extend([cell(report_line(environment)), ""])
     for claim in claims:
         work = state["local_work"][claim["claim_id"]]
         terminal = store.get_json(work.get("result_ref") or work["outcome_ref"])
@@ -1136,9 +1130,6 @@ def report(store, state):
         document["configuration_ref"]=state["local_settings_ref"]
     if state.get("local_catalog_ref"):
         document["catalog_inventory_ref"]=state["local_catalog_ref"]
-    if environment:
-        document["environment_ref"]=state["local_environment_ref"]
-        document["environment"]=environment
     pointer=store.run_dir(state["run_id"])/"workflow-log.json"
     if pointer.exists():
         from .mcp import parse_json

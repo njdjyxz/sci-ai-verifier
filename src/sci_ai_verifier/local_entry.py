@@ -193,23 +193,9 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
         from .sandbox import DockerSandbox
         preflight["sandbox"] = DockerSandbox(workspace, settings).preflight()
     preflight["model_probe"] = probe_model(adapter)
-    environment = None
-    if settings["sandbox_image"]:
-        # After the probe, so a CLI that cannot serve the model costs no download; before the run
-        # exists, so nothing the planner does can reach the one step that downloads packages.
-        from .environment import prepare_environment, report_summary
-        from .local_config import source_limits
-        from .tools import DEFAULT_LIMITS
-        environment = prepare_environment(source, source if source.is_dir() else source.parent, settings,
-                                          workspace=workspace, limits={**DEFAULT_LIMITS, **source_limits(settings)},
-                                          log=log)
-        preflight["environment"] = report_summary(environment)
-        if environment["image_id"] != environment["base_image"]:
-            adapter = ClaudeCode(executable=adapter.executable, model=model, auth=auth, log=log, settings=settings,
-                                 subject_image=environment["image_id"])
     log.emit("setup_finished", preflight=preflight)
     runtime = Runtime(workspace, source if source.is_dir() else source.parent, instructions,
-                      profile="local", subject_adapter=adapter, environment=environment)
+                      profile="local", subject_adapter=adapter)
     created = recorded_call(log, runtime, "start_verifier_run", {"source_path": str(source)})
     if created["status"] != "ok":
         return created
@@ -228,15 +214,10 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
             # credential is offered under a neutral alias that survives that expansion.
             alias = "SCI_VERIFIER_INTERNAL_CREDENTIAL"
             env[alias] = env[credential]
-            # The planner is stopped `timeout` seconds after it starts, which is about now, or at
-            # the attempt deadline if that comes first: setup may have spent minutes building the
-            # skill's environment. Its tool server needs that to decide whether the end-of-run
-            # re-run still fits, and gets it by reference like everything else, so the
-            # configuration holds no values.
-            from .execution_control import CURRENT
-            control = CURRENT.get()
-            remaining = min(timeout, control.deadline - time.monotonic()) if control else timeout
-            env[DEADLINE_ENV] = str(int(time.time() + remaining))
+            # The planner is stopped `timeout` seconds after it starts, which is about now. Its
+            # tool server needs that to decide whether the end-of-run re-run still fits, and
+            # gets it by reference like everything else, so the configuration holds no values.
+            env[DEADLINE_ENV] = str(int(time.time() + timeout))
             internal_env = {credential: "${" + alias + ":-}", DEADLINE_ENV: "${" + DEADLINE_ENV + ":-}"}
             for tool in settings["external_tools"].values():
                 for key in tool["credential_env"]:
@@ -254,8 +235,6 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
             settings_path=Path(temporary)/"settings.json"
             atomic_write(settings_path,canonical(settings))
             arguments += ["--config",str(settings_path)]
-            if getattr(adapter, "subject_image", None):
-                arguments += ["--subject-image", adapter.subject_image]
             atomic_write(mcp, canonical({"mcpServers": {"verifier_internal": {
                 "command": sys.executable, "args": arguments, "env": internal_env}}}))
             code, raw, _ = adapter.run(adapter.command(directory, session, mcp=mcp, controller=True), role="planner",

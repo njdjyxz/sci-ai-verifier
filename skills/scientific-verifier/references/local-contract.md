@@ -6,9 +6,7 @@ The public action accepts an operator-selected `--config` JSON file. Settings
 are validated and pinned into the subject identity. The planner cannot change
 them. A pinned, already installed Linux Docker image enables computational
 skills; absent configuration produces an operational limitation for those
-skills. Before a run starts, the packages a skill declares can be added to a copy
-of that image for its subject trials, as "Skill environment" below describes. The
-verifier never installs anything during a trial.
+skills. The verifier never installs dependencies during a subject trial.
 
 Each computational trial has a new local container, with no network, no host
 credentials, no evaluator or expected-answer mount, an unprivileged user, a
@@ -49,71 +47,6 @@ passing is mechanical qualification, not evidence of independent scientific
 validity. Subject trials are scored individually before all-trials aggregation.
 Operationally missing trials stay operational; invalid scientific observations
 remain in coverage denominators.
-
-## Skill environment
-
-When `sandbox_image` is set, setup prepares the image the skill's subject trials run
-in. It runs after the model probe and before the run or its planner exists, and it is
-the only step of a verification that downloads packages; "Packages a skill declares"
-in `resource-policy.md` owns that trust decision.
-
-**Declarations.** Setup snapshots the skill exactly as `load_submitted_skill` will and
-reads nothing else. A declaration is an install command inside a fenced code block of
-a Markdown file (`pip`, `pip3`, `python -m pip`, `python3 -m pip`, `uv pip`, `%pip` or
-`!pip`, then `install`), a line of a `requirements*.txt` file, or an entry of
-`[project].dependencies` in `pyproject.toml`. Inline code in prose is not a
-declaration. A requirement is a package name with optional extras and version
-specifiers. URLs, paths, VCS references, environment markers and the installers
-themselves (`pip`, `setuptools`, `wheel`, `uv`) are rejected, and so is a command that
-sets any option other than a harmless one such as `--upgrade` or `--quiet`, so a skill
-cannot choose the index. A `-r` naming a requirements file inside the snapshot is
-skipped, because that file is read on its own. A `--hash` value is dropped, because the
-verifier hashes what it downloads. At most 100 requirements are accepted. A module the
-skill imports but never declares is not installed. No model and no tool argument can
-add to the list.
-
-**Status.** `not_needed` when nothing is declared; `all_rejected` when every
-declaration was rejected; `disabled` when requirements exist but `package_index` is
-null; `source_unavailable` when setup cannot snapshot the skill, in which case
-`load_submitted_skill` records the fault as it would anyway; otherwise `built` or
-`reused`. Only `built` and `reused` give subject trials a different image.
-
-**Build.** One container of the operator's image resolves the requirements. It is the
-only container of a verification with a network. It downloads wheels only, from the
-configured index into a Docker volume, under its own deadline. Python checks each
-wheel's file name, and the number and total size of the wheels against `max_packages`
-and `max_package_bytes`, then writes a hash lock. A second container, with no network,
-installs exactly that lock from the volume with `--require-hashes` and runs
-`pip check`. The skill's pins replace versions already in the image. The result is
-committed as a new image tagged `sci-verifier-env:<key>` and labelled with its cache
-key and build record. Every container, and the volume, is removed on success, failure,
-cancellation and timeout. Any failure stops the verification as
-`skill_environment_unavailable`, naming the cause, before any planner cost, like the
-model probe under "Subject boundary". Setting `package_index` to null runs on the
-operator's image instead.
-
-**Reuse.** The cache key covers the operator's image, the index, the normalized
-requirements and the digests of the verifier's fixed build scripts. An image whose
-labels match, and whose installed packages still include the whole lock, is reused
-without any network. Removing a built image forces the next verification to rebuild
-it. A run that used the removed image cannot execute further trials.
-
-**Subject trials only.** The built image serves the skill's subject trials and nothing
-else. Calculations, generated evaluators, scoring and catalog requalification keep the
-operator's image, so no package the skill chose runs inside code that produces an
-expected answer or scores a trial. The built image is part of the subject identity, so
-the identity checks catch any change, and `environment_digest` includes the environment
-record.
-
-**What the planner sees.** The planner's pinned instructions gain one block. The
-verifier renders it only from values it checked itself: the image digests, the status,
-package names and versions from the lock, counts, reason codes and the index host. The
-block also says that nothing can be installed during the run. The full record is the
-`environment` section of `get_verifier_context`. It includes where each declaration was
-found, the text of rejected commands, and the packages and imports the built image
-reports. That last part is untrusted, because an installed package could alter it. The
-planner's `load_submitted_skill` must produce the snapshot digest the environment was
-built from; a skill that changed in between ends the run as `source_changed`.
 
 ## Negotiated evidence grade, plan audit and deterministic grade policy
 
@@ -303,9 +236,8 @@ replaces execution-affecting frontmatter; original bytes and the transformation
 digest remain in the receipt. Explicit Skill-tool invocation and a successful
 matching tool result are required. A prompt mentioning the skill is insufficient.
 Dynamic skill shell interpolation and nested Claude configuration are unsupported.
-Dependencies come from the pinned image, plus the packages the skill declares when the
-operator has configured a package index ("Skill environment"). No trial installs
-packages, and the subject's command tool says so: in run 84e90683 every trial of the ring-option claim
+Dependencies must already exist in the pinned image. No trial installs packages, and
+the subject's command tool says so: in run 84e90683 every trial of the ring-option claim
 first tried to install RDKit, and two spent their whole limit on the attempt and on
 working the answer out by hand.
 

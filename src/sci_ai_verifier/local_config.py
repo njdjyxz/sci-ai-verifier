@@ -3,7 +3,6 @@
 import re
 from copy import deepcopy
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from .common import Fault, canonical, digest
 from .storage import no_links
@@ -15,23 +14,7 @@ DEFAULTS = {"schema_version": 1, "sandbox_image": None, "docker_executable": "do
             "trial_count": 3, "max_subject_calls": 128,
             "subject_timeout_seconds": 120, "allowed_reference_hosts": [],
             "allowed_subject_hosts": [], "external_tools": {}, "resources": {},
-            "documentary_assessment": True, "catalogs": [], "minimum_grade": None,
-            "package_index": None, "max_package_bytes": 1024*1024*1024, "max_packages": 200}
-
-
-def valid_package_index(value):
-    """An operator-chosen HTTPS index with nothing a URL could smuggle: no credentials,
-    query, fragment, whitespace or control characters."""
-    if not isinstance(value, str) or not 9 <= len(value) <= 2048 or re.search(r"[\x00-\x20\x7f]", value):
-        return False
-    try:
-        parts = urlsplit(value)
-        port = parts.port
-    except ValueError:
-        return False
-    return (parts.scheme == "https" and bool(parts.hostname) and parts.username is None
-            and parts.password is None and not parts.query and not parts.fragment
-            and port in (None, 443) and bool(re.fullmatch(r"[A-Za-z0-9.-]+", parts.hostname)))
+            "documentary_assessment": True, "catalogs": [], "minimum_grade": None}
 
 
 def load_configuration(path=None):
@@ -67,8 +50,7 @@ def load_configuration(path=None):
               # is always a fresh model session. A lone sample cannot tell a skill that is
               # right from one that is sometimes right, so n=1 is never legitimate here.
               "trial_count": (3,20), "max_subject_calls": (1,10000),
-              "subject_timeout_seconds": (1,3600),
-              "max_package_bytes": (1024*1024,8*1024*1024*1024), "max_packages": (1,2000)}
+              "subject_timeout_seconds": (1,3600)}
     for key, (minimum, maximum) in bounds.items():
         if type(settings[key]) is not int or not minimum <= settings[key] <= maximum:
             raise Fault("configuration_invalid", f"{key} must be between {minimum} and {maximum}.")
@@ -115,18 +97,8 @@ def load_configuration(path=None):
                 or not (catalog["location"].startswith("https://") or Path(catalog["location"]).is_absolute())
                 or not re.fullmatch(r"[0-9a-f]{64}",str(catalog["sha256"]))):
             raise Fault("configuration_invalid","Each catalog needs an absolute file path or HTTPS URL and exact SHA256.")
-    if settings["package_index"] is not None and not valid_package_index(settings["package_index"]):
-        raise Fault("configuration_invalid", "package_index must be null or an https:// index URL without "
-                    "credentials, query or fragment.")
     return settings
 
 
 def configuration_digest(settings):
     return digest(canonical(settings))
-
-
-def source_limits(settings):
-    """The snapshot limits the local profile takes from its settings. Setup's snapshot and the
-    planner's `load_submitted_skill` use the same ones, so they reach the same digest."""
-    return {"max_file_bytes": settings["max_file_bytes"], "max_total_bytes": settings["max_artifact_bytes"],
-            "max_files": settings["max_artifacts"]}

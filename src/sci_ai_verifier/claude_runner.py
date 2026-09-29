@@ -386,23 +386,15 @@ def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
 
 
 class ClaudeCode:
-    def __init__(self, *, executable="claude", model="opus", auth="subscription", process=None, log=None, settings=None,
-                 subject_image=None):
+    def __init__(self, *, executable="claude", model="opus", auth="subscription", process=None, log=None, settings=None):
         if auth not in {"subscription", "api"} or not re.fullmatch(r"[A-Za-z0-9_.:/-]{1,150}", model):
             raise Fault("configuration_invalid", "Choose subscription/api authentication and a bounded model identifier.")
-        if subject_image is not None and not re.fullmatch(r"sha256:[0-9a-f]{64}", str(subject_image)):
-            raise Fault("configuration_invalid", "A subject image must be an exact sha256 image ID.")
         self.executable, self.model, self.auth, self.process = executable, model, auth, process or run_process
         self.log = log
         from .local_config import load_configuration, configuration_digest
         self.settings = settings if settings is not None else load_configuration()
-        # The image the skill's declared packages were installed into ("Skill environment",
-        # local-contract.md). Only subject trials use it, so it is folded into the subject's
-        # identity while the pinned settings keep the operator's image for everything else.
-        self.subject_image = subject_image
         self.identity = {"adapter_id": "claude-code-local-v1-" + auth, "model_id": model, "synthetic": False}
-        self.identity["adapter_id"] += "-"+configuration_digest(
-            {**self.settings, "subject_image": subject_image} if subject_image else self.settings)
+        self.identity["adapter_id"] += "-"+configuration_digest(self.settings)
 
     def run(self, command, *, role, **kwargs):
         if self.log is None:
@@ -492,13 +484,12 @@ class ClaudeCode:
                         env[key]=os.environ[key]
             prompt = "Invoke the Skill tool with skill " + SUBJECT_SKILL + ". Then handle this frozen input:\n" + canonical(case_input).decode()
             from .sandbox import DockerSandbox
-            trial_settings={**self.settings,"sandbox_image":self.subject_image} if self.subject_image else self.settings
-            manager=DockerSandbox(plugin/"skills/submitted",trial_settings,timeout=timeout_seconds+30,log=self.log) if computational else nullcontext()
+            manager=DockerSandbox(plugin/"skills/submitted",self.settings,timeout=timeout_seconds+30,log=self.log) if computational else nullcontext()
             with manager as sandbox:
                 binding=Path(temporary)/"binding.json"
                 log_binding={"workspace":str(self.log.directory.parents[2]),"attempt_id":self.log.attempt_id} if self.log else None
                 if sandbox:
-                    atomic_write(binding,canonical({"source":str(sandbox.source),"settings":trial_settings,
+                    atomic_write(binding,canonical({"source":str(sandbox.source),"settings":self.settings,
                         "name":sandbox.name,"docker":sandbox.docker,"endpoint":sandbox.endpoint,"deadline":sandbox.deadline,
                         "log":log_binding}))
                 else:

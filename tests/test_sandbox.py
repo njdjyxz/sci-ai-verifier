@@ -111,8 +111,7 @@ class SandboxTests(unittest.TestCase):
 
     def test_config_rejects_mutable_images_unknown_keys_and_bad_limits(self):
         path=self.directory/"settings.json"
-        for value in ({"sandbox_image":"python:latest"},{"allow_host_shell":True},{"trial_count":0},{"trial_count":True},
-                      {"package_index":"http://pypi.org/simple"},{"max_packages":0}):
+        for value in ({"sandbox_image":"python:latest"},{"allow_host_shell":True},{"trial_count":0},{"trial_count":True}):
             path.write_bytes(canonical(value))
             with self.assertRaises(Fault):
                 load_configuration(path)

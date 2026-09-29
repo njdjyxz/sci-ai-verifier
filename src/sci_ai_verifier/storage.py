@@ -226,8 +226,6 @@ def compatible(state):
             if not {"local_settings_ref","local_catalog_ref"}<=set(state):
                 reject("Current local runs require pinned operator settings and catalog inventory.")
             local_refs.extend((state["local_settings_ref"],state["local_catalog_ref"]))
-        if "local_environment_ref" in state:
-            local_refs.append(state["local_environment_ref"])
         for work in state["local_work"].values():
             if not isinstance(work, dict):
                 reject("Invalid local claim work.")
