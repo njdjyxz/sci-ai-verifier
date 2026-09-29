@@ -39,6 +39,7 @@ deterministic tools, bounded processes and saved evidence.
 | `31b67427` (2026-09-24) | sar-analysis | 1 at A, 2 at B; 42 of 42 trials passed, 0 invalid, 0 faults |
 | `3b3f3c94` (2026-09-24) | sar-analysis | 1 at A, 2 at B, 1 at C with status fail; 44 of 45 counted trials passed, 0 invalid, 0 faults |
 | `d416f79d` (2026-09-24) | sar-analysis | 4 at B; 39 of 39 counted trials passed, 0 invalid, 0 faults |
+| `0aeca4c6` (2026-09-28) | scikit-survival | 1 at A, 3 at B, 1 at D by fallback after a safety refusal; 62 of 64 obtained trials passed, 0 invalid |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -85,15 +86,19 @@ out of a design before any trial ran; neither new qualification check fired, and
 D and the timeout message are **still unobserved**. That run exposed two defects in the
 verifier's own plumbing: a workflow log slow enough to lose two finished claim-only answers,
 and reused answers filed under a case's old ID. Both are fixed and **not yet seen live**; the
-2026-09-24 and 2026-09-25 entries are in the archive. Two changes since, **tested but not yet in
-a run**: the verifier's own sessions (critique, documentary assessment, claim-only answers)
-answer through a reply schema Claude Code enforces, and a maths claim's expected answers may be
-calculated by Python from a quoted formula. The 2026-09-28 entry below has the details.
+2026-09-24 and 2026-09-25 entries are in the archive. Run `0aeca4c6`, the first on a
+non-chemistry skill since glycoengineering, saw the reply schemas work live, and the **fallback D
+ran for the first time**. That run also exposed three problems:
+- a content-triggered safety refusal voided one claim;
+- a code-fenced reply was misread;
+- the sandbox could not run scikit-survival at all.
 
-Automated suite: **346 passed, 2 skipped, 1 failing on this machine only**. The failing
-`test_runlog.py` preflight test fails the same way on the untouched `2d9f8af` tree: its
-stale-directory sweep finds this machine's leftover `sci-verifier-*` directories in `%TEMP%`
-and logs an event the test does not expect.
+The last is now answered by **skill environments** (below), which are tested with fake Docker and
+**not yet live**. Calculated answers have still not met a run. The 2026-09-28 entry has the details.
+
+Automated suite: **382 tests, 380 passing and 2 skipped, none failing**. The one that used to
+fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
+260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
 suite establishes scientific acceptance.
 
@@ -163,16 +168,28 @@ reviewed contracts under `skills/scientific-verifier/references/` outrank both.
   local planner since 2026-09-21, was corrected (`a7f023b`). The pIC50 claim's B traced to its
   planner's pages rather than its duplicates, and calculated answers were drafted.
 
-## Claude: 2026-09-28 (the verifier's own replies through a schema; calculated answers)
+## Claude: 2026-09-28 (reply schemas; calculated answers; run 0aeca4c6; skill environments)
 
 ### Current stage and status
 
-Version 0.7.0, local workflow. No run since `d416f79d`. This session built two changes the
-operator asked for, contracts first: the verifier's own sessions (critique, documentary
-assessment, claim-only answers) now answer through a reply schema that Claude Code enforces,
-and a maths claim's expected answers may be calculated by Python from a quoted formula.
-**Both are tested, the calculation also in the real sandbox; neither has met a verifier run.**
-The 2026-09-25 log fixes are still unobserved live too. Both are committed and pushed to `main`
+Version 0.7.0, local workflow. Earlier this day two operator-requested changes were built,
+committed and pushed as `265a095`:
+- the verifier's own sessions (critique, documentary assessment, claim-only answers) now answer
+  through a reply schema that Claude Code enforces;
+- a maths claim's expected answers may be calculated by Python from a quoted formula.
+
+Later, a new session ran **`0aeca4c6` on scikit-survival**, the first non-chemistry run since
+glycoengineering:
+- the reply schemas worked live;
+- no planner wrote a calculation;
+- the fallback D ran for the first time.
+
+The run could execute nothing, because the pinned image lacks scikit-survival. So the operator
+asked, by name, for the 2026-09-18 automatic dependency resolution design. It is now built, contracts
+first, as **skill environments**: the packages a skill declares are downloaded in one step before
+the run exists, and installed offline into an image that only its subject trials use.
+**Skill environments are tested with fake Docker only: no live build and no run yet.** A Windows
+long-path fix to temp cleanup was also made. Both later changes are committed and pushed to `main`
 with this entry.
 
 ### What has been done
@@ -254,6 +271,81 @@ Verification:
   arguments '1e-9', where its reference prints '9'." The re-check from receipts ran nothing.
 - Not verified: a critique of a calculated design, and either change in a verifier run.
 
+Later on 2026-09-28, in a new session:
+
+**3. Run `0aeca4c6`** (scikit-survival, 3,827 s, about $27 at API rates, 5-hour window 26% → 77%).
+
+Results:
+- Five claims: Coxnet at A; the CIF array, FastSurvivalSVM `rank_ratio` and GBSA `criterion`
+  claims at B; Brier-score input at D by fallback.
+- 62 of 64 obtained trials passed and none was invalid.
+- The new code ran: `local_method_ref` matched the tree, and every critique ran rubric v8 under
+  policy v6.
+- The reply schemas held. All 59 of the verifier's own sessions ended with a valid structured
+  reply, and 11 first replies refused for a stray key were corrected on the next turn.
+- No planner wrote a `calculation`: no claim had a formula with a worked example.
+- The log kept up: all 134 sessions have a `result` event and there was no unparsed output.
+
+Problems it showed:
+- **A content-triggered refusal voided the Brier claim.** Opus 5 flagged `brier-column-alignment`
+  as `model_refusal_no_fallback`, category `reasoning_extraction`, in 4 of 4 sessions (2 per
+  attempt) and in no other session. Trial 1 recovered and answered correctly; trial 2 ended with
+  the error text, which stopped the claim. The end-of-run re-run repeated the pattern exactly.
+- **Two correct answers were scored `fail`** because the reply opened with a code fence
+  (```` ```python ````) and `exact` reads the first line. The case was uncounted, so the grade was
+  unaffected.
+- **Nothing could run.** No subject tried to import scikit-survival; all 113 commands read the
+  skill's own files. All five planners said the library was not in the image, so every grade rests
+  on scikit-survival's own documentation.
+- Three B grades came from claims too narrow to supply five independent cases.
+
+**4. Long-path fix.** The test that failed only on this machine, and the `%TEMP%` leftovers behind
+it, had one cause:
+- Claude Code saves large tool results 273–277 characters deep in the controller's temp folder.
+- `LongPathsEnabled` is 0 on this machine, so Python could not see those files.
+- `shutil.rmtree` therefore skipped them silently.
+
+The fix:
+- `extended_path()` in `claude_runner.py` gives both the per-session cleanup and the startup sweep
+  the `\\?\` form.
+- Two regression tests failed before the fix and pass after it.
+- The 25 leftover folders were sent to the Recycle Bin at the operator's request.
+- `local-contract.md` states the rule.
+
+**5. Skill environments**, the operator's request with the constraint that package downloads
+happen only in this step. `local-contract.md` "Skill environment" owns the mechanism;
+`resource-policy.md` "Packages a skill declares" owns the trust decision.
+- **Declarations** are read only from the skill's own snapshot, taken in setup exactly as
+  `load_submitted_skill` will take it. They come from install commands in fenced Markdown blocks,
+  `requirements*.txt` and `pyproject.toml` dependencies. Prose, URLs, paths, VCS references,
+  markers, index options and installer packages are rejected. Import-only names are never installed.
+  On the real skills: scikit-survival gives its 10 pins, sar-analysis nothing, and
+  glycoengineering's `uv pip install -e .` is rejected.
+- **The build** runs in setup, after the model probe and before the run or planner exists:
+  1. a resolver container, the only container with a network, runs `pip download` for wheels only;
+  2. Python checks and hash-locks the wheels;
+  3. an offline installer applies the lock with `--require-hashes`, then `pip check`;
+  4. `docker commit` makes the image, tagged `sci-verifier-env:<key>` and cached by labels.
+
+  Any failure stops the run before a planner is spent.
+- **Only subject trials use the built image.** Calculations, evaluators, scoring and catalog
+  requalification keep the operator's image, so no package the skill chose runs where keys are
+  produced or trials scored. The image is folded into the subject identity (`--subject-image` to
+  the internal server) and `environment_digest` includes the record.
+- **The planner** gets a pinned block rendered only from checked values, and the full record as the
+  `environment` context section. A skill changed between setup and `load_submitted_skill` ends the
+  run as `source_changed`.
+- **Settings:** `package_index` (null by default), `max_package_bytes` and `max_packages`.
+
+Verification of items 4 and 5:
+- Suite 349 → 382 tests: 380 passing, 2 skipped, none failing.
+- 31 new tests in `test_environment.py` run on fake Docker. Among them, a guard checks that only
+  `environment.py` gives a container a network.
+- Twelve one-line mutations of the safeguards were each caught.
+- `resource-policy.md`'s new section was kept short so that the historical verification profile's
+  bootstrap stays under its 200,000-byte test bound (199,805).
+- **Not verified:** a real resolve and build, and a run in the built image.
+
 ### Decisions taken 2026-09-28
 
 - **Build both, and delete what the schema makes unnecessary** (operator).
@@ -265,6 +357,16 @@ Verification:
   calculator; the quoted formula, the reproduced worked examples and the disclosure in the report
   are what make it acceptable. The rubric's A is "traceable or mathematically exact", and the
   local profile had implemented only the first.
+- **Build automatic dependency resolution** (operator, by name, lifting the 2026-09-18
+  do-not-implement flag), **with package downloads only in that one step**. This supersedes the
+  "Deferred" entry and "Dependencies must already exist in the pinned image".
+- **A failed build stops the run in setup** (operator), before any planner cost; `package_index`
+  null runs on the operator's image instead.
+- **Only declared installs** (operator): names inferred from imports are never installed.
+- **Subject trials only** (approved in the plan). The verifier's own calculations, evaluators and
+  scoring keep the operator's image, which also leaves open question 2 open.
+- **Delete the 25 leftover temp folders** (operator). They went to the Recycle Bin, not
+  permanently.
 
 ### Before the next run
 
@@ -279,18 +381,25 @@ Verification:
    `python -c "import sys; sys.path.insert(0, 'src'); from sci_ai_verifier.storage import implementation_bytes; from sci_ai_verifier.common import digest; print(digest(implementation_bytes()))"`.
 3. **Claude Code is 2.1.268 or later** and the model is `claude-opus-5`.
 4. **The working tree is clean** at that commit.
-5. **The plan's 5-hour window has room**; `d416f79d` cost about $19.
-6. **The timeout.** The app passes 5,400 s; `d416f79d` used 3,096 s for four claims.
+5. **The plan's 5-hour window has room.** `0aeca4c6` cost about $27 and took the window from 26%
+   to 77%, so plan one run per window.
+6. **The timeout.** The app passes 5,400 s. `0aeca4c6` used 3,827 s for five claims, and a first
+   environment build adds a few minutes of setup.
+7. **For a skill environment:** the operator sets `package_index` (e.g. `https://pypi.org/simple`)
+   in `.verifier/local-settings.json`. The first build downloads the scikit-survival stack, about
+   100 MB of wheels, once. The live build check under "Recommended next action" should come first.
 
-### Cleaning the previous sar-analysis run
+### Cleaning the previous run
 
-Unchanged from the 2026-09-25 entry: move, do not delete, into the session scratchpad
-`.verifier/runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8`,
-`.verifier/attempts/2275addb-174d-4ac5-9db8-325bf15593bb`,
-`.verifier/subject-runs/d416f79d-dbf4-4c0b-a5e1-69f53c5772c8` and the six candidates at
-`local-reference-comparison-6`. Keep the glycoengineering run `76ce4af1-…`, its attempt
-`a1ec3e49-…`, its subject-runs and its five candidates. Leave `.verifier/store/` alone: the new
-recordings' packets were read from it, but the recordings are copies in `tests/recorded/`.
+Move, do not delete, into the session scratchpad:
+- `.verifier/runs/0aeca4c6-5f2c-4d72-87a4-e8452340a5dc`
+- `.verifier/attempts/f32cd389-5e51-4b87-adb9-b17de85e397d`
+- `.verifier/subject-runs/0aeca4c6-5f2c-4d72-87a4-e8452340a5dc`
+- the nine candidates it wrote at `local-reference-comparison-6`, dated 2026-09-28
+
+Keep the glycoengineering run `76ce4af1-…`, its attempt `a1ec3e49-…`, its subject-runs and its five
+candidates. Leave `.verifier/store/` alone: environment build records live there. `d416f79d`'s
+files are already in an earlier session's scratchpad.
 
 ### What to check in the run
 
@@ -310,6 +419,15 @@ recordings' packets were read from it, but the recordings are copies in `tests/r
    `process_unparsed_output`, no claim-only `claude_incomplete`, late-run wall-time gap near 2 s.
    A reused claim-only answer shows its case's current ID.
 6. **The rest.** Refusals (quote `model_refusal_*`), `invalid` still zero, claim count, run time.
+7. **Skill environment.**
+   - The setup log's `preflight.environment` status. The first time should be `built`, a second
+     run `reused` with no networked container.
+   - The lock, and whether `pip check` passed with the skill's numpy/pandas pins over the RDKit base.
+   - The planner's pinned block.
+   - Whether subjects now run scikit-survival or the skill's scripts.
+   - Any docstring lookups of a key: trace `mcp__subject__run_command`, as with RDKit in `31b67427`.
+   - Whether any planner designs an executed case.
+   - That calculations and scoring still report the operator's image ID.
 
 ### Reading the results without fooling yourself
 
@@ -330,7 +448,20 @@ The 2026-09-25 list still holds (archived), with three additions:
    is the reference; an answer holds only for the pinned 2026.03.6; and subjects hold the same
    RDKit. Was open question 8's other half.
 3. **Subject replies through a schema?** Not done, for the reason under "Decisions".
-4. **Carried from 2026-09-25**, detail in the archive: the aggregation rule as a plan field; claim
+4. **From `0aeca4c6`**, proposed, not built:
+   - **Refusals.** Replay the flagged question a few times on the pinned model first. If recovery
+     is random, retry only the refused trial. If it is deterministic, let the planner reword the
+     case instead of re-running the claim unchanged. Either way, show a stopped claim's obtained
+     trials in its headline.
+   - **Code fences.** Read the first line inside a fence for all three methods.
+   - **Coverage.** A run sampled five narrow API facts and none of the skill's workflow advice.
+   - **Narrow claims.** Say in the report when a B was limited by the claim's size rather than its
+     source.
+5. **From skill environments:**
+   - Subjects can read installed docstrings, so doc-keyed cases can be looked up.
+   - A fenced counter-example install line stops the run if it cannot resolve.
+   - Should library output ever key an answer? That is open question 2.
+6. **Carried from 2026-09-25**, detail in the archive: the aggregation rule as a plan field; claim
    coverage (three to six claims per run); the capitalisation residue; recognition cases passed on
    plausibility; planners and reviewers differing across runs (for pIC50 the cause was pages, now
    answered by calculated answers); claims Opus 5 refuses; a fallback for other operational
@@ -340,8 +471,8 @@ The 2026-09-25 list still holds (archived), with three additions:
 ### Deferred, and why
 
 Unchanged from 2026-09-25: parallel trials, appending to the timelines, Opus 5.5 (until WinGet
-offers Claude Code 2.1.280), a longer subject limit, the case-level contract and automatic
-dependency resolution.
+offers Claude Code 2.1.280), a longer subject limit and the case-level contract. Automatic
+dependency resolution left this list on 2026-09-28, when the operator asked for it.
 
 ### Prompt for the next session
 
@@ -349,7 +480,7 @@ dependency resolution.
 Before anything else, read the latest entry in DEVELOPMENT-PLAN.md
 ("Claude: 2026-09-28"). Follow its preflight, clean the previous run as it
 describes, and use scientific-verifier-local to verify this skill:
-"D:\Su Lab\verifier-submissions\examples\sar-analysis"
+"D:\Su Lab\verifier-submissions\examples\scikit-survival"
 
 Show me the report and workflow-log paths, a table with one row per claim
 (grade, accuracy, consistency, status and the other measurements) and, for each
@@ -363,15 +494,28 @@ Do not change code, commit or push unless I ask.
 
 ### Urgent next steps, if any
 
-None for the code, which is committed and pushed with this entry. Before the next run, start a new
-session: a session started before this commit runs a `serve-local` with the old code.
+None blocking. The long-path fix and skill environments are committed and pushed with this entry. A
+run needs a new session started after this commit, because a session started earlier runs a
+`serve-local` with the old code.
 
 ### Suggested next move
 
-Run `sar-analysis` once on the new code and read whether the pIC50 planner writes a calculation,
-how the critique judges the program, and how many first replies the schemas refuse.
+Prove skill environments live, then run scikit-survival again. The question is whether subjects
+execute the library once it is installed, and whether planners design executed cases.
 
 ### Recommended next action
 
-In a new session after the commit, with Docker running, clean `d416f79d` as above and run once.
-It is finished when every item under "What to check in the run" has a recorded answer.
+With the operator's go-ahead (it downloads about 100 MB from PyPI and edits the operator's
+settings):
+1. Set `package_index`.
+2. Run `prepare_environment` alone on scikit-survival over the RDKit image.
+3. Confirm, in this order:
+   - the lock is written;
+   - `pip check` passes with the skill's numpy/pandas pins;
+   - the image carries its labels;
+   - a `--network none` container imports `sksurv`;
+   - a second call reuses the image with no networked container;
+   - `package_index: null` gives `disabled`.
+
+It is finished when all six hold, or the first that fails is named. After that, a scikit-survival
+run from a new session answers item 7 of "What to check in the run".

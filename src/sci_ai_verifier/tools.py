@@ -340,6 +340,13 @@ class Dispatcher:
         elif name == "load_submitted_skill":
             authorized_source(arguments["source_path"], state)
             source, payload = snapshot(self.store, state)
+            if state.get("local_environment_ref"):
+                # Setup chose the skill's packages from its own snapshot of these bytes; a skill
+                # that changed since then would run in an environment it never declared.
+                built_from = self.store.get_json(state["local_environment_ref"]).get("snapshot_digest")
+                if built_from and built_from != source["digest"]:
+                    raise Fault("source_changed", "The skill changed after its subject environment was prepared. "
+                                "Start a new verification.", fatal=True)
             state["source_ref"] = self.store.put_json(source)
             keep_object(state, state["source_ref"])
             for entry in source["files"]:

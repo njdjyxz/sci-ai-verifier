@@ -182,22 +182,38 @@ CLEANUP_ATTEMPTS = 10
 CLEANUP_PAUSE = 0.5
 
 
+def extended_path(path):
+    r"""`path` in Windows' extended-length form, so that removal reaches every file in it.
+
+    The planner's Claude Code saves a large MCP result under its configuration directory,
+    at `config/projects/<name derived from the workspace path>/<session>/tool-results/`,
+    273 to 277 characters deep. Without machine-wide long-path support Windows cannot see
+    a file past 260 characters unless its path starts with `\\?\`, so `rmtree` skipped
+    it silently and every controller directory from 2026-09-23 on stayed behind. The
+    prefix needs an absolute drive-letter path; any other path is returned unchanged.
+    """
+    text = os.path.abspath(path)
+    return "\\\\?\\" + text if os.name == "nt" and re.match(r"[A-Za-z]:\\", text) else str(path)
+
+
 @contextmanager
 def session_directory(prefix, log=None):
     """A temporary directory for one Claude process, removed with bounded retries.
 
     On Windows a child the CLI started, such as its MCP server, can still hold a file
     for a moment after the CLI exits, and `TemporaryDirectory` then raises from its
-    cleanup. Every controller run hit that: the planner had finished and the report was
-    written, but the OSError sent the run through recovery and left the directory behind.
-    Removal is retried; what still cannot be removed is logged and left, never raised.
+    cleanup. Every controller run hit a failed cleanup: the planner had finished and the
+    report was written, but the OSError sent the run through recovery and left the
+    directory behind. Removal is retried, and goes through `extended_path`, because in
+    run 0aeca4c6 the file left behind sat past Windows' path limit rather than being
+    held. What still cannot be removed is logged and left, never raised.
     """
     path = Path(tempfile.mkdtemp(prefix=prefix))
     try:
         yield str(path)
     finally:
         for _ in range(CLEANUP_ATTEMPTS):
-            shutil.rmtree(path, ignore_errors=True)
+            shutil.rmtree(extended_path(path), ignore_errors=True)
             if not path.exists():
                 break
             time.sleep(CLEANUP_PAUSE)
@@ -216,10 +232,11 @@ STALE_AGE_SECONDS = 24 * 60 * 60
 def sweep_stale_directories(log=None, root=None, now=None):
     """Remove this verifier's own temporary directories left by earlier runs.
 
-    Retrying at exit is not enough: whatever holds a controller file on Windows can keep
-    it for longer than any bounded wait, and run 28d19f8a still left its directory after
-    ten attempts. A day later nothing holds it. Only directories carrying this verifier's
-    prefix and older than a day are touched, so a run in progress is never swept.
+    A process killed before its cleanup leaves its directory. So did every controller run
+    until removal went through `extended_path`: run 28d19f8a left its directory after ten
+    attempts, and the 25 left from 2026-09-23 on, each holding a file past Windows' path
+    limit, outlived every later sweep. Only directories carrying this verifier's prefix
+    and older than a day are touched, so a run in progress is never swept.
     """
     root = Path(root or tempfile.gettempdir())
     now = time.time() if now is None else now
@@ -230,7 +247,7 @@ def sweep_stale_directories(log=None, root=None, now=None):
                 continue
         except OSError:
             continue
-        shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(extended_path(path), ignore_errors=True)
         if path.exists():
             kept += 1
         else:
@@ -369,15 +386,23 @@ def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
 
 
 class ClaudeCode:
-    def __init__(self, *, executable="claude", model="opus", auth="subscription", process=None, log=None, settings=None):
+    def __init__(self, *, executable="claude", model="opus", auth="subscription", process=None, log=None, settings=None,
+                 subject_image=None):
         if auth not in {"subscription", "api"} or not re.fullmatch(r"[A-Za-z0-9_.:/-]{1,150}", model):
             raise Fault("configuration_invalid", "Choose subscription/api authentication and a bounded model identifier.")
+        if subject_image is not None and not re.fullmatch(r"sha256:[0-9a-f]{64}", str(subject_image)):
+            raise Fault("configuration_invalid", "A subject image must be an exact sha256 image ID.")
         self.executable, self.model, self.auth, self.process = executable, model, auth, process or run_process
         self.log = log
         from .local_config import load_configuration, configuration_digest
         self.settings = settings if settings is not None else load_configuration()
+        # The image the skill's declared packages were installed into ("Skill environment",
+        # local-contract.md). Only subject trials use it, so it is folded into the subject's
+        # identity while the pinned settings keep the operator's image for everything else.
+        self.subject_image = subject_image
         self.identity = {"adapter_id": "claude-code-local-v1-" + auth, "model_id": model, "synthetic": False}
-        self.identity["adapter_id"] += "-"+configuration_digest(self.settings)
+        self.identity["adapter_id"] += "-"+configuration_digest(
+            {**self.settings, "subject_image": subject_image} if subject_image else self.settings)
 
     def run(self, command, *, role, **kwargs):
         if self.log is None:
@@ -467,12 +492,13 @@ class ClaudeCode:
                         env[key]=os.environ[key]
             prompt = "Invoke the Skill tool with skill " + SUBJECT_SKILL + ". Then handle this frozen input:\n" + canonical(case_input).decode()
             from .sandbox import DockerSandbox
-            manager=DockerSandbox(plugin/"skills/submitted",self.settings,timeout=timeout_seconds+30,log=self.log) if computational else nullcontext()
+            trial_settings={**self.settings,"sandbox_image":self.subject_image} if self.subject_image else self.settings
+            manager=DockerSandbox(plugin/"skills/submitted",trial_settings,timeout=timeout_seconds+30,log=self.log) if computational else nullcontext()
             with manager as sandbox:
                 binding=Path(temporary)/"binding.json"
                 log_binding={"workspace":str(self.log.directory.parents[2]),"attempt_id":self.log.attempt_id} if self.log else None
                 if sandbox:
-                    atomic_write(binding,canonical({"source":str(sandbox.source),"settings":self.settings,
+                    atomic_write(binding,canonical({"source":str(sandbox.source),"settings":trial_settings,
                         "name":sandbox.name,"docker":sandbox.docker,"endpoint":sandbox.endpoint,"deadline":sandbox.deadline,
                         "log":log_binding}))
                 else:

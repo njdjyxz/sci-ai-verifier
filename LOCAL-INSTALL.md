@@ -111,13 +111,17 @@ docker pull python:3.12-slim
 The first command should show both client and server information. The second
 downloads the [official Python image](https://hub.docker.com/_/python). The helper
 then writes `.verifier\local-settings.json` and prints its exact image ID. That ID
-is pinned for future tests; verification does not download images or install
-packages. Keep Docker Desktop running while testing computational skills.
+is pinned for future tests; verification never downloads images, and installs
+packages only when you set `package_index` (below). Keep Docker Desktop running
+while testing computational skills.
 
 This initial image provides Python's standard library. If a skill needs NumPy,
 R, a chemistry toolkit or another package, prepare an image containing those
 dependencies first; see [dependencies and configuration](LOCAL-CONFIG.md), which
-also describes the reviewed RDKit image.
+also describes the reviewed RDKit image. Alternatively, set `package_index` there,
+and a verification installs the Python packages the skill itself declares, before
+its planner starts, for that skill's trials only. The first time, this adds a few
+minutes to setup.
 Missing packages produce a limitation, not an invented result. If
 `.verifier\local-settings.json` already exists from your previous setup, keep it
 and check its image/settings before reusing it. The helper deliberately does not

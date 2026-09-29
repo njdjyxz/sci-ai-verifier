@@ -29,6 +29,8 @@ Unknown settings are rejected so spelling mistakes cannot silently change access
 | `documentary_assessment` | true; attempt a fresh documentary assessment when execution cannot support a grade |
 | `minimum_grade` | null, or A/B/C/D; reports state whether the requested minimum was met |
 | `catalogs` | Empty until you select exact shared bundles |
+| `package_index` | null (off). An `https://` package index, such as `https://pypi.org/simple`, lets a verification install the packages a skill declares for its subject trials |
+| `max_package_bytes`, `max_packages` | 1 GiB and 200 wheel files per skill environment |
 
 Scientific packages belong in a reviewed custom Linux image. Build it before a
 verification, using pinned package versions and hashes, then run the configuration
@@ -36,6 +38,21 @@ helper with that installed image name and a **new** output filename. The helper
 saves its immutable image ID. Include only the required scientific tools; do not
 bake account credentials into an image. Trials never run host `pip` or install
 dependencies. Images must provide Python 3, `/bin/sh` and `cp`.
+
+### Packages a skill declares
+
+With `package_index` set, a verification of a computational skill first installs the
+packages the skill itself declares (its `pip install` commands in code blocks, its
+`requirements*.txt` or its `pyproject.toml`) into a copy of `sandbox_image`. Only that
+skill's subject trials use the copy, and the verification never downloads packages at
+any other time. "Skill environment" in the local contract and "Packages a skill declares"
+in the resource policy describe the rules and the trust decision. The image must then also
+provide `python3 -m pip`, must not be an externally managed Python (PEP 668), and must let
+root write its site-packages. `python:3.12-slim` and the RDKit image below meet all
+three. The first verification of a new set of packages downloads it once; later ones reuse
+the image, tagged `sci-verifier-env:…`. Remove those images with
+`docker image rm sci-verifier-env:<tag>`; the next verification rebuilds what it needs,
+but a run that used a removed image cannot execute further trials.
 
 [`images/rdkit/`](images/rdkit/Dockerfile) is one such image, for skills that use RDKit
 and pandas, such as `examples/sar-analysis`. It holds the pinned `python:3.12-slim` base,

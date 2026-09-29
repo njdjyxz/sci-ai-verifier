@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -202,7 +203,35 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(all(not path.exists() for path in dirs))
 
 
+def extended(path):
+    """The extended-length form, the only way to reach a path past 260 characters on a Windows
+    machine without long-path support; the tests build and remove their deep files through it."""
+    text = os.path.abspath(path)
+    return "\\\\?\\" + text if os.name == "nt" else text
+
+
+def deep_file(root):
+    """A file more than 260 characters deep, like the tool result the planner's Claude Code saves
+    under `config/projects/<workspace name>/<session>/tool-results/` (273 to 277 in run 0aeca4c6)."""
+    target = os.path.join(root, *(["d" * 60] * 5), "result.txt")
+    os.makedirs(extended(os.path.dirname(target)))
+    with open(extended(target), "wb") as handle:
+        handle.write(b"x")
+    return target
+
+
 class StaleSweepTests(unittest.TestCase):
+    def test_a_file_past_the_windows_path_limit_does_not_keep_a_directory(self):
+        # Each of the 25 controller directories left in %TEMP% from 2026-09-23 on held one.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
+            self.addCleanup(shutil.rmtree, extended(root), True)
+            old = Path(root) / "sci-verifier-controller-old"
+            self.assertGreater(len(os.path.abspath(deep_file(old))), 260)
+            now = time.time()
+            os.utime(old, (now - 2 * 86400, now - 2 * 86400))
+            self.assertEqual(sweep_stale_directories(None, root=root, now=now), (1, 0))
+            self.assertFalse(old.exists())
+
     def test_only_this_verifiers_directories_older_than_a_day_are_removed(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
@@ -254,6 +283,17 @@ class SessionDirectoryTests(unittest.TestCase):
                 (Path(temporary) / "file").write_bytes(b"x")
         self.assertFalse(Path(temporary).exists())
         self.assertEqual(len(calls), 3)
+        self.assertEqual(log.events, [])
+
+    def test_a_file_past_the_windows_path_limit_is_removed(self):
+        # Every controller session saves one; until removal reached it, each run left its
+        # directory and logged temporary_cleanup_incomplete.
+        log = self.Log()
+        with patch("sci_ai_verifier.claude_runner.CLEANUP_PAUSE", 0):
+            with session_directory("sci-verifier-test-", log) as temporary:
+                self.addCleanup(shutil.rmtree, extended(temporary), True)
+                self.assertGreater(len(os.path.abspath(deep_file(temporary))), 260)
+        self.assertFalse(Path(temporary).exists())
         self.assertEqual(log.events, [])
 
     def test_a_directory_that_stays_held_is_logged_and_never_raised(self):
