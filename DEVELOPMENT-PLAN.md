@@ -40,6 +40,7 @@ deterministic tools, bounded processes and saved evidence.
 | `3b3f3c94` (2026-09-24) | sar-analysis | 1 at A, 2 at B, 1 at C with status fail; 44 of 45 counted trials passed, 0 invalid, 0 faults |
 | `d416f79d` (2026-09-24) | sar-analysis | 4 at B; 39 of 39 counted trials passed, 0 invalid, 0 faults |
 | `0aeca4c6` (2026-09-28) | scikit-survival | 1 at A, 3 at B, 1 at D by fallback after a safety refusal; 62 of 64 obtained trials passed, 0 invalid |
+| `d3892f6c` (2026-09-29) | scikit-survival | 4 at A, 1 at B; 81 of 81 counted trials passed, 9 of them by the AI reader; 0 invalid, 0 faults |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -85,21 +86,26 @@ which settled all four claims at B. The claim-only answers kept a case finer tha
 out of a design before any trial ran; neither new qualification check fired, and the fallback
 D and the timeout message are **still unobserved**. That run exposed two defects in the
 verifier's own plumbing: a workflow log slow enough to lose two finished claim-only answers,
-and reused answers filed under a case's old ID. Both are fixed and **not yet seen live**; the
-2026-09-24 and 2026-09-25 entries are in the archive. Run `0aeca4c6`, the first on a
+and reused answers filed under a case's old ID. Both are fixed. Run `d3892f6c` saw the log keep
+up; the case-ID fix is **not yet seen live**, since no case there was renamed. The 2026-09-24 and
+2026-09-25 entries are in the archive. Run `0aeca4c6`, the first on a
 non-chemistry skill since glycoengineering, saw the reply schemas work live, and the **fallback D
 ran for the first time**. That run also exposed three problems:
 - a content-triggered safety refusal voided one claim;
 - a code-fenced reply was misread;
 - the sandbox could not run scikit-survival at all.
 
-The last is now answered by **skill environments** (below). They are live-checked on a blank
-`python:3.12-slim` base but have not yet been used in a verifier run. Calculated answers have still
-not met a run. The 2026-09-28 entry has the details. The code fence, and reply format in general,
-is now answered by **typed answers and an AI reader** (the 2026-09-29 entry): seven answer types
-read by one reader, and a fresh session that reads again what that reader does not pass. Replayed
-over all 945 saved replies they read every right answer as right and no wrong one, but neither
-has met a verifier run.
+The last is now answered by **skill environments** (the 2026-09-28 entry). The code fence, and
+reply format in general, is answered by **typed answers and an AI reader** (the 2026-09-29 entry):
+seven answer types read by one reader, and a fresh session that reads again what that reader does
+not pass. Run `d3892f6c` used all three, with claims sized to their tests:
+- the environment was built, pinned for the planner and removed, but no subject ran scikit-survival;
+  every sandbox command read the skill's own reference files;
+- `choice` fell to 1 case in 28;
+- the AI reader decided 9 of 81 counted trials, each a right answer with extra words on its answer
+  line.
+
+Calculated answers have still not met a run.
 
 Automated suite: **425 tests, 423 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
@@ -558,7 +564,7 @@ With the operator's go-ahead:
 
 It is finished when every item under "What to check in the run" has a recorded answer.
 
-## Claude: 2026-09-29 (typed answers and the AI reader, on skill-environments)
+## Claude: 2026-09-29 (typed answers and the AI reader, on skill-environments; run d3892f6c)
 
 ### Current stage and status
 
@@ -576,8 +582,10 @@ of the 2026-09-28 entry:
   the report shows every reading beside the status Python's reader alone gives.
 
 Later the same day, at the operator's request, claims were sized to their tests (**Claim scope**
-below). **None of this has been used in a verifier run, and nothing is committed yet.** The whole
-suite passes, and three live sessions recorded the new critique rubric and two AI readings.
+below). All of it is committed on `skill-environments` as `73496d6` and pushed; `51b3cd2` then gave
+each verification two hours (`--timeout 7200`). **Run `d3892f6c` used all of it** (below): five
+claims, four at A and one at B, every counted trial passing. This replaces the earlier "none of
+this has been used in a verifier run, and nothing is committed yet".
 
 ### What has been done
 
@@ -637,9 +645,9 @@ the two fenced replies were still misread by the old reader.
     no namespace prefix.
   - It called a paraphrase of a sentence the question wanted verbatim `differs`.
   - All three first replies met their schemas.
-- The verification bootstrap is 199,824 of its 200,000 bytes. Each document pinned for the local
-  planner fits the 40 KiB section reply, now tested.
-- Not verified: any of this in a verifier run.
+- The verification bootstrap is 199,919 of its 200,000 bytes after claim scope, 81 to spare. Each
+  document pinned for the local planner fits the 40 KiB section reply, now tested.
+- Not verified then: any of this in a verifier run. Run `d3892f6c` below has since used it.
 
 ### Decisions taken 2026-09-29
 
@@ -744,57 +752,127 @@ Python cannot tell which sections are testable, so it cannot force coverage of t
 The operator chose to run first on the instructions and the coverage line, and add this only if
 the run still splits a passage.
 
+### Run `d3892f6c`
+
+Scikit-survival, 2026-09-29, on `51b3cd2`, after a Claude restart, from a session whose
+`serve-local` started after both commits, with `--timeout 7200`:
+- **Result.** Five claims, four at A and one at B, all `pass`. All 81 counted trials passed; none
+  was invalid, missing or refused.
+- **Time.** 3,641 s. Setup, including the environment build, took 34 s, and each claim 7 to 16
+  minutes.
+- **Cost.** About $24.69 at API rates: the planner $13.06 over 45 turns, 84 subjects $7.22, 7
+  critiques $3.27, 64 claim-only sessions $0.97 and 17 readings $0.17. The 5-hour window went from
+  3% to 52%.
+- **Report.** `.verifier/runs/d3892f6c-4597-440b-a3fd-e008dbe2fc8e/report-card.md`, outside Git.
+
+The checks this entry set for the run, answered:
+- **The new code ran.** `local_method_ref` equals the tree's digest, `95f2ea51…`. All five critiques
+  carry rubric v9, the audits carry policy `evidence-strength-v7`, and all nine trial readings carry
+  `reader_ref` `738e3dbe…`.
+- **Answer types.**
+  - 1 of the 28 final cases is `choice` (3.6%, against 52–71% at versions 3 to 6). The rest are 16
+    `term`, 4 `expression`, 3 `exact`, 3 `numeric` and 1 `set`; one replaced design had a `list`.
+  - Every claim had at least two generated counting cases, so none was capped for want of them (13
+    grades in 17 runs before).
+  - One qualification was refused, by the new `exact` rule: a dtype keyed as `exact` although its
+    case carries no meaning. The planner re-keyed it.
+- **The AI reader** read 17 answers. It called all of them `matches`, and Python refused none.
+  - Nine were counted trials, each a right answer that Python's reader failed for extra words on the
+    answer line: "floating-point" for `float` (3), "Higher-is-riskier risk scores" and "Risk scores
+    (…)" for `risk scores` (3), and "Estimated survival probabilities" and the like for `survival
+    probabilities` (3). By Python's reader alone C1 would be `fail` at 15 of 18, and C2 at 12 of 18.
+    Each copied answer is the reply's leading phrase, and each reason calls it the expected answer
+    in other words, for example "'floating-point' is an equivalent wording of the expected answer
+    'float'". The report quotes all nine.
+  - Eight were claim-only answers. Six were the same kind, such as "boolean (bool)" for `boolean`.
+    The other two read "the event time points" as matching `unique times`: a paraphrase, not
+    presentation, and it hid the miss that claim-only answers exist to catch. The critique rejected
+    that case as `beyond_scope` anyway, because its key is finer than the claim's wording, and the
+    planner replaced it. See open question 1.
+- **Claim scope, against the survey:**
+  - five claims from five of the skill's 14 sections, one each; in `0aeca4c6` three of five came
+    from "Model choice";
+  - one claim settled below its source only for its case count: C4, at B with 4 of 5 counting cases
+    (24 of 41 before). The report's "Limited by its number of independent cases" line names it;
+  - one `duplicate` in seven critique sessions, replaced before any trial (17 in 17 runs before),
+    with two `leaked` and one `beyond_scope`;
+  - no claim summarises the skill, but four are broader than their cases. The critiques note that no
+    case tests `concordance_index_ipcw` or `integrated_brier_score` (C2), the two competing-risk
+    prohibitions (C3), C4's central GridSearchCV instruction, or seven of C5's nine estimator
+    families. C2, C3 and C5 still settled at A (open question 5);
+  - no two claims quote the same paragraph, so, as the operator decided, the drafted paragraph rule
+    is not added;
+  - the skill's workflow advice, "Non-negotiable workflow" and "Leakage-safe pipeline", got no
+    claim, nor did Scope, installation, the CLIs, security triage, reference files, dated sources
+    or citing.
+- **C4 stayed at B by the planner's choice.** Its critique asked for four revisions, among them a
+  case for the claim's central instruction. The planner re-proposed B on the same design instead.
+- **Skill environment.**
+  - Built on `python:3.12-slim` in 34 s, with lock `9679b819…`, the same as the live check.
+  - The planner's 1,104-byte pinned block listed the 16 packages. No `sci-verifier-env` image,
+    container or volume remained afterwards.
+  - **No subject ran scikit-survival or the skill's scripts.** 30 of 84 trials used `run_command`,
+    and all 79 commands read the skill's own reference files with `grep`, `sed`, `cat`, `find` or
+    `ls`. So there was no docstring lookup to trace.
+  - No planner designed an executed case or a calculation, and scoring used the operator's image.
+- **Sessions and log.**
+  - All 174 sessions ended `success`, each with its result event.
+  - Every critique, claim-only and reader session returned a `structured_output`. Claude Code
+    refused the first reply of 6 of 7 critiques and 4 of 64 claim-only sessions, each for an extra
+    property such as `input`, `reason_for_call`, `_dummy` or `tool_use_id`, and every retry passed.
+  - The two revised designs reused the claim-only answers of their unchanged cases, under the
+    current IDs: 64 sessions for 32 distinct cases.
+  - No refusal, `process_unparsed_output`, `claude_incomplete`, `*_response_invalid`, model change
+    or timeout. No assessor ran.
+  - The log kept up: at most 0.09 s between a session's result and its end, late in the run too.
+
 ### Open questions for the operator
 
-1. **How lenient the AI reader should be.** It may judge `7.6e-9 M` to match 7.6 nM. That is a
-   scientific equivalence rather than presentation. Live, it also ignored a question's "without the
-   namespace prefix". Both are allowed under "an AI reading counts", and both should be watched in
-   the run.
-2. **Uncounted trials are not read**, to save time near the 90-minute limit. Their report rows keep
-   Python's verdict.
+1. **How lenient the AI reader should be.** It may judge `7.6e-9 M` to match 7.6 nM, a scientific
+   equivalence rather than presentation, and in a recording it ignored a question's "without the
+   namespace prefix". In `d3892f6c` every trial reading was presentation, but a claim-only reading
+   called "the event time points" a match for `unique times`, and so hid a key finer than its
+   claim. Claim-only misses could be read only for presentation, or not read at all, or the
+   critique could see Python's reading beside the AI's.
+2. **Uncounted trials are not read**, to save run time. Their report rows keep Python's verdict.
 3. **List and set items are typed by their own form**, so a capitalised item such as `Core` is
    compared exactly.
 4. The 2026-09-28 entry's open questions stand.
+5. **Broad claims with partial cases.** Four of five claims settled with cases that test part of
+   what they state, three of them at A. Should A need counting cases that reach each fact a claim
+   states, or should a claim be cut down to what its cases test?
+6. **The environment went unused.** Subjects answered documentation questions from the skill's own
+   files, so the packages installed for them made no difference. Whether planners should write
+   cases that need the library turns on open question 2 of the 2026-09-28 entry, a library's output
+   as a key.
 
 ### Urgent next steps, if any
 
-None blocking. The work is uncommitted on `skill-environments`; commit when the operator asks.
+None. `skill-environments` is committed and pushed; merging it into `main` is the operator's call.
 
 ### Suggested next move
 
-Run scikit-survival once with skill environments, typed answers and the AI reader together.
-The run tests claim scope too: compare its case-count caps, `duplicate` verdicts and sections
-covered with the survey under "Claim scope".
-Planners should now write open cases where they used to write choices, and the run shows whether
-subjects answer them in forms the reader accepts.
+Settle open questions 1, 5 and 6, then run sar-analysis on this branch. The claim-scope survey's
+baseline is 15 sar-analysis runs, so that run shows whether the instructions alone stop planners
+splitting the MCS paragraph (`SKILL.md:37`) and returning to the same few passages. It also gives
+typed answers and the AI reader a second skill.
 
 ### Recommended next action
 
-With the operator's go-ahead:
-1. Commit this branch.
-2. Follow "Before the next run" and "Cleaning the previous run" in the 2026-09-28 entry. The
-   candidates at method version `-6` are no longer offered, since `-7` supersedes them, so moving
-   them is tidying only.
-3. Start a new session, so `serve-local` loads this code, and run scikit-survival.
+This entry's earlier next action, to commit and run scikit-survival, is done; its checks are
+answered under "Run `d3892f6c`". Next, with the operator's go-ahead:
+1. Answer open questions 1, 5 and 6, or leave them open.
+2. Follow "Before the next run" in the 2026-09-28 entry. Move, do not delete, into the session
+   scratchpad:
+   - `.verifier/runs/d3892f6c-4597-440b-a3fd-e008dbe2fc8e`
+   - `.verifier/attempts/90e15c3d-e24d-4ee9-86e4-f5ae97d7deee`
+   - `.verifier/subject-runs/d3892f6c-4597-440b-a3fd-e008dbe2fc8e`
+   - the nine candidates it wrote at `local-reference-comparison-7`, dated 2026-09-29
 
-Check, beyond the 2026-09-28 list, whose item 1 this replaces:
-- every critique's `rubric_ref` is v9,
-  `0ae090e44124cc46a30433b188bd93a1ea1ba1cd81140c146cda33af6d1788e3`, audits carry policy
-  `evidence-strength-v7`, and every reading's `reader_ref` is
-  `738e3dbe40c8c3fbd00a5f6a727324b86b6fdef1bacca2ea3779ecec5d54ea65`;
-- the share of `choice` cases, and each open type the planners used;
-- every trial the AI reader read, quoting the reply, the copied answer and the reason;
-- any refused reading, and why;
-- any status that differs from Python's reader alone;
-- the claim-only answers the reader changed;
-- claim scope, against the survey's baseline:
-  - how many claims there are, and how many of the skill's sections they cover;
-  - how many settled below their source only for their case count (24 of 41 before), which is
-    now each claim's "Limited by its number of independent cases" line;
-  - how many cases were `duplicate` (17 in 17 runs before);
-  - whether any claim became a vague summary of the skill;
-  - whether two claims quote the same paragraph, which decides the drafted rule above;
-  - whether Workflow, Decision Framework, Best Practices, Substructure Alignment and Activity
-    Heatmap (or the scikit-survival equivalents) now get claims.
+   Keep the glycoengineering run, its attempt, subject-runs and five candidates, and
+   `.verifier/store/`. `0aeca4c6`'s files are already in this session's scratchpad.
+3. Start a new session and run sar-analysis.
 
-It is finished when each has a recorded answer.
+Record, against the survey and this run: the claims and sections covered, claims held back only by
+their case count, `duplicate` verdicts, any two claims on one paragraph, every AI reading, and what
+subjects did with `run_command`. It is finished when each has a recorded answer.
