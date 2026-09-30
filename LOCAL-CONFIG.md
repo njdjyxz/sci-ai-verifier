@@ -155,9 +155,10 @@ and asks what grade the evidence actually supports, and whether each case counts
 That session can only lower the grade, and the runner re-derives the ceiling from the
 cases it counted.
 
-If it supports less, the verifier has two moves: improve the evidence and propose the
-new ceiling, which costs a round, or accept the grade this design was critiqued at,
-which settles at once and costs nothing. Proposing again **without changing the
+If it supports less, the verifier improves the evidence, answering every revision the
+critique requires, and proposes the new ceiling, which costs a round. It accepts the
+grade this design was critiqued at, which settles at once and costs nothing, only when
+no search finds a source for what the critique asks. Proposing again **without changing the
 evidence** is refused outright and costs no round, so it cannot argue in circles. The
 budget is one round per rubric grade, five, and it is spent only on genuine revisions.
 

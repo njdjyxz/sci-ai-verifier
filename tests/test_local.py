@@ -855,6 +855,23 @@ class ClaimScopeTests(unittest.TestCase):
         self.assertIn(json.dumps(local["description"])[1:-1], pinned)
         self.assertIn("at most five claims", PLANNER_PROMPT)
 
+    def test_the_local_planner_is_told_to_test_fact_by_fact_and_revise_before_accepting(self):
+        """Run fbd49132's planner left facts of every claim untested, searched for none of one
+        claim's missing gotchas, and accepted B twice with rounds left and the missing cases named."""
+        from sci_ai_verifier.local_entry import PLANNER_PROMPT
+        prompt = " ".join(PLANNER_PROMPT.split())
+        self.assertIn("for each fact the claim states", prompt)
+        self.assertIn("fact by fact", prompt)
+        self.assertIn("answers every required revision", prompt)
+        self.assertIn('"Negotiating the grade"', prompt)
+        self.assertNotIn("two moves", prompt)
+        pinned = dict(self.h.runtime._instruction_blocks())
+        self.assertIn("**Tested fact by fact.**", pinned["references/local-contract.md"])
+        self.assertIn("**Quoted whole.**", pinned["references/local-contract.md"])
+        self.assertIn("**Revise before accepting.**", pinned["references/evidence-rubric.md"])
+        self.assertIn("saving run time is no reason", pinned["references/evidence-rubric.md"])
+        self.assertIn("goes through the claim's facts", pinned["references/tool-contracts.md"])
+
     def test_a_skill_file_s_sections_are_its_headings_outside_code(self):
         from sci_ai_verifier.claims import sections
         text = ("---\nname: fixture\n---\nIntro line.\n# Title\nAbout.\n## Concepts\n### Rings\nRing text.\n"

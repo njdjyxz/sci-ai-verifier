@@ -29,7 +29,7 @@ RECORDED = Path(__file__).resolve().parent / "recorded"
 # code that reads them: the assessor and the claim-only answer on 2026-09-28, the critique under
 # rubric v9 and the two readings on 2026-09-29. Where the first reply broke the schema and the
 # session corrected it, the recording maps to the key its refused reply added.
-STRUCTURED_RECORDINGS = {"critic-structured.jsonl": None, "assessor-structured.jsonl": None,
+STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "evidence_ceiling", "assessor-structured.jsonl": None,
                          "claim-probe-structured.jsonl": "a", "reader-matches.jsonl": None,
                          "reader-differs.jsonl": None}
 # Streams that are not the verifier's own replies, exercised by their own tests.
@@ -97,9 +97,10 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_a_reply_the_schema_refused_was_corrected_in_the_same_session(self):
         """The slips a free-text reader met one lost claim at a time. Run 0a243b7e lost a claim to an
-        empty extra key; here a claim-only answer added a stray `a`, as the critique recorded under
-        rubric v8 had wrapped its reply in a stray `$PARAMETER_NAME` (Git history keeps it). Claude
-        Code refused each and the session resent it."""
+        empty extra key; here a claim-only answer added a stray `a`, and the critique recorded under
+        rubric v10 a stray `evidence_ceiling`, as the one under rubric v8 had wrapped its reply in a
+        stray `$PARAMETER_NAME` (Git history keeps it). Claude Code refused each and the session
+        resent it."""
         for name, stray in STRUCTURED_RECORDINGS.items():
             with self.subTest(recording=name):
                 attempts = reply_attempts(recorded(name))
@@ -206,10 +207,16 @@ class RecordedReplyTests(unittest.TestCase):
         """v7 is the first rubric a critique can use to reject a style tell among options, a
         narrower key a subject applying the claim could meet with "none of these", and an
         effect-to-setting case mistaken for naming; v8 says how to judge a calculated answer; v9
-        says what each answer type compares, so the comparison rule can be judged against the claim.
-        Each rule is the mirror of a contract passage, which owns it."""
+        says what each answer type compares, so the comparison rule can be judged against the claim;
+        v10 lists the claim's facts against the cases, and turns a gap a listed reference or an
+        unstated search leaves open into a required revision. Each rule is the mirror of a contract
+        passage, which owns it."""
         from sci_ai_verifier.answers import TYPES
-        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v9")
+        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v10")
+        self.assertIn("rubric.coverage", CRITIQUE_RUBRIC["criteria"][1])
+        self.assertIn("evidence.references", CRITIQUE_RUBRIC["coverage"])
+        self.assertIn("what was searched", CRITIQUE_RUBRIC["coverage"])
+        self.assertIn("required revision", CRITIQUE_RUBRIC["coverage"])
         self.assertEqual(set(CRITIQUE_RUBRIC["answer_types"]), set(TYPES))
         self.assertIn("reading which answer a reply gives", CRITIQUE_RUBRIC["grades"]["A"])
         shapes = CRITIQUE_RUBRIC["leak_shapes"]

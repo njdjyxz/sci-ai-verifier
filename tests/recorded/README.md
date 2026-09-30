@@ -15,7 +15,7 @@ code, so it is the only test data here that can actually falsify the parser.
 
 | File | Role | Source | What it captures |
 | --- | --- | --- | --- |
-| `critic-structured.jsonl` | critic | live replay, 2026-09-29 | Run `d416f79d`'s pIC50 critique packet under rubric v9, with each case's answer type, answered through the reply schema: supported grade B, all three cases counted, as under v8. Its first reply was accepted. The v8 recording, whose first reply a stray `$PARAMETER_NAME` key broke, is in Git history |
+| `critic-structured.jsonl` | critic | live replay, 2026-09-30 | Run `d416f79d`'s pIC50 critique packet under rubric v10, answered through the reply schema: supported grade B, all three cases counted, as under v8 and v9, with criterion 2's finding listing the claim's three facts and the cases testing each. Its first reply added a stray `evidence_ceiling` key; refused and resent. The v9 recording, whose first reply was accepted, and the v8 one, whose first reply a stray `$PARAMETER_NAME` key broke, are in Git history |
 | `assessor-structured.jsonl` | assessor | live replay, 2026-09-28 | Run `a392ea65`'s documentary packet answered through the reply schema: `inconclusive` with six exact packet citations, accepted first time |
 | `claim-probe-structured.jsonl` | claim-only | live replay, 2026-09-28 | Run `d416f79d`'s `pic50-one-nanomolar` case with its claim: answer `9`. Its first reply added a stray `a` key; refused and resent |
 | `subject-safety-refusal.jsonl` | subject | `e035eef6` | Provider safety refusal, category `bio`, with a fallback model that also refused |

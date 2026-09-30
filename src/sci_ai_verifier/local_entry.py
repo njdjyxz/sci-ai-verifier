@@ -38,17 +38,20 @@ committed artifact if you lose this message.
    at most five claims, each one behaviour broad enough for about six independent questions,
    taken section by section as "Claims" in the local contract says.
 2. For each claim, look up existing candidates first, then use WebSearch to find independent
-   primary references and import them with the reference, resource or asset tools. Python
-   retrieves the bytes; your own summary of a source is not evidence.
+   primary references for each fact the claim states, and import them with the reference,
+   resource or asset tools. Python retrieves the bytes; your own summary of a source is not
+   evidence.
 3. Aim for the strongest evidence the claim allows: expected answers Python retrieved from an
-   independent source, scored by an installed comparison method. Qualify a candidate, then call
-   select_local_candidate proposing exactly the ceiling Python reports for that design. Aiming
-   lower is refused, and so is claiming more. An independent critique session then judges
-   whether the evidence really fits the claim.
-4. If it returns local_grade_revision_required, you have two moves: qualify a stronger design
-   (better source, more cases) and propose its new ceiling, or accept the grade the critique
-   supported for this design. Proposing again on the same design is refused and wins nothing.
-   Do not argue with the critique and do not aim low to be safe.
+   independent source, scored by an installed comparison method. Test the claim fact by fact,
+   as "Claims" in the local contract says. Qualify a candidate, then call select_local_candidate
+   proposing exactly the ceiling Python reports for that design. Aiming lower is refused, and so
+   is claiming more. An independent critique session then judges whether the evidence really
+   fits the claim.
+4. If it returns local_grade_revision_required, revise: qualify a stronger design that answers
+   every required revision and case replacement, and propose its new ceiling. Accept the grade
+   the critique supported only when step 4 of "Negotiating the grade" allows it; saving time is
+   no reason. Proposing again on the same design is refused and wins nothing. Do not argue with
+   the critique and do not aim low to be safe.
 5. Execute the settled plan and follow the state Python returns. An execution that supports
    no grade moves to local_documentary, where an independent assessor judges cited sources.
 6. record_local_limitation is only for a cause you actually hit, and U is only for a genuine

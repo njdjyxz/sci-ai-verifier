@@ -43,9 +43,14 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # v9 added `answer_types`, what each installed answer type compares, for criterion 3, and named
 # the generated types from GENERATED_METHODS; the same section owns the types. Grade A allows an
 # AI reading of which answer a reply gives, as the rubric's A row does.
-CRITIQUE_RUBRIC={"id":"local-evidence-critique-v9","criteria":[
+# v10 added `coverage`: criterion 2 lists the claim's facts with the case testing each, and a gap
+# that a listed reference or an unstated search leaves open is a required revision once the grade
+# falls below the proposal. Run fbd49132's critiques saw such gaps and required them only in part;
+# "Claims" in local-contract.md owns testing a claim fact by fact.
+CRITIQUE_RUBRIC={"id":"local-evidence-critique-v10","criteria":[
         "Whether the expected answers are a fit-for-purpose oracle for this exact claim, independent of the submitted skill",
-        "Whether the selected cases and trial count cover the claim's stated scope well enough for the proposed grade",
+        "Whether the counting cases and trial count cover the facts the claim states, within its scope, well enough "
+        "for the proposed grade, checked as rubric.coverage says",
         "Whether the comparison rule, tolerance and stated uncertainty match what the claim actually asserts",
         "Whether a stronger grade was available and was passed over",
         "Whether each concern listed under prior_objections is now answered by this design, unresolved, or does not apply",
@@ -87,6 +92,12 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v9","criteria":[
         "mechanically for the count, which Python already applies."},
         "case_replacement":"For every case that does not count, describe a case that would test the claim in its "
         "place: what it should ask and why that stays inside the claim. Describe it; do not write expected answers.",
+        "coverage":"Give criterion 2's finding as a brief list of the facts the claim's statement and expected "
+        "behaviour state, each with the counting case that tests it or marked untested. For an untested fact, say "
+        "whether a reference in evidence.references bears on it and whether the justification says what was "
+        "searched for its source. When your grade is below the proposal, each untested fact that a listed reference "
+        "bears on, or that no stated search covers, is a required revision naming the case or search that would "
+        "test it. Listing a gap does not by itself lower your grade; judge that under criterion 2.",
         "verdict_consistency":"Your objections and verdicts must agree. A case you object to because it tests more "
         "or less than the claim asserts takes that verdict, never counts; an objection about a counting case may "
         "question only how strong it is. Judge each case against the claim's statement and expected behaviour: its "

@@ -41,6 +41,7 @@ deterministic tools, bounded processes and saved evidence.
 | `d416f79d` (2026-09-24) | sar-analysis | 4 at B; 39 of 39 counted trials passed, 0 invalid, 0 faults |
 | `0aeca4c6` (2026-09-28) | scikit-survival | 1 at A, 3 at B, 1 at D by fallback after a safety refusal; 62 of 64 obtained trials passed, 0 invalid |
 | `d3892f6c` (2026-09-29) | scikit-survival | 4 at A, 1 at B; 81 of 81 counted trials passed, 9 of them by the AI reader; 0 invalid, 0 faults |
+| `fbd49132` (2026-09-29) | tooluniverse-dose-response | 1 at A, 3 at B; 51 of 51 counted trials passed, 0 invalid, 0 faults; every claim left facts it states untested |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -105,9 +106,11 @@ not pass. Run `d3892f6c` used all three, with claims sized to their tests:
 - the AI reader decided 9 of 81 counted trials, each a right answer with extra words on its answer
   line.
 
-Calculated answers have still not met a run.
+Calculated answers met their first run in `fbd49132`: two designs were keyed by programs that
+first reproduced worked examples quoted from their references. That run also showed planners
+testing only part of what a claim states, which the 2026-09-30 entry addresses.
 
-Automated suite: **425 tests, 423 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **426 tests, 424 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -876,3 +879,181 @@ answered under "Run `d3892f6c`". Next, with the operator's go-ahead:
 Record, against the survey and this run: the claims and sections covered, claims held back only by
 their case count, `duplicate` verdicts, any two claims on one paragraph, every AI reading, and what
 subjects did with `run_command`. It is finished when each has a recorded answer.
+
+## Claude: 2026-09-30 (run fbd49132; planner and reviewer told to test each fact a claim states)
+
+### Current stage and status
+
+Version 0.7.0, local workflow, on `skill-environments`. On 2026-09-29 the operator ran a new skill,
+`tooluniverse-dose-response`, as run `fbd49132`: one claim at A and three at B, every counted trial
+passing, and every claim leaving facts it states untested (below). The operator judged the planner
+lazy and asked for the planner's and the reviewer's instructions to be fixed. That is built:
+- **Planner.** Test a claim fact by fact, searching for each fact's source; keep a quote whole;
+  revise, answering every required revision, before accepting a lowered grade.
+- **Reviewer.** Critique rubric v10 lists the claim's facts against the counting cases, and turns a
+  gap it can see a way to close into a required revision.
+
+The reviewer change was replayed live on this run's packets (below). The planner change is **not yet
+seen in a run**; only a live run can show it.
+
+### What has been done
+
+This session, 2026-09-30:
+
+**1. Run `fbd49132`**, tooluniverse-dose-response, 2026-09-29, on `4308111`, in a session started
+after a Claude restart, with `--timeout 7200`:
+- **Result.** Four claims: C1 (the 4PL equation) at A; C2 (data preparation), C3 (reading the four
+  parameters) and C4 (quality gotchas) at B; all `pass`. 51 of 51 counted trials passed, and the 9
+  uncounted ones too; none was invalid, missing or refused, and every case was unanimous.
+- **Time and cost.** 3,061 s. About $19.79 at API rates: the planner $13.87 over 51 turns, 60
+  subjects $2.60, 5 critiques $2.48 and 46 claim-only sessions $0.84; no readings. The 5-hour window
+  went from 0% to 39%.
+- **The new code ran.** `local_method_ref` equals the tree's digest, `95f2ea51…`. The critiques
+  carry rubric v9 and the audits policy `evidence-strength-v7`.
+- **Calculated answers, first seen live.** C1's keys came from a program implementing GraphPad's
+  4PL formula, anchored on three Wikipedia Hill-equation statements; C2's from a percent-of-control
+  program that reproduced four percentages printed in a CCK-8 protocol's table.
+- **Against the claim-scope survey:**
+  - four claims from four of the skill's eight sections, one each; none for the title section,
+    "Step 2 — Fit / get the potency", "Honest limitations" or "Related skills";
+  - three claims held back only by their case count, C2 and C3 at 4 of 5 counting cases and C4 at 3,
+    each with `size_limited` showing that its source supports A;
+  - three `duplicate` verdicts, two in C2 and one in C3, in designs that executed;
+  - no two claims on one paragraph, and no AI reading;
+  - `run_command` in 20 trials, each one line of `python3 -c` evaluating the formula, 18 in C1 and 2
+    in C2. No subject ran the skill's script, which imports scipy: the skill declares no packages,
+    so setup built no environment (`not_needed`) and the operator's image has no scipy.
+- **Report.** `.verifier/runs/fbd49132-6165-44d5-93de-33025f8a5577/report-card.md`, outside Git.
+
+**2. What went wrong: the planner took the cheapest legal path.**
+- **Facts untested in every claim.** No case tested C1's statement about the helper's `hill_4pl`;
+  C2's cases tested 3 of its 6 preparation rules; C3's left every threshold, the fold-shift rule and
+  the Emin reading untested; C4's three cases reached 2 of its 5 gotchas. The coverage notes and
+  critiques said so, but each claim's row gives one grade and `pass` for the whole statement.
+- **No search for C4's missing gotchas.** The planner fetched two Wikipedia pages by URL, made no
+  WebSearch for that claim, and designed exactly the three cases B needs, with no spare.
+- **Accepting instead of revising.** C2's and C3's critiques settled B below a proposed A, with 4
+  negotiation rounds and 1 replacement round left, and required cases for named untested rules; for
+  C2's linear-vs-log10 rule the GraphPad page was already fetched. The planner accepted B both times,
+  "rather than spend the remaining time on further revisions". Run `d3892f6c`'s C4 did the same.
+- **Revisions answered in part.** C4's first critique required a case for the incomplete-curve
+  remedy; the revised design met its other three requests and skipped that one.
+- **A cut quote.** The first manifest was refused over a doubled space in C4's quote. The planner cut
+  the quote to two of five gotchas and kept the statement of all five.
+- **Where the rules allowed it.** The planner prompt offered accepting as one of "two moves";
+  nothing asked cases to reach a claim's facts or asked for a search per fact; Python checks that a
+  quote occurs, never what the statement adds; and a plan whose critique agrees with its proposal is
+  fixed at once, so a design built at a low ceiling never returns to the planner.
+
+**3. Changes**, contracts first:
+- `local-contract.md`, "Claims", which owns both: **Quoted whole** (a quote carries every fact its
+  statement states; correct a refused quote, and a shorter quote needs a shorter statement) and
+  **Tested fact by fact** (a case for each fact a source can key before a second case on any; a
+  search for each fact before leaving it untested; the spare case; within the subject-call budget,
+  the facts the skill's user relies on most).
+- `evidence-rubric.md`, step 4 of "Negotiating the grade": **Revise before accepting.** A revision
+  answers every revision the critique requires; a lowered grade is accepted only when no search finds
+  a source for what the critique asks, and saving run time is no reason.
+- `tool-contracts.md`, `select_local_candidate`: `coverage` goes through the claim's facts, naming
+  the cases for each and, for an untested fact, what was searched for and found.
+- `SKILL.md` and the negotiation paragraph of `local-contract.md` restated step 4's old choice;
+  both now point to it, and the operator's `LOCAL-CONFIG.md` describes the new rule.
+- Code:
+  - the planner prompt's steps 2 to 4 in `local_entry.py` follow these;
+  - `local.py`'s `local_design_unchanged` message says to answer every required revision and to
+    propose the settled grade only when step 4 allows it;
+  - `claims.py`'s `quote_not_found` message, shared by every profile, says to correct the quote and
+    to shorten the statement with it;
+  - critique rubric v9 → v10 in `documentary.py`: criterion 2 is checked "as rubric.coverage says",
+    and `coverage` asks for the facts with the counting case testing each. When the critique's grade
+    is below the proposal, each untested fact a listed reference bears on, or no stated search
+    covers, is a required revision; listing a gap does not by itself lower the grade.
+
+**4. Verification.**
+- Suite 425 → 426 tests, 424 passing and 2 skipped, none failing. New checks: the planner prompt
+  and pinned blocks carry the new rules and no longer offer "two moves"; the quote refusal says how
+  to repair; the v10 rubric carries its coverage rule.
+- Sizes: the pinned `local-contract.md` is 38,580 of its 40,960 bytes, and the verification
+  bootstrap 199,970 of its 200,000, so the next text added to `evidence-rubric.md` or `SKILL.md`
+  must be offset there.
+- **Live recording**, about $0.37: `d416f79d`'s pIC50 packet under v10 settled at B with all three
+  cases counted, as under v8 and v9, and criterion 2's finding listed the claim's three facts with
+  the cases testing each. Its first reply added a stray `evidence_ceiling` key, which Claude Code
+  refused and the session resent.
+- **Replays** of `fbd49132`'s four final critique packets on `claude-opus-5`, about $6.02: two
+  samples of each under v10, and a second v9 sample of C2 to C4 beside the run's own critique.
+  - **No grade moved.** C1 settled at A in all three samples, and C2, C3 and C4 at B in all four
+    each. C2 counted four or five cases under either rubric; the other verdicts never changed.
+  - **Criterion 2 now lists the facts.** Every v10 finding went through the statement fact by
+    fact, eleven facts for C3, seven for C2 and six for C4, marking each untested one with whether
+    a fetched reference bears on it and whether a search is stated. v9's findings summarised
+    coverage in a sentence or two. Each list fit its 4,000-character field, and the report prints
+    it under the claim.
+  - **Required revisions** already named untested facts under v9 whenever the grade fell below
+    the proposal (C2, C3). Under v10 they also tie each gap to the fetched page that bears on it,
+    such as C2's linear-scale rule and the GraphPad page in hand; the number of gaps named did not
+    rise.
+  - **C4 is out of the reviewer's reach.** Its grade equals its proposal, so no revision is
+    required, and v10 accepted the planner's mention of C2's blocked NCBI chapter as a search for
+    C4's gotchas, though no search was made for that claim. Only the planner rules reach it.
+  - One C3 sample offered narrowing the claim's scope as the alternative to a case, which the
+    rubric's `verdict_consistency` rules out.
+  - As in `d3892f6c`, Claude Code refused the first reply of 11 of the 12 sessions, v9 ones
+    included, for a stray property such as `reason`, `cases` or `dd`; every retry passed.
+- The 5-hour window was at 28% after this session's recordings and replays.
+- A baseline in a scratchpad worktree failed on Windows' path limit (WinError 206), not on the
+  code; in the repository the suite passed 425 of 425 before these changes.
+
+Not verified: any planner change in a run.
+
+### Decisions taken 2026-09-30
+
+- **Fix the planner's and the reviewer's instructions** (operator), rather than cut claims down to
+  their cases or add Python checks first.
+- Proposed here and built: the two "Claims" rules, step 4, fact-by-fact `coverage`, the quote
+  message and rubric v10.
+- **Held back:** Python refusing an accept while replacement rounds remain, and returning a plan
+  fixed at a low ceiling to the planner when its critique names a gap. Either follows only if the
+  next run shows that the text alone does not hold; the spare-case rule C4 ignored suggests it may
+  not.
+
+### Open questions for the operator
+
+1. The 2026-09-29 entry's open questions stand. Question 5 is narrowed, not settled: the planner and
+   reviewer now push coverage up, but whether A needs every fact a claim states tested stays open.
+2. **The fitting step cannot run.** Step 2 needs the ToolUniverse `tu run` tools or the skill's
+   scipy script, and the skill declares neither. A fenced `pip install numpy scipy` in the
+   submission would let a claim on fitting execute; that is a change to the submission, not the
+   verifier.
+3. **More cases cost trials.** At three trials a case, the 128-call budget holds 42 cases a run.
+   `fbd49132` used 60 calls for 20 cases, and testing each fact could double that.
+
+### Urgent next steps, if any
+
+None. Committed and pushed on `skill-environments` with this entry.
+
+### Suggested next move
+
+Run tooluniverse-dose-response again, so the planner change is measured against `fbd49132` on the
+same skill.
+
+### Recommended next action
+
+With the operator's go-ahead:
+1. Move, do not delete, into the session scratchpad:
+   - `.verifier/runs/fbd49132-6165-44d5-93de-33025f8a5577`
+   - `.verifier/attempts/14b68a56-f2d2-4982-9ff9-a5249092dbba`
+   - `.verifier/subject-runs/fbd49132-6165-44d5-93de-33025f8a5577`
+   - the nine candidates it wrote at `local-reference-comparison-7`, dated 2026-09-29, 21:35 to 22:15
+
+   Keep the glycoengineering run, its attempt, subject-runs and five candidates, and
+   `.verifier/store/`. `d3892f6c`'s files, 4,230 of them and its nine candidates, were moved on
+   2026-09-29 to `cleaned-d3892f6c` in scratchpad `8784dcda…`.
+2. Start a new Code-tab session, so that `serve-local` starts after this commit, and check Docker and
+   the 5-hour window as the 2026-09-28 entry says.
+3. Run tooluniverse-dose-response.
+
+Record, against `fbd49132`: for each claim, the facts stated and tested; the WebSearch queries made
+for untested facts; each critique's required revisions and whether the next design answered them;
+each accept and the rounds left at it; any quote refusal and its repair; the grades; and run time
+against 7,200 s and subject calls against 128. It is finished when each has a recorded answer.

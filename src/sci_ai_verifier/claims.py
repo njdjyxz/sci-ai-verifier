@@ -33,8 +33,11 @@ def build_manifest(store, state, snapshot, candidates):
         delivered = [read_file(store, snapshot, r["path"], r["start"], r["end"],
                                state["limits"]["max_read_bytes"])["content"] for r in matches]
         if not any(claim["source_quote"] in text for text in delivered):
-            raise Fault("quote_not_found", "The exact quote must occur in a delivered source range.",
-                        [f"claims[{index}].source_quote"])
+            # Run fbd49132's planner answered this by cutting a quote to two of its five gotchas
+            # while the statement kept all five, so the repair is spelled out.
+            raise Fault("quote_not_found", "The exact quote must occur in a delivered source range. Correct "
+                        "its characters, spaces included, against the file; a shorter quote needs a shorter "
+                        "statement.", [f"claims[{index}].source_quote"])
         identities.add(identity)
         statements.add(statement)
         accepted.append({"claim_id": "claim-" + identity, **claim})

@@ -179,9 +179,10 @@ strongest grade the evidence actually supports plus one verdict per case. The se
 ceiling is the weakest of the proposal, Python's ceiling recomputed over the cases the
 critique counted and the claim-only answers did not miss, and that critique's grade.
 
-When the settled grade is below the proposal, the planner may strengthen the design and
-propose the new ceiling, which earns another round, or accept the grade that design
-settled at, which settles immediately without another session. Repeating a proposal on
+When the settled grade is below the proposal, the planner revises before it accepts, as
+step 4 of "Negotiating the grade" in `evidence-rubric.md` says: a stronger design and its
+new ceiling earn another round, and accepting the grade that design settled at settles
+immediately without another session. Repeating a proposal on
 a design already critiqued is refused and consumes neither a session nor a round, so
 the budget of one round per rubric grade bounds real revisions rather than repetition.
 Rounds with rejected cases, whether the critique or the claim-only answers rejected
@@ -308,6 +309,11 @@ cases as restatements of another. A local claim is therefore sized to its tests:
   `evidence-rubric.md`). A behaviour too small for that joins the neighbouring behaviour
   it serves. Unrelated behaviours never share a claim, and no claim summarises the whole
   skill.
+- **Quoted whole.** A claim's quote carries every fact its statement states, because
+  Python checks only that the quote occurs. When Python refuses a quote, correct its
+  characters against the file; a shorter quote needs a shorter statement. In `fbd49132` a
+  doubled space got one claim's quote refused, the retry cut it from five quoted gotchas to
+  two, and the statement kept all five.
 - **Section by section.** A section is the text under one heading of `SKILL.md`, down to
   the next heading of any level; a reference file belongs to the first section that
   names it. List the sections that promise a testable behaviour. Take one claim from each
@@ -317,6 +323,18 @@ cases as restatements of another. A local claim is therefore sized to its tests:
   used all but 8 seconds of its 90 minutes, so a manifest holds at most five claims and
   Python refuses a larger one. When more sections qualify, keep those whose behaviour the
   skill's workflow depends on most.
+
+**Tested fact by fact.** A claim's facts are the rules, values, thresholds, steps and
+reasons its statement gives, and its cases spread over them: each fact a source can key
+gets a case before any fact gets a second, since a second case on a tested fact is usually
+a `duplicate`. Search for an independent source for each fact before leaving it untested,
+and keep the spare case "Cases each grade requires" in `evidence-rubric.md` asks for. When
+a claim states more facts than the run's subject-call budget has cases for, test the ones
+the skill's user relies on most. The `coverage` justification of `select_local_candidate`
+in `tool-contracts.md` records which case tests each fact. In `fbd49132` every claim
+settled with facts untested: one claim's three cases reached two of its five gotchas with
+no search made for the other three, and two claims settled at B although their critiques
+named the missing cases and the rounds to add them remained.
 
 The report lists the sections no claim covers, and says when only its number of
 independent cases held a claim below the grade its source supports.

@@ -240,6 +240,8 @@ class Stage2Tests(unittest.TestCase):
         candidate = {**self.candidate(), "source_quote": "Invented source quote"}
         rejected = self.call(read["data"], "commit_claim_manifest", **parent, claims=[candidate])
         self.assertEqual(rejected["error"]["code"], "quote_not_found")
+        # The repair is to correct the quote, not to cut it below what the statement states.
+        self.assertIn("a shorter quote needs a shorter statement", rejected["error"]["message"])
         duplicate = self.call(rejected["error"], "commit_claim_manifest", **parent,
                               claims=[self.candidate(), self.candidate()])
         self.assertEqual(duplicate["error"]["code"], "duplicate_claim")

@@ -459,7 +459,9 @@ def select(store, state, claim_id, work, args, subject):
         return {"outcome": "local_design_unchanged", "candidate_ref": key,
                 "objections": prior_objections(history),
                 "message": "This design was already critiqued and settled at " + accepted
-                           + ". Change the evidence to justify more, or propose " + accepted + "."}
+                           + ". Change the evidence to justify more, answering every revision the critique "
+                           "required; propose " + accepted + " only when step 4 of \"Negotiating the grade\" "
+                           "allows it."}
     elif rounds > MAX_ROUNDS:
         return {"outcome": "local_grade_rounds_exhausted", "candidate_ref": key,
                 "rounds_used": len(history), "objections": prior_objections(history),
