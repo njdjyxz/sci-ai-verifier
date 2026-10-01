@@ -163,9 +163,16 @@ refusal, leaves its case unmeasured, not rejected, so a provider fault cannot lo
 grade.
 
 A fresh no-tool session then receives the claim, the evidence design, the reference
-provenance, the justification, Python's ceiling, the concerns earlier reviewers raised
+provenance, the justification and the design's scope and limitations whole, Python's
+ceiling, Python's search record, the concerns earlier reviewers raised
 about earlier versions of this design (their objections and every case they did not
-count, with its verdict, reason and suggested replacement), and the fixed critique rubric. It never sees the
+count, with its verdict, reason and suggested replacement), and the fixed critique rubric.
+The search record is read from this attempt's workflow log, not from the planner's notes:
+every WebSearch query the planner ran, marked with the claim it was working on (the one its
+last verifier tool call named), and every reference, resource or asset fetch with the claim
+it was for and its outcome. Run `26312681`'s critiques read the planner's description of
+its searches clipped at 2,000 characters and its limitations at 800, and took it as true
+for two claims whose untested facts no search had sought. It never sees the
 planning conversation, any subject answer, or any earlier reviewer's grade: objections
 carry forward so a revision can be checked, grades do not, because a reviewer shown a
 previous verdict would anchor on it. That separation is imperfect and is not claimed to
@@ -331,7 +338,9 @@ a `duplicate`. Search for an independent source for each fact before leaving it 
 and keep the spare case "Cases each grade requires" in `evidence-rubric.md` asks for. When
 a claim states more facts than the run's subject-call budget has cases for, test the ones
 the skill's user relies on most. The `coverage` justification of `select_local_candidate`
-in `tool-contracts.md` records which case tests each fact. In `fbd49132` every claim
+in `tool-contracts.md` records which case tests each fact, and the critique checks each
+search it describes against Python's search record: a search the record does not show was
+not made. In `fbd49132` every claim
 settled with facts untested: one claim's three cases reached two of its five gotchas with
 no search made for the other three, and two claims settled at B although their critiques
 named the missing cases and the rounds to add them remained.

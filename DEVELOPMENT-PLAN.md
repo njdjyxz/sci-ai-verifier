@@ -42,6 +42,7 @@ deterministic tools, bounded processes and saved evidence.
 | `0aeca4c6` (2026-09-28) | scikit-survival | 1 at A, 3 at B, 1 at D by fallback after a safety refusal; 62 of 64 obtained trials passed, 0 invalid |
 | `d3892f6c` (2026-09-29) | scikit-survival | 4 at A, 1 at B; 81 of 81 counted trials passed, 9 of them by the AI reader; 0 invalid, 0 faults |
 | `fbd49132` (2026-09-29) | tooluniverse-dose-response | 1 at A, 3 at B; 51 of 51 counted trials passed, 0 invalid, 0 faults; every claim left facts it states untested |
+| `26312681` (2026-09-30) | tooluniverse-dose-response | 2 at A, 2 at B; 57 of 57 counted trials passed, 2 of them by the AI reader; 0 invalid, 0 faults |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -110,7 +111,7 @@ Calculated answers met their first run in `fbd49132`: two designs were keyed by 
 first reproduced worked examples quoted from their references. That run also showed planners
 testing only part of what a claim states, which the 2026-09-30 entry addresses.
 
-Automated suite: **426 tests, 424 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **429 tests, 427 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -880,21 +881,27 @@ Record, against the survey and this run: the claims and sections covered, claims
 their case count, `duplicate` verdicts, any two claims on one paragraph, every AI reading, and what
 subjects did with `run_command`. It is finished when each has a recorded answer.
 
-## Claude: 2026-09-30 (run fbd49132; planner and reviewer told to test each fact a claim states)
+## Claude: 2026-09-30 (runs fbd49132 and 26312681; planner told to test each fact a claim states; critique given Python's search record)
 
 ### Current stage and status
 
 Version 0.7.0, local workflow, on `skill-environments`. On 2026-09-29 the operator ran a new skill,
 `tooluniverse-dose-response`, as run `fbd49132`: one claim at A and three at B, every counted trial
 passing, and every claim leaving facts it states untested (below). The operator judged the planner
-lazy and asked for the planner's and the reviewer's instructions to be fixed. That is built:
+lazy and asked for the planner's and the reviewer's instructions to be fixed. That is built (`fe47267`):
 - **Planner.** Test a claim fact by fact, searching for each fact's source; keep a quote whole;
   revise, answering every required revision, before accepting a lowered grade.
 - **Reviewer.** Critique rubric v10 lists the claim's facts against the counting cases, and turns a
   gap it can see a way to close into a required revision.
 
-The reviewer change was replayed live on this run's packets (below). The planner change is **not yet
-seen in a run**; only a live run can show it.
+**Run `26312681`** then used it on the same skill (section 5): two claims at A and two at B. The
+revise-before-accepting rule worked once, on C2, which went from B to A. The search rule did not:
+C3 and C4 got no web search, were designed at B's minimum of four cases, and their critiques took the
+planner's description of searches made for other claims as searches for theirs. The critiques also
+read the planner's notes cut short. On the operator's go-ahead both are now fixed (section 6): the
+critique reads the notes whole and judges searches by **Python's search record**, read from the
+planner's own stream, under rubric v11. That fix is replayed live (below) and **not yet seen in a
+run**. It cannot reach a plan that settles at its own proposal, as C3 and C4 did (open question 4).
 
 ### What has been done
 
@@ -1004,7 +1011,86 @@ after a Claude restart, with `--timeout 7200`:
 - A baseline in a scratchpad worktree failed on Windows' path limit (WinError 206), not on the
   code; in the repository the suite passed 425 of 425 before these changes.
 
-Not verified: any planner change in a run.
+Not verified then: any planner change in a run. Run `26312681` below has since used them.
+
+**5. Run `26312681`**, tooluniverse-dose-response, 2026-09-30, on `fe47267`, from a session whose
+`serve-local` started at 16:56 after that commit, with `--timeout 7200`. `fbd49132`'s files were moved
+first, as this entry's recommended action said.
+- **Result.** C1 (the 4PL equation) and C2 (data preparation) at A; C3 (reading the parameters) and
+  C4 (quality gotchas) at B; all `pass`. 57 of 57 counted trials passed and the 3 uncounted ones too;
+  none invalid, missing or refused; every case unanimous. Two C2 trials passed by the AI reader:
+  "ic50" for an `exact` key "IC50". By Python's reader alone C2 is 13 of 15 and `fail`.
+- **Time and cost.** 3,328 s of 7,200, and 60 of 128 subject calls. About $20.86 at API rates: the
+  planner $15.12 over 51 turns, 60 subjects $2.68, 5 critiques $2.33, 42 claim-only sessions $0.69 and 2
+  readings $0.03. The 5-hour window went from 29% to 70%.
+- **The new code ran.** `local_method_ref` equals the tree's digest, `35bd30f0…`; the critiques carry
+  rubric v10.
+- **Against `fbd49132`, as this entry asked:**
+  - facts tested, from each critique's v10 list: C1 6 of 7, C2 5 of 7, C3 4 of 12, C4 4 of 7, the
+    three untested C4 facts being the incomplete-curve, too-few-points and biphasic gotchas;
+  - WebSearch: 4 queries for C1 and 4 for C2 (one counted under C1, made before C2's first call), and
+    **none for C3 or C4**. C3 fetched two Wikipedia pages by URL and C4 one, and the planner wrote
+    "moving quickly" before C4;
+  - critiques and their revisions: C2's first critique settled B below a proposed A, with 4 rounds and
+    1 replacement round left, and required four revisions. **The next design answered all four** (a
+    replacement for the leaked case, a direction case, and recorded searches for the point-count and
+    unit rules) and settled at A. C3 and C4 were proposed at B, the ceiling of their four cases, and
+    fixed at once, so neither critique could ask for more;
+  - no accept below a proposal, so "revise before accepting" held where it applied;
+  - no quote refusal: the manifest was accepted first time, and C4's quote now holds all five
+    gotchas;
+  - C1's first proposal was refused for `prior_review_in_packet` over the word "verdict" in its notes,
+    spending no session;
+  - grades 2 A + 2 B, against 1 A + 3 B; time 3,328 s against 3,061; subject calls 60 against 60;
+  - sections covered: the same four of eight; no subject ran the skill's script, which needs scipy.
+- **Two defects the run exposed:**
+  - **The critique read the planner's notes cut short.** Every packet clipped the coverage note at
+    2,000 characters and the design's limitations at 800, though the schemas allow 4,000 and 8,000. Two
+    critiques said they could not confirm a search because the note was cut.
+  - **The critique trusted described searches.** C3's critique wrote "every gap accompanied by a
+    recorded search" and C4's credited GraphPad and NCBI searches; those were made for C1 and C2.
+- Report: `.verifier/runs/26312681-3f7c-4573-8a4b-9da8b2c41c6b/report-card.md`, outside Git.
+
+**6. Fixes after `26312681`**, on the operator's go-ahead, contracts first:
+- `local-contract.md`: the critique receives the justification and the design's scope and
+  limitations whole, and **Python's search record**: every WebSearch query the planner ran, marked
+  with the claim it was working on (the one its last verifier tool call named), and every reference,
+  resource or asset fetch with the claim it was for and its outcome. "Tested fact by fact" says the
+  critique checks each described search against it. `tool-contracts.md`'s `coverage` points there.
+- Code:
+  - `local.py`: `NOTE_TEXT` (8,000) and `JUSTIFICATION_TEXT` (4,000) are shared by the tool schemas
+    and the packet, so the packet carries what the schema accepted. `search_record` reads the
+    attempt's event files, which are written once and never replaced, and `select` puts its result in
+    `python_checked.search_record`; with no workflow log it says no search was recorded.
+  - `documentary.py`: rubric v10 → v11, judging a search by `python_checked.search_record` ("the
+    justification only describes searches, and one the record does not show was not made").
+    `CRITIC_PACKET_LIMIT` goes from 160,000 bytes to 512 KiB: the largest packet the schemas allow is
+    about 500 KB, so even the old limit never covered it.
+- Verification:
+  - Suite 426 → 429 tests, 427 passing and 2 skipped. New: the record read from a real
+    `WorkflowLog` through `select`, attributing searches to this claim, another claim or none yet,
+    reading a refused fetch, reporting results in no expected shape rather than failing the
+    selection, and ignoring a subject's stream; the notes reaching the packet whole; and the
+    schemas' largest packet, 500,611 bytes, under the limit.
+  - Sizes: the pinned `local-contract.md` is 39,288 of its 40,960 bytes; the verification bootstrap
+    is unchanged at 199,970.
+  - **Packets rebuilt** from `26312681`'s journal, store and attempt log with today's code matched
+    what was sent in everything but the rubric, the whole notes and the new record. The record showed
+    8 searches when C3 and C4 were proposed, none of them while working on either.
+  - **Live recording**, $0.43: `d416f79d`'s packet under v11, with its limitations whole and no log,
+    settled at B with all three cases counted, as under v8 to v10. Its first reply added a stray
+    `StructuredOutput` key, which Claude Code refused and the session resent.
+  - **Replays** of `26312681`'s rebuilt packets under v11, $2.78: C1 once, C2's first round once, C3
+    and C4 twice each, against the run's own v10 critiques. No grade moved: A, B, B, B. Every coverage
+    finding used the record, for example C4's "search_record shows no query using any term for it
+    (no 'plateau', 'incomplete curve', 'extrapolated IC50')". C2's first-round critique turned it into
+    required revisions: "record an actual search for a source stating a minimum number of
+    concentrations; the current search record contains none", and correct the justification's search
+    narrative to match the record. C3's and C4's grades equal their proposals, so they required
+    nothing (open question 4). Verdicts moved by one case in three samples: C2's first round judged a
+    second case `leaked`, one C3 sample a case `duplicate` and one C4 sample a case `beyond_scope`;
+    none changed a grade.
+  - Not verified: any of this in a run.
 
 ### Decisions taken 2026-09-30
 
@@ -1012,10 +1098,15 @@ Not verified: any planner change in a run.
   their cases or add Python checks first.
 - Proposed here and built: the two "Claims" rules, step 4, fact-by-fact `coverage`, the quote
   message and rubric v10.
-- **Held back:** Python refusing an accept while replacement rounds remain, and returning a plan
-  fixed at a low ceiling to the planner when its critique names a gap. Either follows only if the
-  next run shows that the text alone does not hold; the spare-case rule C4 ignored suggests it may
-  not.
+- **Held back** at first: Python refusing an accept while replacement rounds remain, and returning a
+  plan fixed at a low ceiling to the planner when its critique names a gap, until a run showed the
+  text alone did not hold.
+- **After run `26312681`** (operator: "yes, do both fixes and record the run"): the critique reads
+  the planner's notes whole and judges searches by Python's search record, under rubric v11, with
+  the packet limit raised to fit. This replaces the first half of what was held back with something
+  narrower: the critique sees the searches, rather than Python refusing the planner anything.
+- **Still held back:** refusing an early accept, which `26312681` never attempted, and returning a
+  plan fixed at its own proposal to the planner (open question 4).
 
 ### Open questions for the operator
 
@@ -1026,7 +1117,18 @@ Not verified: any planner change in a run.
    submission would let a claim on fitting execute; that is a change to the submission, not the
    verifier.
 3. **More cases cost trials.** At three trials a case, the 128-call budget holds 42 cases a run.
-   `fbd49132` used 60 calls for 20 cases, and testing each fact could double that.
+   `fbd49132` and `26312681` each used 60 calls for 20 cases, and testing each fact could double that.
+4. **A plan fixed at its own proposal never returns to the planner.** C3 and C4 of `26312681` were
+   designed at B's minimum and settled at once. With the search record their critiques can name the
+   facts no search sought, but only in the report. Returning such a plan to the planner, once and
+   within its rounds, when its critique names such facts would make the search rule bite. It changes
+   when `select_local_candidate` returns `local_grade_revision_required`.
+5. **The planner hurries.** It wrote "moving quickly" before C4 of `26312681`, and accepted B in
+   `fbd49132` "rather than spend the remaining time", though neither run used 56 of its 120 minutes.
+   It is never told its deadline, and "Claims" still says a six-claim run used all but 8 seconds of
+   its 90 minutes. Telling it the deadline and the time used might remove the pressure.
+6. **C2's A rests on the AI reader.** Two of its 15 counted trials passed only because the reader
+   judged "ic50" to match the `exact` key "IC50". This bears on the 2026-09-29 entry's question 1.
 
 ### Urgent next steps, if any
 
@@ -1034,26 +1136,28 @@ None. Committed and pushed on `skill-environments` with this entry.
 
 ### Suggested next move
 
-Run tooluniverse-dose-response again, so the planner change is measured against `fbd49132` on the
-same skill.
+Run tooluniverse-dose-response a third time once the 5-hour window allows, to see v11 and the whole
+notes live against `26312681`; then decide open questions 4 and 5.
 
 ### Recommended next action
 
 With the operator's go-ahead:
 1. Move, do not delete, into the session scratchpad:
-   - `.verifier/runs/fbd49132-6165-44d5-93de-33025f8a5577`
-   - `.verifier/attempts/14b68a56-f2d2-4982-9ff9-a5249092dbba`
-   - `.verifier/subject-runs/fbd49132-6165-44d5-93de-33025f8a5577`
-   - the nine candidates it wrote at `local-reference-comparison-7`, dated 2026-09-29, 21:35 to 22:15
+   - `.verifier/runs/26312681-3f7c-4573-8a4b-9da8b2c41c6b`
+   - `.verifier/attempts/dc3fa47d-0ec7-4371-9c76-52dc9fa3576d`
+   - `.verifier/subject-runs/26312681-3f7c-4573-8a4b-9da8b2c41c6b`
+   - the ten candidates it wrote, dated 2026-09-30, 17:05 to 17:49
 
    Keep the glycoengineering run, its attempt, subject-runs and five candidates, and
-   `.verifier/store/`. `d3892f6c`'s files, 4,230 of them and its nine candidates, were moved on
+   `.verifier/store/`. `fbd49132`'s files, 3,224 of them and its nine candidates, were moved on
+   2026-09-30 to `cleaned-fbd49132` in scratchpad `c7991202…`; `d3892f6c`'s, 4,230 and nine, on
    2026-09-29 to `cleaned-d3892f6c` in scratchpad `8784dcda…`.
 2. Start a new Code-tab session, so that `serve-local` starts after this commit, and check Docker and
-   the 5-hour window as the 2026-09-28 entry says.
+   the 5-hour window as the 2026-09-28 entry says; `26312681` took 41 points of it.
 3. Run tooluniverse-dose-response.
 
-Record, against `fbd49132`: for each claim, the facts stated and tested; the WebSearch queries made
-for untested facts; each critique's required revisions and whether the next design answered them;
-each accept and the rounds left at it; any quote refusal and its repair; the grades; and run time
+Record, against `26312681`: whether each critique's coverage finding uses the search record; for each
+claim, the facts stated and tested and the WebSearch queries made while working on it; any claim
+designed below A with no search, and whether its critique names the facts no search sought; each
+critique's required revisions and whether the next design answered them; the grades; and run time
 against 7,200 s and subject calls against 128. It is finished when each has a recorded answer.

@@ -10,7 +10,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
-from sci_ai_verifier.common import Fault
+from sci_ai_verifier.common import Fault, canonical
 from sci_ai_verifier.local_science import (GRADES,MAX_ROUNDS,POLICY_REF,audit,decide,evidence_ceiling,
                                            proposal_problem,weaker)
 from sci_ai_verifier.documentary import (CRITIQUE_RUBRIC,RUBRIC,assess,critique,validate_assessment,
@@ -814,6 +814,52 @@ class CalculatedAnswerTests(unittest.TestCase):
         self.assertEqual((shown["anchors"][0]["expected"],shown["anchors"][0]["output"]),("9","9.0"))
         self.assertTrue(all(case["calculated"] and case["arguments"] for case in packet["evidence"]["cases"]))
         self.assertIn("calculated_answers",packet["rubric"])
+        # With no workflow log attached, Python says it recorded no search rather than inventing one.
+        self.assertFalse(packet["python_checked"]["search_record"]["recorded"])
+
+    def test_the_critique_reads_the_planners_notes_whole(self):
+        """Run 26312681's critiques read every design's limitations cut at 800 characters and its
+        coverage note at 2,000, although the tool schemas allow 8,000 and 4,000."""
+        from sci_ai_verifier.local import JUSTIFICATION_TEXT,NOTE_TEXT,critique_packet
+        from sci_ai_verifier.local_science import PLANNER_JUSTIFICATION
+        candidate=qualify_candidate(self.proposal(),self.references,self.calculate)
+        notes={key:key[0]*JUSTIFICATION_TEXT for key in PLANNER_JUSTIFICATION}
+        whole={**candidate,"scope":"s"*NOTE_TEXT,"limitations":"l"*NOTE_TEXT}
+        packet=critique_packet({"statement":"s","scope":"s","expected_behavior":"e"},whole,self.references,
+                               {"target_grade":"A",**notes},"A",[],3)
+        self.assertEqual(packet["evidence"]["candidate_scope"],"s"*NOTE_TEXT)
+        self.assertEqual(packet["evidence"]["candidate_limitations"],"l"*NOTE_TEXT)
+        self.assertEqual(packet["justification"],notes)
+        self.assertNotIn("[truncated]",canonical(packet).decode())
+
+    def test_the_largest_critique_packet_the_schemas_allow_fits_its_limit(self):
+        """Every field at its schema maximum: claim, twelve cases each with its own reference, the
+        program and its eight anchors, the planner's notes, a full search record and every carried
+        concern. A design the tools accept must never fail on the packet's size."""
+        from sci_ai_verifier.documentary import CRITIC_PACKET_LIMIT
+        from sci_ai_verifier.local import JUSTIFICATION_TEXT,NOTE_TEXT,RECORD_ITEMS,critique_packet
+        from sci_ai_verifier.local_science import PLANNER_JUSTIFICATION
+        candidate=qualify_candidate(self.proposal(),self.references,self.calculate)
+        references={f"ref-{index}":{"url":f"https://example.org/{index}/"+"u"*4070,"version":"v"*200,
+                                     "license":"l"*2000,"origin":"retrieved_public_https"} for index in range(21)}
+        case=candidate["cases"][0]
+        cases=[{**case,"case_id":f"{index:02d}"+"c"*78,"input":"i"*8000,"expected":"e"*4000,"reference_ref":f"ref-{index}",
+                "source_quote":"q"*8000,"applicability":"a"*4000,"options":["o"*4000]*9,"arguments":"x"*4000}
+               for index in range(12)]
+        anchor={"arguments":"x"*4000,"expected":"9"*100,"output":"9"*100,"source_quote":"q"*8000}
+        largest={**candidate,"scope":"s"*NOTE_TEXT,"limitations":"l"*NOTE_TEXT,"cases":cases,
+                 "calculation":{**candidate["calculation"],"code":"p"*32000,"formula_quote":"f"*8000,
+                                "reference_ref":"ref-12"},
+                 "calculation_receipts":{**candidate["calculation_receipts"],
+                                         "anchors":[{**anchor,"reference_ref":f"ref-{13+index}"} for index in range(8)]}}
+        record={"recorded":True,"searches_total":RECORD_ITEMS*2,"fetches_total":RECORD_ITEMS*2,
+                "searches":[{"query":"w"*200,"for":"another claim"}]*RECORD_ITEMS,
+                "fetches":[{"tool":"fetch_local_reference","url":"u"*200,"for":"another claim",
+                            "outcome":"refused: "+"r"*80}]*RECORD_ITEMS,"note":"n"*400}
+        packet=critique_packet({key:"t"*16000 for key in ("statement","scope","expected_behavior")},largest,references,
+                               {"target_grade":"A",**{key:"j"*JUSTIFICATION_TEXT for key in PLANNER_JUSTIFICATION}},
+                               "A",["limit-reason"]*12,3,["o"*1000]*16,record)
+        self.assertLess(len(canonical(packet)),CRITIC_PACKET_LIMIT)
 
     def test_the_report_says_the_planner_wrote_the_calculation(self):
         candidate=qualify_candidate(self.proposal(),self.references,self.calculate)

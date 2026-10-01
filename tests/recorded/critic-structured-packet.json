@@ -6,7 +6,7 @@
  },
  "evidence": {
   "absolute_tolerance": "0.000001",
-  "candidate_limitations": "The oracle is the ChEMBL Interface Documentation, which defines the pChEMBL value as -Log(molar IC50, XC50, EC50, AC50, Ki, Kd or Potency) and gives the worked example that an IC50 of 1nM has a pChEMBL value of 9, together with the peer-reviewed ChEMBL curation paper of Papadatos et al., which describes the same quantity as the negative logarithm of the activity values in M units. Both are EMBL-EBI sources describing the same database field, so although one is a peer-reviewed article and one is product documentation they are not fully independent of each other, and neither uses the exact token pIC50 for the transform: they name the general database field, of which pIC50 is the IC50 instance. The design has one open numeric case and two multiple-choice cases, so most of the evidence is reco [truncated]",
+  "candidate_limitations": "The oracle is the ChEMBL Interface Documentation, which defines the pChEMBL value as -Log(molar IC50, XC50, EC50, AC50, Ki, Kd or Potency) and gives the worked example that an IC50 of 1nM has a pChEMBL value of 9, together with the peer-reviewed ChEMBL curation paper of Papadatos et al., which describes the same quantity as the negative logarithm of the activity values in M units. Both are EMBL-EBI sources describing the same database field, so although one is a peer-reviewed article and one is product documentation they are not fully independent of each other, and neither uses the exact token pIC50 for the transform: they name the general database field, of which pIC50 is the IC50 instance. The design has one open numeric case and two multiple-choice cases, so most of the evidence is recognition. Only one worked conversion is used, so the design does not probe several magnitudes. No case asks what a higher or lower pIC50 implies about potency, which the claim does not state.",
   "candidate_scope": "The arithmetic definition of pIC50: that it is obtained from IC50 by taking a base-10 logarithm and negating it, and that the IC50 must be expressed in molar concentration before the transform is applied. Restricted to that definition and to the unit requirement it carries; it does not cover how IC50 itself is measured, how pIC50 relates to Ki or EC50, or any interpretation of what a higher or lower value means about a compound.",
   "case_count": 3,
   "cases": [
@@ -87,10 +87,14 @@
    "fewer_than_five_counting_cases",
    "fewer_than_two_generated_cases"
   ],
+  "search_record": {
+   "recorded": false,
+   "note": "No workflow log was attached, so Python recorded no search."
+  },
   "note": "Python already verified that every expected answer is quoted exactly from the pinned reference bytes. Judge whether that evidence is fit for this claim at the proposed grade. Python counts cases and cannot weigh them: a function name, a scientific value and a fact the claim never states are the same shape once quoted, so whether each case counts is decided here, in case_verdicts. Python then recomputes the ceiling over the cases you count, under rubric.case_requirements, and returns every rejected case with your described replacement to the planner."
  },
  "rubric": {
-  "id": "local-evidence-critique-v10",
+  "id": "local-evidence-critique-v11",
   "criteria": [
    "Whether the expected answers are a fit-for-purpose oracle for this exact claim, independent of the submitted skill",
    "Whether the counting cases and trial count cover the facts the claim states, within its scope, well enough for the proposed grade, checked as rubric.coverage says",
@@ -124,7 +128,7 @@
    "enforcement": "Python recomputes the ceiling over the cases you count and settles the weakest of that, the proposal and your grade. Your grade is your own judgment of the whole design; do not lower it mechanically for the count, which Python already applies."
   },
   "case_replacement": "For every case that does not count, describe a case that would test the claim in its place: what it should ask and why that stays inside the claim. Describe it; do not write expected answers.",
-  "coverage": "Give criterion 2's finding as a brief list of the facts the claim's statement and expected behaviour state, each with the counting case that tests it or marked untested. For an untested fact, say whether a reference in evidence.references bears on it and whether the justification says what was searched for its source. When your grade is below the proposal, each untested fact that a listed reference bears on, or that no stated search covers, is a required revision naming the case or search that would test it. Listing a gap does not by itself lower your grade; judge that under criterion 2.",
+  "coverage": "Give criterion 2's finding as a brief list of the facts the claim's statement and expected behaviour state, each with the counting case that tests it or marked untested. For an untested fact, say whether a reference in evidence.references bears on it, and whether python_checked.search_record shows a search or fetch that sought its source. That record is Python's, read from the planner's own stream; the justification only describes searches, and one the record does not show was not made. When your grade is below the proposal, each untested fact that a listed reference bears on, or that no recorded search sought, is a required revision naming the case or search that would test it. Listing a gap does not by itself lower your grade; judge that under criterion 2.",
   "verdict_consistency": "Your objections and verdicts must agree. A case you object to because it tests more or less than the claim asserts takes that verdict, never counts; an objection about a counting case may question only how strong it is. Judge each case against the claim's statement and expected behaviour: its scope line narrows them and never widens them. The claim's wording is fixed; judge the cases against it as written, and do not ask for it to be restated.",
   "leak_shapes": [
    "the question states the property under test, so every option but one is ruled out by the question's own wording",

@@ -697,7 +697,8 @@ The Local profile matrix in workflow.md governs their legality.
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
   `stronger_grade_considered`. `coverage` goes through the claim's facts ("Claims" in
   `local-contract.md`): the cases that test each, and for each fact no case tests, what
-  was searched for its source and what was found. It says which cases test what the claim
+  was searched for its source and what was found, which the critique checks against
+  Python's search record. It says which cases test what the claim
   asserts rather than what it is named. The number and kind of cases each grade
   needs are owned by "Cases each grade requires" in `evidence-rubric.md`. Python
   computes the strongest grade its own recorded facts support for that design,

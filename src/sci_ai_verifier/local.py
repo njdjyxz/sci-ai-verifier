@@ -2,6 +2,7 @@
 
 from html import escape
 import base64
+import json
 import re
 
 from .common import Fault, canonical, digest, normalize, utc_now
@@ -43,6 +44,11 @@ PLANNER_LIMITATIONS = (
     "required_environment_unavailable",
     "scope_outside_local_support",
 )
+# The planner's own notes reach the critique whole, so these are also what a critique reads:
+# a design's scope and limitations, and each justification of a proposal. Run 26312681's
+# critiques read the limitations cut at 800 characters and the coverage note at 2,000.
+NOTE_TEXT = 8000
+JUSTIFICATION_TEXT = 4000
 
 
 def legal(state):
@@ -88,13 +94,13 @@ def schemas(base, obj, string):
         "assess_local_documentary":obj({**claim,"evidence":{"type":"array","minItems":1,"maxItems":8,
                 "items":obj({"reference_ref":string(64),"quote":string(6000)})},"limitations":string(8000)}),
         "record_local_unverified":obj({**claim,"search_account":string(8000),"missing_evidence":string(8000)}),
-        "qualify_local_candidate": obj({**claim, "name": string(200), "scope": string(8000), "method": string(20),
-            "limitations": string(8000), "cases": {"type": "array", "minItems": 3, "maxItems": 12, "items": case},
+        "qualify_local_candidate": obj({**claim, "name": string(200), "scope": string(NOTE_TEXT), "method": string(20),
+            "limitations": string(NOTE_TEXT), "cases": {"type": "array", "minItems": 3, "maxItems": 12, "items": case},
             "calculation": calculation},
             required=[*claim, "name", "scope", "method", "limitations", "cases"]),
         "select_local_candidate": obj({**claim, "candidate_ref": string(64), "applicability": string(8000),
             "target_grade": choice(("A", "B", "C"), 1),
-            **{key: string(4000) for key in PLANNER_JUSTIFICATION}}),
+            **{key: string(JUSTIFICATION_TEXT) for key in PLANNER_JUSTIFICATION}}),
         "execute_local_claim": obj(claim),
         "record_local_limitation": obj({**claim, "code": choice(PLANNER_LIMITATIONS), "reason": string(8000)}),
     }
@@ -332,7 +338,84 @@ def prior_review_note(candidate, args):
     return None
 
 
-def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=()):
+RECORD_ITEMS = 100
+FETCH_TOOLS = ("fetch_local_reference", "fetch_local_asset", "load_local_resource")
+
+
+def search_record(log, claim_id):
+    """How the planner looked for sources, read from this attempt's workflow log.
+
+    The planner's notes say what it searched; this is what its stream shows it ran ("the search
+    record" in local-contract.md). A WebSearch belongs to the claim the planner's last verifier
+    tool call named, and a fetch to the claim it names itself. Event files are written once and
+    never replaced, so they are read without the log's lock.
+    """
+    if log is None:
+        return {"recorded": False, "note": "No workflow log was attached, so Python recorded no search."}
+
+    def whose(named):
+        return "this claim" if named == claim_id else "another claim" if named else "no claim yet"
+
+    # A selection must never fail on what the stream holds, so every shape is checked, not assumed.
+    def outcome(block):
+        content = block.get("content")
+        parts = content if isinstance(content, list) else [{"text": content}]
+        text = "".join(str(part.get("text") or "") for part in parts if isinstance(part, dict))
+        try:
+            reply = json.loads(text)
+        except (ValueError, RecursionError):
+            return "unreadable result"
+        if not isinstance(reply, dict):
+            return "unreadable result"
+        if reply.get("status") != "ok":
+            error = reply.get("error")
+            return "refused: " + str(error.get("code") if isinstance(error, dict) else reply.get("status"))
+        data = reply.get("data") if isinstance(reply.get("data"), dict) else {}
+        shown = data.get("untrusted_reference") if isinstance(data.get("untrusted_reference"), dict) else {}
+        size = shown.get("text_bytes_total")
+        return str(data.get("outcome")) + (f", {size} bytes of text" if isinstance(size, int) else "")
+
+    searches, fetches, pending, active = [], [], {}, None
+    for path in sorted(no_links(log.directory / "events").glob("[0-9]*.json")):
+        try:
+            item = json.loads(path.read_bytes())
+        except (OSError, ValueError, UnicodeError, RecursionError):
+            continue
+        data = item.get("data") if isinstance(item, dict) else None
+        if not isinstance(data, dict) or item.get("event") != "claude_event" or data.get("role") != "planner":
+            continue
+        payload = data.get("payload")
+        message = payload.get("message") if isinstance(payload, dict) else None
+        blocks = message.get("content") if isinstance(message, dict) else None
+        for block in blocks if isinstance(blocks, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                name = str(block.get("name", "")).rsplit("__", 1)[-1]
+                given = block.get("input") if isinstance(block.get("input"), dict) else {}
+                if name == "WebSearch":
+                    searches.append({"query": str(given.get("query", ""))[:200], "for": whose(active)})
+                    continue
+                if isinstance(given.get("claim_id"), str):
+                    active = given["claim_id"]
+                if name in FETCH_TOOLS:
+                    target = given.get("url") or "operator-resource:" + str(given.get("resource_name", ""))
+                    entry = {"tool": name, "url": str(target)[:200], "for": whose(given.get("claim_id")),
+                             "outcome": "no result recorded"}
+                    fetches.append(entry)
+                    if isinstance(block.get("id"), str):
+                        pending[block["id"]] = entry
+            elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str) \
+                    and block["tool_use_id"] in pending:
+                pending.pop(block["tool_use_id"])["outcome"] = outcome(block)
+    return {"recorded": True, "searches_total": len(searches), "fetches_total": len(fetches),
+            "searches": searches[:RECORD_ITEMS], "fetches": fetches[:RECORD_ITEMS],
+            "note": "Python read these from the planner's own stream in this attempt's workflow log. The "
+                    "justification describes the planner's searches; this records them. A search shown here "
+                    "for another claim can still bear on this one."}
+
+
+def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=(), record=None):
     """The bounded packet a fresh session sees: the design and its facts, no planning."""
     from .documentary import CRITIQUE_RUBRIC
     from .local_science import PLANNER_JUSTIFICATION, answer_form
@@ -348,8 +431,8 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
             "proposed_grade": args["target_grade"], "rubric": CRITIQUE_RUBRIC,
             "prior_objections": [clip(item, 1000) for item in objections],
             "evidence": {"method": candidate["method"], "method_version": candidate["method_version"],
-                         "candidate_scope": clip(candidate["scope"]),
-                         "candidate_limitations": clip(candidate["limitations"]),
+                         "candidate_scope": clip(candidate["scope"], NOTE_TEXT),
+                         "candidate_limitations": clip(candidate["limitations"], NOTE_TEXT),
                          "case_count": len(candidate["cases"]), "trials_per_case": trials,
                          "absolute_tolerance": candidate.get("absolute_tolerance"),
                          "references": [sources[key] for key in sorted(sources)],
@@ -382,8 +465,9 @@ def critique_packet(claim, candidate, references, args, ceiling, limits, trials,
                                                           "url": references[item["reference_ref"]]["url"]}
                                                          for item in candidate["calculation_receipts"]["anchors"]]}}
                             if candidate.get("calculation") else {})},
-            "justification": {key: clip(args[key], 2000) for key in PLANNER_JUSTIFICATION},
+            "justification": {key: clip(args[key], JUSTIFICATION_TEXT) for key in PLANNER_JUSTIFICATION},
             "python_checked": {"evidence_ceiling": ceiling, "evidence_limits": limits,
+                               "search_record": record or search_record(None, None),
                                "note": "Python already verified that every expected answer is quoted exactly "
                                        "from the pinned reference bytes, or, for a case marked calculated, that "
                                        "evidence.calculation's program produced it after reproducing every "
@@ -494,7 +578,8 @@ def select(store, state, claim_id, work, args, subject):
                        if item["outcome"] != "unmeasured"}
             probe = claim_probe(subject, claim, candidate, cache=earlier)
         packet = critique_packet(claim, candidate, references, args, ceiling, limits, trials,
-                                 prior_objections(history))
+                                 prior_objections(history),
+                                 search_record(getattr(subject, "log", None), claim_id))
         work["critique_packet_ref"] = keep(store, state, packet)
         try:
             from .documentary import critique as run_critique

@@ -47,7 +47,10 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # that a listed reference or an unstated search leaves open is a required revision once the grade
 # falls below the proposal. Run fbd49132's critiques saw such gaps and required them only in part;
 # "Claims" in local-contract.md owns testing a claim fact by fact.
-CRITIQUE_RUBRIC={"id":"local-evidence-critique-v10","criteria":[
+# v11 judges a search by python_checked.search_record, which Python reads from the planner's own
+# stream, not by the planner's description: run 26312681's critiques took two claims' described
+# searches as made, and no search had sought their untested facts.
+CRITIQUE_RUBRIC={"id":"local-evidence-critique-v11","criteria":[
         "Whether the expected answers are a fit-for-purpose oracle for this exact claim, independent of the submitted skill",
         "Whether the counting cases and trial count cover the facts the claim states, within its scope, well enough "
         "for the proposed grade, checked as rubric.coverage says",
@@ -94,10 +97,12 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v10","criteria":[
         "place: what it should ask and why that stays inside the claim. Describe it; do not write expected answers.",
         "coverage":"Give criterion 2's finding as a brief list of the facts the claim's statement and expected "
         "behaviour state, each with the counting case that tests it or marked untested. For an untested fact, say "
-        "whether a reference in evidence.references bears on it and whether the justification says what was "
-        "searched for its source. When your grade is below the proposal, each untested fact that a listed reference "
-        "bears on, or that no stated search covers, is a required revision naming the case or search that would "
-        "test it. Listing a gap does not by itself lower your grade; judge that under criterion 2.",
+        "whether a reference in evidence.references bears on it, and whether python_checked.search_record shows a "
+        "search or fetch that sought its source. That record is Python's, read from the planner's own stream; the "
+        "justification only describes searches, and one the record does not show was not made. When your grade is "
+        "below the proposal, each untested fact that a listed reference bears on, or that no recorded search "
+        "sought, is a required revision naming the case or search that would test it. Listing a gap does not by "
+        "itself lower your grade; judge that under criterion 2.",
         "verdict_consistency":"Your objections and verdicts must agree. A case you object to because it tests more "
         "or less than the claim asserts takes that verdict, never counts; an objection about a counting case may "
         "question only how strong it is. Judge each case against the claim's statement and expected behaviour: its "
@@ -135,9 +140,10 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v10","criteria":[
         "its question states, in the units the formula expects. A program that encodes the claim's own formula rather "
         "than the quoted one is not independent evidence of the claim."}
 CRITIQUE_REF=digest(canonical(CRITIQUE_RUBRIC))
-# Every case of a twelve-case design, with its full options, plus the justification and
-# carried concerns, fits under this with room to spare.
-CRITIC_PACKET_LIMIT = 160000
+# The largest packet the tool schemas allow, every field at its maximum with the planner's notes
+# whole and a full search record, is about 500 KB (test_local_science checks it), so a design the
+# tools accept never fails here. Run 26312681's packets were 20 to 23 KB.
+CRITIC_PACKET_LIMIT = 512 * 1024
 # Judging every case and describing replacements takes a critique 60 to 120 seconds; the
 # two-minute deadline it shared with the assessor killed one in run 74eadedd.
 CRITIC_TIMEOUT_SECONDS = 300
