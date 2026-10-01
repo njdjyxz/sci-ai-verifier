@@ -705,9 +705,10 @@ The Local profile matrix in workflow.md governs their legality.
   counting every case. Exactly two proposals are legal: that ceiling, or the grade
   the last critique of that same design settled at. `local_grade_proposal_refused`
   names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling`,
-  `no_supported_execution_grade`, or `prior_review_in_packet` when a note the critique
+  `no_supported_execution_grade`, `prior_review_in_packet` when a note the critique
   would read mentions an earlier review (step 3 of "Negotiating the grade" in
-  `evidence-rubric.md`), with the `field` and `phrase` found — and spends no session.
+  `evidence-rubric.md`), with the `field` and `phrase` found, or `gaps_unsearched` (the
+  coverage-gap return below) — and spends no session.
   Only a proposal that would start a critique is checked. A case's applicability and
   the design's scope and limitations are fixed at qualification, so a note there needs
   a revised candidate. A permitted proposal first measures what a subject knowing only
@@ -750,7 +751,19 @@ The Local profile matrix in workflow.md governs their legality.
   The summary also names the critique's own grade whenever it is below the proposal;
   when the counted cases already meet the requirement, that grade is the only limit.
   Run 31b67427's planner accepted B one counting case short of A, believing it lacked
-  an open case it already had.
+  an open case it already had. Both outcomes carry the critique's `coverage_gaps`.
+  **The coverage-gap return.** Once per claim, a critique whose settled grade equals a
+  proposal below A, and that names `coverage_gaps`, also returns
+  `local_grade_revision_required`, with those gaps, instead of fixing the plan. A gap is
+  a fact the claim states that no counting case tests and that a listed reference bears
+  on or no recorded search sought (`rubric.coverage`). The planner then revises, and the
+  revised design is critiqued as usual and never returned for gaps again; or it searches
+  and accepts. Accepting the returned design's grade is refused as `gaps_unsearched`
+  until Python's search record shows a search or fetch made for this claim since the
+  return; with no workflow log there is no record to check, and acceptance stands. Run
+  3303fd93's planner built three cases for a twelve-fact claim and proposed B; its
+  critique agreed, named a fetched page that could key two more facts, and the plan
+  was fixed with nothing asked of the planner.
   `local_design_unchanged` refuses a repeated proposal on a design already critiqued,
   spending neither a session nor a round, so only real revisions consume the budget.
   `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round,
@@ -770,8 +783,8 @@ The Local profile matrix in workflow.md governs their legality.
   scientific finding; for a claim-only answer it leaves the case unmeasured, and for a
   reading it keeps Python's verdict. A critique
   holds `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string
-  per rubric criterion, in order), `objections` and `required_revisions` (each at most
-  eight strings, empty when there are none), and `case_verdicts`: one entry for every case
+  per rubric criterion, in order), `objections`, `required_revisions` and `coverage_gaps`
+  (each at most eight strings, empty when there are none), and `case_verdicts`: one entry for every case
   ID in the packet and no other, each holding a `verdict` (one of those defined in
   `evidence-rubric.md`), a `reason`, and a `replacement` that is empty for `counts` and
   otherwise describes a case that would test the claim instead. An assessment holds

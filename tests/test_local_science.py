@@ -380,6 +380,7 @@ class IndependentSessionTests(unittest.TestCase):
     def valid_critique(self):
         return {"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
                 "objections":[],"required_revisions":["Add cases covering the rest of the scope."],
+                "coverage_gaps":[],
                 "case_verdicts":{"c":{"verdict":"counts","reason":"in scope","replacement":""}}}
 
     def test_critique_must_answer_inside_its_rubric(self):

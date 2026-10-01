@@ -309,6 +309,9 @@ def prior_objections(history):
         concerns += ["An earlier version's case " + item["case_id"] + " was not counted (" + item["verdict"]
                      + "): " + item["reason"] + " Suggested replacement: " + item["replacement"]
                      for item in rejected_cases(critique)]
+        # What an earlier review found untested is what a revision after the coverage-gap return
+        # has to answer, so the next reviewer is told it as well.
+        concerns += ["An earlier version left a fact untested: " + item for item in critique.get("coverage_gaps") or []]
         for concern in concerns:
             if concern not in found:
                 found.append(concern)
@@ -409,10 +412,19 @@ def search_record(log, claim_id):
                     and block["tool_use_id"] in pending:
                 pending.pop(block["tool_use_id"])["outcome"] = outcome(block)
     return {"recorded": True, "searches_total": len(searches), "fetches_total": len(fetches),
+            "this_claim": {"searches": sum(item["for"] == "this claim" for item in searches),
+                           "fetches": sum(item["for"] == "this claim" for item in fetches)},
             "searches": searches[:RECORD_ITEMS], "fetches": fetches[:RECORD_ITEMS],
             "note": "Python read these from the planner's own stream in this attempt's workflow log. The "
                     "justification describes the planner's searches; this records them. A search shown here "
                     "for another claim can still bear on this one."}
+
+
+def looked(record):
+    """How many searches and fetches the record shows for its claim, or None with no record."""
+    if not record.get("recorded"):
+        return None
+    return record["this_claim"]["searches"] + record["this_claim"]["fetches"]
 
 
 def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=(), record=None):
@@ -533,6 +545,21 @@ def select(store, state, claim_id, work, args, subject):
     # concluded that the design supports no grade: executing it still produces ungraded
     # comparison evidence and the documentary path.
     accepting = bool(settled) and (args["target_grade"] == accepted or accepted is None)
+    returned = store.get_json(work["gap_return_ref"]) if work.get("gap_return_ref") else None
+    if accepting and returned and returned["candidate_fingerprint"] == identity:
+        # The coverage-gap return asked for a search; accepting is the planner saying none found a
+        # source, so Python's own record must show one since the return.
+        before, now = returned["looked"], looked(search_record(getattr(subject, "log", None), claim_id))
+        if before is not None and now is not None and now <= before:
+            return {"outcome": "local_grade_proposal_refused", "reason": "gaps_unsearched",
+                    "evidence_ceiling": ceiling, "evidence_limits": limits, "candidate_ref": key,
+                    "coverage_gaps": settled.get("coverage_gaps") or [],
+                    "acceptable_grades": sorted({item for item in (ceiling, accepted) if item}),
+                    "message": "This design came back for the coverage gaps its critique named, and Python's "
+                               "search record shows no search or fetch for this claim since. Search for a "
+                               "source for each gap, then accept " + str(accepted) + ", or add cases for the "
+                               "gaps and propose the new ceiling."}
+    record = None
     if accepting:
         critique = settled  # Re-running that judgment on the same evidence buys nothing.
     elif state["subject_config"]["synthetic"]:
@@ -577,9 +604,9 @@ def select(store, state, claim_id, work, args, subject):
                        for item in ((record.get("critique") or {}).get("claim_probe") or {}).get("cases", [])
                        if item["outcome"] != "unmeasured"}
             probe = claim_probe(subject, claim, candidate, cache=earlier)
+        record = search_record(getattr(subject, "log", None), claim_id)
         packet = critique_packet(claim, candidate, references, args, ceiling, limits, trials,
-                                 prior_objections(history),
-                                 search_record(getattr(subject, "log", None), claim_id))
+                                 prior_objections(history), record)
         work["critique_packet_ref"] = keep(store, state, packet)
         try:
             from .documentary import critique as run_critique
@@ -614,7 +641,17 @@ def select(store, state, claim_id, work, args, subject):
     rejected = rejected_cases(critique) if critique and not accepting else []
     replacements_used = sum(1 for record in history if rejected_cases(record.get("critique")))
     replacements_spent = bool(rejected) and replacements_used >= REPLACEMENT_ROUNDS
-    if (critique and not accepting and audit_record["settled_ceiling"] != args["target_grade"]
+    gaps = list(critique.get("coverage_gaps") or []) if critique and not accepting else []
+    # The coverage-gap return (tool-contracts.md): a critique agreeing with a proposal below A while
+    # naming facts no case tests sends the claim back once rather than fixing it. Run 3303fd93's
+    # planner built three cases for a twelve-fact claim, and its agreeing critique reached nobody.
+    returning = (bool(gaps) and not work.get("gap_return_ref") and args["target_grade"] != "A"
+                 and audit_record["settled_ceiling"] == args["target_grade"]
+                 and rounds < MAX_ROUNDS and not replacements_spent)
+    if returning:
+        work["gap_return_ref"] = keep(store, state, {"kind": "local-gap-return", "candidate_fingerprint": identity,
+                                                     "round": rounds, "looked": looked(record) if record else None})
+    if (critique and not accepting and (audit_record["settled_ceiling"] != args["target_grade"] or returning)
             and rounds < MAX_ROUNDS and not replacements_spent):
         # Strengthen the evidence and propose the new ceiling, or accept this grade.
         # On the last round the settled grade is fixed instead of offered.
@@ -623,11 +660,18 @@ def select(store, state, claim_id, work, args, subject):
                 "settled_grade": audit_record["settled_ceiling"],
                 "objections": critique["objections"],
                 "required_revisions": critique["required_revisions"],
+                "coverage_gaps": gaps,
                 "case_replacements": rejected,
                 "rounds_remaining": MAX_ROUNDS - rounds,
                 "replacement_rounds_remaining": REPLACEMENT_ROUNDS - replacements_used - bool(rejected),
                 "case_gap": case_gap(candidate, counted_cases(critique), args["target_grade"],
-                                     critique["supported_grade"])}
+                                     critique["supported_grade"]),
+                **({"message": "The critique agreed with " + args["target_grade"] + " but named facts no "
+                               "counting case tests, in coverage_gaps. Add cases for them and propose the new "
+                               "ceiling, or search for a source for each and then accept "
+                               + args["target_grade"] + ": Python accepts it only once its search record shows "
+                               "a search or fetch for this claim made since this return, which comes once per "
+                               "claim."} if returning else {})}
     state["claim_states"][claim_id] = "local_ready"
     return {"outcome": "local_plan_fixed", "candidate": candidate,
             "selection_ref": work["selection_ref"], "audit": audit_record}
@@ -1289,6 +1333,12 @@ def report(store, state):
                               +cell(settled["critique"]["supported_grade"] or "none")+":",""])
                 lines.extend("- "+cell(finding) for finding in settled["critique"]["findings"])
                 lines.extend("- Objection: "+cell(item) for item in settled["critique"]["objections"])
+                lines.extend("- Coverage gap: "+cell(item) for item in settled["critique"].get("coverage_gaps") or [])
+                if work.get("gap_return_ref"):
+                    lines.append("- Returned once for coverage gaps: a critique in round "
+                                 +str(store.get_json(work["gap_return_ref"])["round"])
+                                 +" agreed with the proposed grade but named facts no case tested, so the planner "
+                                 "had to add cases or search before that grade could be accepted.")
                 from .local_science import rejected_cases
                 # In case order: the critique's rejections, and Python's, marked, for cases the
                 # claim-only answers missed.

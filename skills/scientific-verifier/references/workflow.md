@@ -538,7 +538,9 @@ finish without doing the work:
   `local_grade_revision_required` whenever the settled grade — the weakest of the
   proposal, the ceiling over the cases that count and the critique's own grade — is
   below the proposal. A case counts when the critique counted it and the claim-only
-  answers `tool-contracts.md` describes did not miss its key. Repeating the call with a strengthened design or
+  answers `tool-contracts.md` describes did not miss its key. Once per claim it also
+  returns it when a critique agrees with a proposal below A but names coverage gaps,
+  the coverage-gap return of `tool-contracts.md`. Repeating the call with a strengthened design or
   the settled grade is the negotiation. After the installed round limit, or once the
   replacement rounds in `evidence-rubric.md` are spent and a critique still rejects
   cases, the settled grade is fixed and the claim reaches `local_ready`.

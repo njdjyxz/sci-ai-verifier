@@ -43,6 +43,7 @@ deterministic tools, bounded processes and saved evidence.
 | `d3892f6c` (2026-09-29) | scikit-survival | 4 at A, 1 at B; 81 of 81 counted trials passed, 9 of them by the AI reader; 0 invalid, 0 faults |
 | `fbd49132` (2026-09-29) | tooluniverse-dose-response | 1 at A, 3 at B; 51 of 51 counted trials passed, 0 invalid, 0 faults; every claim left facts it states untested |
 | `26312681` (2026-09-30) | tooluniverse-dose-response | 2 at A, 2 at B; 57 of 57 counted trials passed, 2 of them by the AI reader; 0 invalid, 0 faults |
+| `3303fd93` (2026-10-01) | tooluniverse-dose-response | 1 at A, 3 at B; 48 of 48 counted trials passed, 8 of them by the AI reader; 0 invalid, 0 faults |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -111,7 +112,7 @@ Calculated answers met their first run in `fbd49132`: two designs were keyed by 
 first reproduced worked examples quoted from their references. That run also showed planners
 testing only part of what a claim states, which the 2026-09-30 entry addresses.
 
-Automated suite: **429 tests, 427 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **433 tests, 431 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -1161,3 +1162,136 @@ claim, the facts stated and tested and the WebSearch queries made while working 
 designed below A with no search, and whether its critique names the facts no search sought; each
 critique's required revisions and whether the next design answered them; the grades; and run time
 against 7,200 s and subject calls against 128. It is finished when each has a recorded answer.
+
+## Claude: 2026-10-01 (run 3303fd93; a plan that settles at its own proposal comes back once for coverage gaps)
+
+### Current stage and status
+
+Version 0.7.0, local workflow, on `skill-environments`. Run `3303fd93` used the 2026-09-30 fixes
+(`66ff13e`): every critique judged the planner's searches by Python's record and named what was left
+untested. The planner still built three claims to B's minimum, and their critiques agreed with B, so
+those findings reached only the report. On the operator's go-ahead, open question 4 of the
+2026-09-30 entry is now built as **the coverage-gap return**: once per claim, a critique that agrees
+with a proposal below A but names coverage gaps sends the plan back, and its grade is then accepted
+only after Python's record shows a new search for the claim. It is replayed live (below) and **not
+yet seen in a run**.
+
+### What has been done
+
+This session, 2026-10-01:
+
+**1. Run `3303fd93`**, tooluniverse-dose-response, on `66ff13e`, from a session whose `serve-local`
+started at 13:41, after that commit, with `--timeout 7200`. `26312681`'s files were moved first.
+- **Result.** C1 (the 4PL equation) at A; C2 (data preparation), C3 (reading the parameters) and C4
+  (quality gotchas) at B; all `pass`. 48 of 48 counted trials passed and the 3 uncounted ones too;
+  none invalid, missing or refused; every case unanimous.
+- **The AI reader decided 8 trials.** In C2, "ic50" for the `exact` key "IC50" (2). In C4, "Cheng-Prusoff
+  correction" for the term key "Cheng-Prusoff" (3), and "wider concentrations" for "concentration
+  range" (3); the skill's own words are "recommend wider concentrations", so that key was the
+  planner's paraphrase. By Python's reader alone C2 is 7 of 9 and C4 6 of 12, both `fail`.
+- **Time and cost.** 2,791 s of 7,200, and 51 of 128 subject calls. About $18.04 at API rates: the
+  planner $12.56 over 47 turns, 51 subjects $2.15, 5 critiques $2.67, 36 claim-only sessions $0.53 and
+  10 readings $0.13. The 5-hour window went from 5% to 41%.
+- **The new code ran.** `local_method_ref` equals the tree's digest, `578b3c4c…`; the critiques carry
+  rubric v11 and a search record.
+- **Against `26312681`, as the 2026-09-30 entry asked:**
+  - every critique's coverage finding used the record. C3's, for example: "the record shows no search
+    aimed at curve completeness for this claim", and of Emax and Emin, "the Prism variable-slope page
+    (fetched twice, once for this claim) … bear[s] on Top/Emax, so a case here was available";
+  - facts tested, from each critique's list: C1 3 of 6, C2 2 of 7, C3 3 of about 12, C4 2 of 5
+    gotchas;
+  - WebSearch: C1 7 queries, C2 2, **C3 and C4 none**; those two fetched two pages each by URL;
+  - claims designed below A: C2 with 4 cases (6 in `26312681`), C3 with 3 (4), C4 with 3 then 4. C2
+    and C3 were proposed at B, agreed and fixed at once, so their critiques could ask for nothing;
+  - C4's first critique supported C below a proposed B and required five revisions. The next design
+    replaced the leaked case and restored the case count, and **skipped the sparse-sampling and
+    biphasic cases** it also required, with no search;
+  - C2's first proposal was refused for `prior_review_in_packet` and spent no session;
+  - grades 1 A + 3 B, against 2 A + 2 B; time 2,791 s against 3,328; subject calls 51 against 60.
+- Report: `.verifier/runs/3303fd93-9621-42bc-8253-ea2115cc2709/report-card.md`, outside Git.
+
+**2. The coverage-gap return**, on the operator's go-ahead ("yes, build it and record the run"),
+contracts first:
+- `tool-contracts.md`, `select_local_candidate`, owns it. Once per claim, a critique whose settled
+  grade equals a proposal below A and that names `coverage_gaps` returns
+  `local_grade_revision_required` with those gaps instead of fixing the plan. A revised design is
+  critiqued as usual and never returned for gaps again. Accepting the returned design's grade is
+  refused as `gaps_unsearched` until Python's search record shows a search or fetch for the claim
+  since the return; with no workflow log there is nothing to check and acceptance stands. The
+  critique's reply gains `coverage_gaps`.
+- `workflow.md`'s local transition for `select_local_candidate` and `local-contract.md`'s negotiation
+  paragraph point to it, in the same commit.
+- Code:
+  - `documentary.py`: rubric v11 → v12, asking for those gaps in `coverage_gaps` whatever the grade;
+    the reply schema gains the field.
+  - `local.py`: `select` makes the return and the acceptance check; the search record counts this
+    claim's searches and fetches over the whole stream, not the listed 100; the gap return is a
+    stored object, `gap_return_ref`, as every claim work field must be; the next critique is told the
+    earlier gaps among the concerns it checks; the report prints each coverage gap and says when a
+    claim came back.
+  - `local_entry.py`: the planner prompt's step 4 names the return.
+- Verification:
+  - Suite 429 → 433 tests, 431 passing and 2 skipped. New, through `select` with a stand-in critique:
+    an agreeing critique with gaps sends a B plan back once; accepting at once is refused as
+    `gaps_unsearched`; after one recorded search the same grade is accepted with no new session, and
+    the report prints the gap and the return; a revised design with gaps left is fixed, with the
+    earlier gaps among its critique's concerns; a plan at A, or with no gaps, is fixed at once; with
+    no workflow log the returned grade is accepted.
+  - Sizes: the pinned `local-contract.md` is 39,514 of 40,960 bytes and `tool-contracts.md` 26,494; the
+    verification bootstrap is unchanged at 199,970 of 200,000.
+  - **Live recording**, $0.40: `d416f79d`'s packet under v12 settled at B with all three cases counted
+    and no coverage gaps, every fact of that claim being tested. Its first reply added a stray
+    `evidence_limits` key, which Claude Code refused and the session resent.
+  - **Replays** of `3303fd93`'s C2, C3 and C4 (second round) packets, rebuilt with today's code and
+    matching what was sent apart from the rubric and the record's new counts, $1.68. C3 settled at B,
+    its proposal, with 8 `coverage_gaps` (the Hill-slope and r² thresholds, Emax, Emin, the tested-range
+    rule and fold-shift), and C4 at B with 5, among them the sparse-sampling and biphasic gotchas its
+    first critique had required. **Under today's code both would come back to the planner.** C2's
+    sample judged one more case `leaked`, so it would settle below its proposal and take the ordinary
+    revision path, with 5 required revisions and 6 gaps.
+  - Not verified: any of this in a run.
+
+### Decisions taken 2026-10-01
+
+- **Build the coverage-gap return** (operator), answering open question 4 of the 2026-09-30 entry.
+- Proposed here and built: only below A, since A is the strongest grade and its critique judged
+  the coverage enough; once per claim; acceptance afterwards needs a new search or fetch in Python's
+  record; the gaps travel to the next critique; the report discloses the return.
+
+### Open questions for the operator
+
+1. The 2026-09-30 entry's questions 1 to 3, 5 and 6 stand; question 4 is answered above.
+2. **The AI reader now decides grades.** C2 and C4 pass only through it, and "wider concentrations"
+   for "concentration range" is a paraphrase, not a format difference (2026-09-29, question 1).
+3. **A revision may answer some required revisions and still settle.** C4's did, here and in
+   `fbd49132`. The coverage-gap return does not cover a critique below the proposal.
+
+### Urgent next steps, if any
+
+None. Committed and pushed on `skill-environments` with this entry.
+
+### Suggested next move
+
+Run tooluniverse-dose-response again, so the coverage-gap return meets a planner that builds to the
+minimum.
+
+### Recommended next action
+
+With the operator's go-ahead:
+1. Move, do not delete, into the session scratchpad:
+   - `.verifier/runs/3303fd93-9621-42bc-8253-ea2115cc2709`
+   - `.verifier/attempts/5f8d7dc2-6b53-44cc-a04b-d4a7d012ee03`
+   - `.verifier/subject-runs/3303fd93-9621-42bc-8253-ea2115cc2709`
+   - the six candidates it wrote, dated 2026-10-01, 13:50 to 14:24
+
+   Keep the glycoengineering run, its attempt, subject-runs and five candidates, and
+   `.verifier/store/`. `26312681`'s files, 3,311 and ten candidates, were moved on 2026-10-01 to
+   `cleaned-26312681` in scratchpad `c7991202…`.
+2. Start a new Code-tab session, so that `serve-local` starts after this commit, and check Docker and
+   the 5-hour window as the 2026-09-28 entry says.
+3. Run tooluniverse-dose-response.
+
+Record, against `3303fd93`: each coverage-gap return, and what the planner did after it (searches,
+new cases, or an acceptance and whether it was refused); the facts tested per claim; the WebSearch
+queries per claim; the grades; the trials the AI reader decided; and run time against 7,200 s and
+subject calls against 128. It is finished when each has a recorded answer.

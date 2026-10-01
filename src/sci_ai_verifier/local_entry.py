@@ -48,10 +48,12 @@ committed artifact if you lose this message.
    is claiming more. An independent critique session then judges whether the evidence really
    fits the claim.
 4. If it returns local_grade_revision_required, revise: qualify a stronger design that answers
-   every required revision and case replacement, and propose its new ceiling. Accept the grade
-   the critique supported only when step 4 of "Negotiating the grade" allows it; saving time is
-   no reason. Proposing again on the same design is refused and wins nothing. Do not argue with
-   the critique and do not aim low to be safe.
+   every required revision, case replacement and coverage gap, and propose its new ceiling.
+   Accept the grade the critique supported only when step 4 of "Negotiating the grade" allows
+   it; saving time is no reason. A return for coverage gaps comes after a critique that agreed
+   with your grade, once per claim; accepting then needs a search for each gap first. Proposing
+   again on the same design is refused and wins nothing. Do not argue with the critique and do
+   not aim low to be safe.
 5. Execute the settled plan and follow the state Python returns. An execution that supports
    no grade moves to local_documentary, where an independent assessor judges cited sources.
 6. record_local_limitation is only for a cause you actually hit, and U is only for a genuine

@@ -50,7 +50,10 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # v11 judges a search by python_checked.search_record, which Python reads from the planner's own
 # stream, not by the planner's description: run 26312681's critiques took two claims' described
 # searches as made, and no search had sought their untested facts.
-CRITIQUE_RUBRIC={"id":"local-evidence-critique-v11","criteria":[
+# v12 asks for those gaps in `coverage_gaps` whatever the grade, so Python can return a plan that
+# settled at its own proposal ("the coverage-gap return" in tool-contracts.md): run 3303fd93's
+# critiques named such gaps on three claims settled at B, and nothing reached the planner.
+CRITIQUE_RUBRIC={"id":"local-evidence-critique-v12","criteria":[
         "Whether the expected answers are a fit-for-purpose oracle for this exact claim, independent of the submitted skill",
         "Whether the counting cases and trial count cover the facts the claim states, within its scope, well enough "
         "for the proposed grade, checked as rubric.coverage says",
@@ -101,8 +104,10 @@ CRITIQUE_RUBRIC={"id":"local-evidence-critique-v11","criteria":[
         "search or fetch that sought its source. That record is Python's, read from the planner's own stream; the "
         "justification only describes searches, and one the record does not show was not made. When your grade is "
         "below the proposal, each untested fact that a listed reference bears on, or that no recorded search "
-        "sought, is a required revision naming the case or search that would test it. Listing a gap does not by "
-        "itself lower your grade; judge that under criterion 2.",
+        "sought, is a required revision naming the case or search that would test it. Whatever your grade, list "
+        "every such fact in coverage_gaps too, each with the case or search that would test it, and leave it "
+        "empty when there is none. Listing a gap does not by itself lower your grade; judge that under "
+        "criterion 2.",
         "verdict_consistency":"Your objections and verdicts must agree. A case you object to because it tests more "
         "or less than the claim asserts takes that verdict, never counts; an objection about a counting case may "
         "question only how strong it is. Judge each case against the claim's statement and expected behaviour: its "
@@ -196,6 +201,9 @@ def critique_schema(case_ids):
         "objections": texts(description="Specific defects you can name; empty if there are none."),
         "required_revisions": texts(description="Each a change that would justify the proposed grade; empty if "
                                                 "it is already justified."),
+        "coverage_gaps": texts(description="Each untested fact rubric.coverage names, one a listed reference "
+                                           "bears on or no recorded search sought, with the case or search "
+                                           "that would test it; empty if there is none."),
         "case_verdicts": strict({case_id: verdict for case_id in case_ids},
                                 "One verdict for every case in evidence.cases, keyed by its case_id: counts with an "
                                 "empty replacement, or another key of rubric.case_verdicts with a replacement.")})

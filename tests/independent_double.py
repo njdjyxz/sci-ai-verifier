@@ -40,7 +40,8 @@ def _envelope(packet, rubric_ref, role):
             "independence": INDEPENDENCE, "ai_judgment": True}
 
 
-def critic_reply(packet, supported, *, findings=None, objections=(), required_revisions=(), rejected=None):
+def critic_reply(packet, supported, *, findings=None, objections=(), required_revisions=(), rejected=None,
+                 coverage_gaps=()):
     """Shaped exactly as `documentary.critique` returns, including the "none" -> None mapping.
 
     Every packet case counts unless `rejected` maps its case ID to a verdict.
@@ -54,7 +55,7 @@ def critic_reply(packet, supported, *, findings=None, objections=(), required_re
         "supported_grade": supported,
         "findings": list(findings) if findings else ["Fixture critique finding."] * len(CRITIQUE_RUBRIC["criteria"]),
         "objections": list(objections), "required_revisions": list(required_revisions),
-        "case_verdicts": verdicts}, case_ids)
+        "coverage_gaps": list(coverage_gaps), "case_verdicts": verdicts}, case_ids)
     return {**value, **_envelope(packet, CRITIQUE_REF, "critic")}
 
 

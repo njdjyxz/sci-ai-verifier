@@ -29,7 +29,7 @@ RECORDED = Path(__file__).resolve().parent / "recorded"
 # code that reads them: the assessor and the claim-only answer on 2026-09-28, the critique under
 # rubric v9 and the two readings on 2026-09-29. Where the first reply broke the schema and the
 # session corrected it, the recording maps to the key its refused reply added.
-STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "StructuredOutput", "assessor-structured.jsonl": None,
+STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "evidence_limits", "assessor-structured.jsonl": None,
                          "claim-probe-structured.jsonl": "a", "reader-matches.jsonl": None,
                          "reader-differs.jsonl": None}
 # Streams that are not the verifier's own replies, exercised by their own tests.
@@ -98,9 +98,9 @@ class RecordedReplyTests(unittest.TestCase):
     def test_a_reply_the_schema_refused_was_corrected_in_the_same_session(self):
         """The slips a free-text reader met one lost claim at a time. Run 0a243b7e lost a claim to an
         empty extra key; here a claim-only answer added a stray `a`, and the critique recorded under
-        rubric v11 a stray `StructuredOutput`, as the ones under rubrics v10 and v8 had added
-        `evidence_ceiling` and wrapped their reply in `$PARAMETER_NAME` (Git history keeps both).
-        Claude Code refused each and the session resent it."""
+        rubric v12 a stray `evidence_limits`, as earlier ones added `StructuredOutput` (v11) and
+        `evidence_ceiling` (v10) and wrapped their reply in `$PARAMETER_NAME` (v8); Git history keeps
+        them. Claude Code refused each and the session resent it."""
         for name, stray in STRUCTURED_RECORDINGS.items():
             with self.subTest(recording=name):
                 attempts = reply_attempts(recorded(name))
@@ -210,10 +210,13 @@ class RecordedReplyTests(unittest.TestCase):
         says what each answer type compares, so the comparison rule can be judged against the claim;
         v10 lists the claim's facts against the cases, and turns a gap a listed reference or an
         unrecorded search leaves open into a required revision; v11 judges a search by the record
-        Python reads from the planner's stream, not by the planner's description. Each rule is the
+        Python reads from the planner's stream, not by the planner's description; v12 lists those
+        gaps in coverage_gaps whatever the grade, for the coverage-gap return. Each rule is the
         mirror of a contract passage, which owns it."""
         from sci_ai_verifier.answers import TYPES
-        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v11")
+        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v12")
+        self.assertIn("coverage_gaps", CRITIQUE_RUBRIC["coverage"])
+        self.assertIn("Whatever your grade", CRITIQUE_RUBRIC["coverage"])
         self.assertIn("rubric.coverage", CRITIQUE_RUBRIC["criteria"][1])
         self.assertIn("evidence.references", CRITIQUE_RUBRIC["coverage"])
         self.assertIn("python_checked.search_record", CRITIQUE_RUBRIC["coverage"])
@@ -415,7 +418,7 @@ class SchemaShapeTests(unittest.TestCase):
 
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(CRITIQUE_RUBRIC["criteria"]),
-                "objections": [], "required_revisions": [],
+                "objections": [], "required_revisions": [], "coverage_gaps": [],
                 "case_verdicts": {"c1": self.verdict(), "c2": self.verdict("leaked", "Ask it without naming the key.")},
                 **changes}
 

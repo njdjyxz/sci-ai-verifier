@@ -189,7 +189,10 @@ critique counted and the claim-only answers did not miss, and that critique's gr
 When the settled grade is below the proposal, the planner revises before it accepts, as
 step 4 of "Negotiating the grade" in `evidence-rubric.md` says: a stronger design and its
 new ceiling earn another round, and accepting the grade that design settled at settles
-immediately without another session. Repeating a proposal on
+immediately without another session. A critique that agrees with a proposal below A but
+names coverage gaps returns the claim once, and its grade is accepted only after a new
+search (the coverage-gap return under `select_local_candidate` in `tool-contracts.md`).
+Repeating a proposal on
 a design already critiqued is refused and consumes neither a session nor a round, so
 the budget of one round per rubric grade bounds real revisions rather than repetition.
 Rounds with rejected cases, whether the critique or the claim-only answers rejected
