@@ -112,7 +112,7 @@ Calculated answers met their first run in `fbd49132`: two designs were keyed by 
 first reproduced worked examples quoted from their references. That run also showed planners
 testing only part of what a claim states, which the 2026-09-30 entry addresses.
 
-Automated suite: **433 tests, 431 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **438 tests, 436 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -1163,18 +1163,22 @@ designed below A with no search, and whether its critique names the facts no sea
 critique's required revisions and whether the next design answered them; the grades; and run time
 against 7,200 s and subject calls against 128. It is finished when each has a recorded answer.
 
-## Claude: 2026-10-01 (run 3303fd93; a plan that settles at its own proposal comes back once for coverage gaps)
+## Claude: 2026-10-01 (run 3303fd93; a plan that settles at its own proposal comes back for coverage gaps or unanswered requests)
 
 ### Current stage and status
 
 Version 0.7.0, local workflow, on `skill-environments`. Run `3303fd93` used the 2026-09-30 fixes
 (`66ff13e`): every critique judged the planner's searches by Python's record and named what was left
 untested. The planner still built three claims to B's minimum, and their critiques agreed with B, so
-those findings reached only the report. On the operator's go-ahead, open question 4 of the
-2026-09-30 entry is now built as **the coverage-gap return**: once per claim, a critique that agrees
-with a proposal below A but names coverage gaps sends the plan back, and its grade is then accepted
-only after Python's record shows a new search for the claim. It is replayed live (below) and **not
-yet seen in a run**.
+those findings reached only the report. On the operator's go-ahead, two returns are now built
+(`1ae07f8`, then section 3), both for a critique that agrees with a proposal below A:
+- **the coverage-gap return**, once per claim, when the critique names coverage gaps;
+- **the concern return**, while rounds remain, when the next critique, now shown every revision an
+  earlier one required, judges one unanswered. That critique is the AI judge, as the operator asked;
+  Python checks its `searched_no_source` verdicts against the search record.
+
+After either return the grade is accepted only once Python's record shows a new search for the claim.
+Both are replayed live (below) and **not yet seen in a run**.
 
 ### What has been done
 
@@ -1233,7 +1237,8 @@ contracts first:
 - Verification:
   - Suite 429 → 433 tests, 431 passing and 2 skipped. New, through `select` with a stand-in critique:
     an agreeing critique with gaps sends a B plan back once; accepting at once is refused as
-    `gaps_unsearched`; after one recorded search the same grade is accepted with no new session, and
+    `gaps_unsearched` (renamed `return_unsearched` in section 3, which shares it); after one recorded
+    search the same grade is accepted with no new session, and
     the report prints the gap and the return; a revised design with gaps left is fixed, with the
     earlier gaps among its critique's concerns; a plan at A, or with no gaps, is fixed at once; with
     no workflow log the returned grade is accepted.
@@ -1251,20 +1256,80 @@ contracts first:
     revision path, with 5 required revisions and 6 gaps.
   - Not verified: any of this in a run.
 
+**3. The concern return**, on the operator's go-ahead ("let AI reader do the job"; then "build it and
+do all tests you need"). A revision could answer some of the revisions its critique required and still
+settle, as C4's did here and in `fbd49132`, because the next critique was never shown the required
+revisions (only objections and rejected cases), and its prose answer to "is each concern answered"
+changed nothing. Contracts first:
+- `tool-contracts.md`, `select_local_candidate`: the critique receives earlier required revisions and
+  coverage gaps among its concerns and gives each a verdict in `prior_verdicts`: `answered`,
+  `searched_no_source`, `unanswered` or `no_longer_applies`. *The concern return*: while rounds
+  remain, a critique agreeing with a proposal below A that judges a concern `unanswered` returns
+  `local_grade_revision_required` with `unanswered_concerns`. A `searched_no_source` verdict stands only
+  when Python's search record shows a search or fetch for the claim since the previous critique;
+  otherwise Python counts the concern unanswered, as it overrules an AI reading its own reader settles
+  the other way. Both returns share one refusal, `return_unsearched`.
+- `workflow.md`'s local transition and `local-contract.md`'s packet and negotiation paragraphs follow.
+- Code:
+  - `documentary.py`: rubric v12 → v13, with `prior_verdicts` and criterion 5 pointing to it; the reply
+    schema holds exactly one verdict per concern; each stored verdict carries the concern it judges.
+  - `local.py`: earlier required revisions join the concerns; each critique stores Python's search
+    count and `unanswered_concerns` after that check; `select` makes the return, kept as
+    `concern_return_ref`, and the acceptance check covers both returns; the report prints each
+    concern left unanswered and says when a claim came back for one.
+  - `local_entry.py`: step 4 of the planner prompt names both returns.
+- **The critique's deadline**, owned by `local-contract.md`, goes from five minutes to ten, and each
+  concern's reason is held to one sentence. Live critiques took 90 to 210 seconds before v13, and both
+  first v13 replays of a packet carrying eleven concerns ran past five minutes, which in a run would
+  end the claim as an operational failure.
+- Verification:
+  - Suite 433 → 438 tests, 436 passing and 2 skipped. New, through `select`: an agreeing critique that
+    finds a carried required revision `unanswered` sends a B plan back, and the second critique is
+    shown "An earlier review required: …"; accepting at once is refused as `return_unsearched`, and
+    after a recorded search accepted; the report prints the concern and the return; a
+    `searched_no_source` verdict with no search since the previous critique is counted unanswered, and
+    with one it stands; an answered request, or a plan at A, settles at once. The reply schema refuses
+    a missing, extra or unknown verdict.
+  - Sizes: the pinned `local-contract.md` is 39,772 of 40,960 bytes; the verification bootstrap is
+    unchanged at 199,970 of 200,000.
+  - **Live recording**, $0.31: `d416f79d`'s packet under v13 settled at B with all three cases counted,
+    no gaps and no earlier concerns, in 76 s. Its first reply added a stray `StructuredOutput` key,
+    which Claude Code refused and the session resent.
+  - **Replays**, $3.55 for the five that completed (the two that timed out left no cost record):
+    `3303fd93`'s C4 second round, rebuilt with today's
+    code and now carrying the first round's five required revisions, in three samples (154 to 200 s).
+    **Each judged the same three unanswered**, the sparse-sampling case, the biphasic case and
+    broadening c2's synonyms, with the objection behind the last, and the two the planner made
+    `answered`. Under today's code C4 would come back with four unanswered concerns as well as its gaps.
+  - **Negative control**: `26312681`'s C2 second round, whose revision answered all four requests.
+    Both first samples ran past five minutes; under the final rubric they took 291 and 218 s. Three
+    requests were `answered` and the fourth, "record the search that failed" for the point count,
+    `searched_no_source`, which Python's check overrules because that search came before the request.
+    Neither sample would return the claim: one supported A, the other B below the proposed A.
+  - Not verified: any of this in a run.
+
 ### Decisions taken 2026-10-01
 
 - **Build the coverage-gap return** (operator), answering open question 4 of the 2026-09-30 entry.
 - Proposed here and built: only below A, since A is the strongest grade and its critique judged
   the coverage enough; once per claim; acceptance afterwards needs a new search or fetch in Python's
   record; the gaps travel to the next critique; the report discloses the return.
+- **Build the concern return with the next critique as the AI judge** (operator). Proposed here and
+  built: the critique, not a separate reader, since it already reads the old concerns beside the new
+  design; below A only; while rounds remain rather than once, since each round costs a critique and
+  the round limit bounds it; Python checks `searched_no_source` against its record; one refusal reason
+  for both returns. `gaps_unsearched` became `return_unsearched` before any run used it.
 
 ### Open questions for the operator
 
 1. The 2026-09-30 entry's questions 1 to 3, 5 and 6 stand; question 4 is answered above.
 2. **The AI reader now decides grades.** C2 and C4 pass only through it, and "wider concentrations"
    for "concentration range" is a paraphrase, not a format difference (2026-09-29, question 1).
-3. **A revision may answer some required revisions and still settle.** C4's did, here and in
-   `fbd49132`. The coverage-gap return does not cover a critique below the proposal.
+3. A revision answering only some required revisions is now answered by the concern return (section
+   3). **Its search check is strict:** a request answered by recording a search made before it was
+   raised still needs a new search before the grade is accepted, one search call at worst. The
+   negative control met exactly this, harmlessly. Relaxing it to any search for the claim would let a
+   planner cite searches made for other facts.
 
 ### Urgent next steps, if any
 
@@ -1291,7 +1356,9 @@ With the operator's go-ahead:
    the 5-hour window as the 2026-09-28 entry says.
 3. Run tooluniverse-dose-response.
 
-Record, against `3303fd93`: each coverage-gap return, and what the planner did after it (searches,
-new cases, or an acceptance and whether it was refused); the facts tested per claim; the WebSearch
+Record, against `3303fd93`: each coverage-gap return and concern return, with the concerns the
+critiques judged unanswered and any `searched_no_source` verdict Python overruled, and what the planner
+did after each (searches, new cases, or an acceptance and whether it was refused); the facts tested
+per claim; the WebSearch
 queries per claim; the grades; the trials the AI reader decided; and run time against 7,200 s and
 subject calls against 128. It is finished when each has a recorded answer.

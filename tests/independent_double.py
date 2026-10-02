@@ -41,21 +41,27 @@ def _envelope(packet, rubric_ref, role):
 
 
 def critic_reply(packet, supported, *, findings=None, objections=(), required_revisions=(), rejected=None,
-                 coverage_gaps=()):
+                 coverage_gaps=(), prior=None):
     """Shaped exactly as `documentary.critique` returns, including the "none" -> None mapping.
 
-    Every packet case counts unless `rejected` maps its case ID to a verdict.
+    Every packet case counts unless `rejected` maps its case ID to a verdict, and every earlier
+    concern is `answered` unless `prior` maps a word it contains to another verdict.
     """
-    rejected = rejected or {}
+    rejected, prior = rejected or {}, prior or {}
     case_ids = [case["case_id"] for case in packet["evidence"]["cases"]]
+    concerns = list(packet.get("prior_objections") or [])
     verdicts = {key: {"verdict": rejected.get(key, "counts"), "reason": "Fixture case verdict.",
                       "replacement": "Fixture replacement: ask what the claim states." if key in rejected else ""}
                 for key in case_ids}
+    judged = [{"verdict": next((verdict for word, verdict in prior.items() if word in concern), "answered"),
+               "reason": "Fixture verdict on an earlier concern."} for concern in concerns]
     value = validate_critique({
         "supported_grade": supported,
         "findings": list(findings) if findings else ["Fixture critique finding."] * len(CRITIQUE_RUBRIC["criteria"]),
         "objections": list(objections), "required_revisions": list(required_revisions),
-        "coverage_gaps": list(coverage_gaps), "case_verdicts": verdicts}, case_ids)
+        "coverage_gaps": list(coverage_gaps), "prior_verdicts": judged, "case_verdicts": verdicts},
+        case_ids, len(concerns))
+    value["prior_verdicts"] = [{"concern": concern, **verdict} for concern, verdict in zip(concerns, value["prior_verdicts"])]
     return {**value, **_envelope(packet, CRITIQUE_REF, "critic")}
 
 

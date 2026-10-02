@@ -309,8 +309,10 @@ def prior_objections(history):
         concerns += ["An earlier version's case " + item["case_id"] + " was not counted (" + item["verdict"]
                      + "): " + item["reason"] + " Suggested replacement: " + item["replacement"]
                      for item in rejected_cases(critique)]
-        # What an earlier review found untested is what a revision after the coverage-gap return
-        # has to answer, so the next reviewer is told it as well.
+        # What an earlier review required, and what it found untested, is what the revision has to
+        # answer, so the next reviewer judges each one (rubric.prior_verdicts). Run 3303fd93's second
+        # critique of its fourth claim was never shown the five revisions the first had required.
+        concerns += ["An earlier review required: " + item for item in critique.get("required_revisions") or []]
         concerns += ["An earlier version left a fact untested: " + item for item in critique.get("coverage_gaps") or []]
         for concern in concerns:
             if concern not in found:
@@ -425,6 +427,24 @@ def looked(record):
     if not record.get("recorded"):
         return None
     return record["this_claim"]["searches"] + record["this_claim"]["fetches"]
+
+
+def unanswered_concerns(critique, previous):
+    """The earlier concerns a critique judged unanswered ("the concern return" in tool-contracts.md).
+
+    A `searched_no_source` verdict is the critique reading the search record; Python checks it,
+    as it checks an AI reading, and counts the concern unanswered when its record shows no search
+    or fetch for the claim since the previous critique. `previous` is the count recorded then.
+    """
+    now, found = critique.get("search_count"), []
+    for item in critique.get("prior_verdicts") or []:
+        if item["verdict"] == "searched_no_source" and None not in (previous, now) and now <= previous:
+            item = {**item, "verdict": "unanswered",
+                    "python_checked": "Python's search record shows no search or fetch for this claim since "
+                                      "the previous critique."}
+        if item["verdict"] == "unanswered":
+            found.append(item)
+    return found
 
 
 def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=(), record=None):
@@ -545,20 +565,22 @@ def select(store, state, claim_id, work, args, subject):
     # concluded that the design supports no grade: executing it still produces ungraded
     # comparison evidence and the documentary path.
     accepting = bool(settled) and (args["target_grade"] == accepted or accepted is None)
-    returned = store.get_json(work["gap_return_ref"]) if work.get("gap_return_ref") else None
-    if accepting and returned and returned["candidate_fingerprint"] == identity:
-        # The coverage-gap return asked for a search; accepting is the planner saying none found a
-        # source, so Python's own record must show one since the return.
+    # Either return (tool-contracts.md) asked for a search or a better design; accepting this one is
+    # the planner saying no search found a source, so Python's own record must show one since.
+    returns = [store.get_json(work[field]) for field in ("gap_return_ref", "concern_return_ref") if work.get(field)]
+    returned = next((item for item in reversed(returns) if item["candidate_fingerprint"] == identity), None)
+    if accepting and returned:
         before, now = returned["looked"], looked(search_record(getattr(subject, "log", None), claim_id))
         if before is not None and now is not None and now <= before:
-            return {"outcome": "local_grade_proposal_refused", "reason": "gaps_unsearched",
+            return {"outcome": "local_grade_proposal_refused", "reason": "return_unsearched",
                     "evidence_ceiling": ceiling, "evidence_limits": limits, "candidate_ref": key,
                     "coverage_gaps": settled.get("coverage_gaps") or [],
+                    "unanswered_concerns": settled.get("unanswered_concerns") or [],
                     "acceptable_grades": sorted({item for item in (ceiling, accepted) if item}),
-                    "message": "This design came back for the coverage gaps its critique named, and Python's "
+                    "message": "This design came back for what its critique found missing, and Python's "
                                "search record shows no search or fetch for this claim since. Search for a "
-                               "source for each gap, then accept " + str(accepted) + ", or add cases for the "
-                               "gaps and propose the new ceiling."}
+                               "source for each gap or concern, then accept " + str(accepted) + ", or "
+                               "answer them in a revised design and propose its ceiling."}
     record = None
     if accepting:
         critique = settled  # Re-running that judgment on the same evidence buys nothing.
@@ -619,6 +641,11 @@ def select(store, state, claim_id, work, args, subject):
         if probe is not None:
             # Python's measurement travels with the critique it settles against, beside its verdicts.
             critique = {**critique, "claim_probe": probe}
+        # Python's own count of this claim's searches, and its check of each verdict on an earlier
+        # concern against that count, travel with the critique as the probe does.
+        previous = (history[-1].get("critique") or {}).get("search_count") if history else None
+        critique = {**critique, "search_count": looked(record)}
+        critique["unanswered_concerns"] = unanswered_concerns(critique, previous)
         work["critique_ref"] = keep(store, state, critique)
     work["candidate_ref"] = key
     selection = {"candidate_ref": key, "applicability": args["applicability"],
@@ -642,15 +669,22 @@ def select(store, state, claim_id, work, args, subject):
     replacements_used = sum(1 for record in history if rejected_cases(record.get("critique")))
     replacements_spent = bool(rejected) and replacements_used >= REPLACEMENT_ROUNDS
     gaps = list(critique.get("coverage_gaps") or []) if critique and not accepting else []
-    # The coverage-gap return (tool-contracts.md): a critique agreeing with a proposal below A while
-    # naming facts no case tests sends the claim back once rather than fixing it. Run 3303fd93's
-    # planner built three cases for a twelve-fact claim, and its agreeing critique reached nobody.
-    returning = (bool(gaps) and not work.get("gap_return_ref") and args["target_grade"] != "A"
-                 and audit_record["settled_ceiling"] == args["target_grade"]
-                 and rounds < MAX_ROUNDS and not replacements_spent)
-    if returning:
-        work["gap_return_ref"] = keep(store, state, {"kind": "local-gap-return", "candidate_fingerprint": identity,
-                                                     "round": rounds, "looked": looked(record) if record else None})
+    concerns = list(critique.get("unanswered_concerns") or []) if critique and not accepting else []
+    # The returns (tool-contracts.md): a critique agreeing with a proposal below A sends the claim
+    # back rather than fixing it, once for coverage gaps and while rounds remain for an earlier
+    # concern left unanswered. In run 3303fd93 three claims built to B's minimum settled with their
+    # critiques' findings unread, and one revision answered two of its five required revisions.
+    agreeing = (bool(critique) and not accepting and args["target_grade"] != "A"
+                and audit_record["settled_ceiling"] == args["target_grade"]
+                and rounds < MAX_ROUNDS and not replacements_spent)
+    gap_return = agreeing and bool(gaps) and not work.get("gap_return_ref")
+    concern_return = agreeing and bool(concerns)
+    for field, kind, made in (("gap_return_ref", "local-gap-return", gap_return),
+                              ("concern_return_ref", "local-concern-return", concern_return)):
+        if made:
+            work[field] = keep(store, state, {"kind": kind, "candidate_fingerprint": identity, "round": rounds,
+                                              "looked": looked(record) if record else None})
+    returning = gap_return or concern_return
     if (critique and not accepting and (audit_record["settled_ceiling"] != args["target_grade"] or returning)
             and rounds < MAX_ROUNDS and not replacements_spent):
         # Strengthen the evidence and propose the new ceiling, or accept this grade.
@@ -661,17 +695,22 @@ def select(store, state, claim_id, work, args, subject):
                 "objections": critique["objections"],
                 "required_revisions": critique["required_revisions"],
                 "coverage_gaps": gaps,
+                "unanswered_concerns": concerns,
                 "case_replacements": rejected,
                 "rounds_remaining": MAX_ROUNDS - rounds,
                 "replacement_rounds_remaining": REPLACEMENT_ROUNDS - replacements_used - bool(rejected),
                 "case_gap": case_gap(candidate, counted_cases(critique), args["target_grade"],
                                      critique["supported_grade"]),
-                **({"message": "The critique agreed with " + args["target_grade"] + " but named facts no "
-                               "counting case tests, in coverage_gaps. Add cases for them and propose the new "
-                               "ceiling, or search for a source for each and then accept "
-                               + args["target_grade"] + ": Python accepts it only once its search record shows "
-                               "a search or fetch for this claim made since this return, which comes once per "
-                               "claim."} if returning else {})}
+                **({"message": "The critique agreed with " + args["target_grade"] + " but found "
+                               + " and ".join(part for part, made in (
+                                   ("facts no counting case tests, in coverage_gaps (a return made once per "
+                                    "claim)", gap_return),
+                                   ("earlier review requests this design leaves unanswered, in "
+                                    "unanswered_concerns", concern_return)) if made)
+                               + ". Answer them in a revised design and propose its ceiling, or search for a "
+                               "source for each and then accept " + args["target_grade"] + ": Python accepts it "
+                               "only once its search record shows a search or fetch for this claim made since "
+                               "this return."} if returning else {})}
     state["claim_states"][claim_id] = "local_ready"
     return {"outcome": "local_plan_fixed", "candidate": candidate,
             "selection_ref": work["selection_ref"], "audit": audit_record}
@@ -1334,11 +1373,15 @@ def report(store, state):
                 lines.extend("- "+cell(finding) for finding in settled["critique"]["findings"])
                 lines.extend("- Objection: "+cell(item) for item in settled["critique"]["objections"])
                 lines.extend("- Coverage gap: "+cell(item) for item in settled["critique"].get("coverage_gaps") or [])
-                if work.get("gap_return_ref"):
-                    lines.append("- Returned once for coverage gaps: a critique in round "
-                                 +str(store.get_json(work["gap_return_ref"])["round"])
-                                 +" agreed with the proposed grade but named facts no case tested, so the planner "
-                                 "had to add cases or search before that grade could be accepted.")
+                lines.extend("- Earlier concern left unanswered: "+cell(item["concern"])+" ("+cell(item["reason"])+")"
+                             for item in settled["critique"].get("unanswered_concerns") or [])
+                for field, what in (("gap_return_ref", "Returned once for coverage gaps: a critique in round {} agreed "
+                                     "with the proposed grade but named facts no case tested"),
+                                    ("concern_return_ref", "Returned for unanswered concerns: a critique in round {} "
+                                     "agreed with the proposed grade but found an earlier review's request unanswered")):
+                    if work.get(field):
+                        lines.append("- "+what.format(store.get_json(work[field])["round"])
+                                     +", so the planner had to answer it or search before that grade could be accepted.")
                 from .local_science import rejected_cases
                 # In case order: the critique's rejections, and Python's, marked, for cases the
                 # claim-only answers missed.

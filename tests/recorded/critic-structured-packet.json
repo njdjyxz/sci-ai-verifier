@@ -94,13 +94,13 @@
   "note": "Python already verified that every expected answer is quoted exactly from the pinned reference bytes. Judge whether that evidence is fit for this claim at the proposed grade. Python counts cases and cannot weigh them: a function name, a scientific value and a fact the claim never states are the same shape once quoted, so whether each case counts is decided here, in case_verdicts. Python then recomputes the ceiling over the cases you count, under rubric.case_requirements, and returns every rejected case with your described replacement to the planner."
  },
  "rubric": {
-  "id": "local-evidence-critique-v12",
+  "id": "local-evidence-critique-v13",
   "criteria": [
    "Whether the expected answers are a fit-for-purpose oracle for this exact claim, independent of the submitted skill",
    "Whether the counting cases and trial count cover the facts the claim states, within its scope, well enough for the proposed grade, checked as rubric.coverage says",
    "Whether the comparison rule, tolerance and stated uncertainty match what the claim actually asserts",
    "Whether a stronger grade was available and was passed over",
-   "Whether each concern listed under prior_objections is now answered by this design, unresolved, or does not apply",
+   "Whether each concern listed under prior_objections is answered by this design, checked as rubric.prior_verdicts says",
    "Whether each case tests exactly what the claim asserts, no less and no more: not only what something is named when the claim is about what it does, and not a consequence or fact the claim never states, which a subject applying the skill could answer only from the base model's own knowledge or not at all"
   ],
   "grades": {
@@ -110,7 +110,14 @@
    "D": "Documentary assessment of cited sources only",
    "none": "The evidence supports no scientific grade"
   },
-  "prior_objections": "Concerns earlier independent reviewers raised about earlier versions of this design. They are given so you can check whether this version answers them. No earlier grade is supplied, and you must not infer one: an objection that is now answered supports nothing against this design.",
+  "prior_objections": "Concerns earlier independent reviewers raised about earlier versions of this design: their objections, the revisions they required, the coverage gaps they named and the cases they did not count. They are given so you can check whether this version answers them. No earlier grade is supplied, and you must not infer one: an objection that is now answered supports nothing against this design.",
+  "prior_verdicts": {
+   "answered": "This design does what the concern asks, or no longer has the defect it names",
+   "searched_no_source": "The concern asks for a source or a case keyed to one, the design adds none, and python_checked.search_record shows a search or fetch for this claim that sought it",
+   "unanswered": "The design neither does what the concern asks nor shows a recorded search that sought it",
+   "no_longer_applies": "What the concern was about is gone from this design, such as a case since removed",
+   "instruction": "Give every concern under prior_objections exactly one verdict, in order, with a one-sentence reason. Judge what this design does, not what its notes promise."
+  },
   "instruction": "Return the strongest grade this evidence actually supports. Do not approve the proposal to be agreeable and do not lower it to be safe.",
   "case_verdicts": {
    "counts": "Tests what the claim asserts, no less and no more, without giving the answer away",

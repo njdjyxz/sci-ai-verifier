@@ -165,8 +165,9 @@ grade.
 A fresh no-tool session then receives the claim, the evidence design, the reference
 provenance, the justification and the design's scope and limitations whole, Python's
 ceiling, Python's search record, the concerns earlier reviewers raised
-about earlier versions of this design (their objections and every case they did not
-count, with its verdict, reason and suggested replacement), and the fixed critique rubric.
+about earlier versions of this design (their objections, required revisions and coverage
+gaps, and every case they did not count, with its verdict, reason and suggested
+replacement), each of which it judges answered or not, and the fixed critique rubric.
 The search record is read from this attempt's workflow log, not from the planner's notes:
 every WebSearch query the planner ran, marked with the claim it was working on (the one its
 last verifier tool call named), and every reference, resource or asset fetch with the claim
@@ -190,8 +191,9 @@ When the settled grade is below the proposal, the planner revises before it acce
 step 4 of "Negotiating the grade" in `evidence-rubric.md` says: a stronger design and its
 new ceiling earn another round, and accepting the grade that design settled at settles
 immediately without another session. A critique that agrees with a proposal below A but
-names coverage gaps returns the claim once, and its grade is accepted only after a new
-search (the coverage-gap return under `select_local_candidate` in `tool-contracts.md`).
+names coverage gaps, or finds an earlier concern unanswered, returns the claim, and its
+grade is accepted only after a new search (the returns under `select_local_candidate` in
+`tool-contracts.md`).
 Repeating a proposal on
 a design already critiqued is refused and consumes neither a session nor a round, so
 the budget of one round per rubric grade bounds real revisions rather than repetition.
@@ -204,10 +206,12 @@ to the documentary path. An unavailable critique is an operational limitation.
 The critique's reply has a fixed shape that Claude Code enforces, as the reply-shape
 paragraph under `select_local_candidate` in `tool-contracts.md` describes: a reply outside
 it goes back to the same session to be corrected, and a reply that judges the design is
-never re-rolled, whatever grade it gives. The critique session has five minutes; the documentary assessor keeps two; each
-claim-only session has two, four running at once. Judging
-every case and describing replacements takes a critique 60 to 120 seconds, and the
-two-minute deadline it used to share with the assessor killed one in run 74eadedd.
+never re-rolled, whatever grade it gives. The critique session has ten minutes; the documentary assessor keeps two; each
+claim-only session has two, four running at once. Judging every case, listing the claim's
+facts and giving each earlier concern a verdict took live critiques 90 to 210 seconds on
+2026-09-30 and 2026-10-01, and two replays judging eleven concerns ran past the five minutes
+critiques then had; the two-minute deadline they once shared with the assessor killed one
+in run 74eadedd.
 
 The installed policy then requires every planned trial and case to be scored. Missing
 observations are operational. Invalid observations remain counted. Only counting cases

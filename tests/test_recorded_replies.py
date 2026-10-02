@@ -29,7 +29,7 @@ RECORDED = Path(__file__).resolve().parent / "recorded"
 # code that reads them: the assessor and the claim-only answer on 2026-09-28, the critique under
 # rubric v9 and the two readings on 2026-09-29. Where the first reply broke the schema and the
 # session corrected it, the recording maps to the key its refused reply added.
-STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "evidence_limits", "assessor-structured.jsonl": None,
+STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "StructuredOutput", "assessor-structured.jsonl": None,
                          "claim-probe-structured.jsonl": "a", "reader-matches.jsonl": None,
                          "reader-differs.jsonl": None}
 # Streams that are not the verifier's own replies, exercised by their own tests.
@@ -98,9 +98,10 @@ class RecordedReplyTests(unittest.TestCase):
     def test_a_reply_the_schema_refused_was_corrected_in_the_same_session(self):
         """The slips a free-text reader met one lost claim at a time. Run 0a243b7e lost a claim to an
         empty extra key; here a claim-only answer added a stray `a`, and the critique recorded under
-        rubric v12 a stray `evidence_limits`, as earlier ones added `StructuredOutput` (v11) and
-        `evidence_ceiling` (v10) and wrapped their reply in `$PARAMETER_NAME` (v8); Git history keeps
-        them. Claude Code refused each and the session resent it."""
+        rubric v13 a stray `StructuredOutput`, as earlier ones added `evidence_limits` (v12),
+        `StructuredOutput` (v11) and `evidence_ceiling` (v10) and wrapped their reply in
+        `$PARAMETER_NAME` (v8); Git history keeps them. Claude Code refused each and the session
+        resent it."""
         for name, stray in STRUCTURED_RECORDINGS.items():
             with self.subTest(recording=name):
                 attempts = reply_attempts(recorded(name))
@@ -148,7 +149,8 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertTrue(value["ai_judgment"])
         command = seen["command"]
         case_ids = [case["case_id"] for case in sent["evidence"]["cases"]]
-        self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), critique_schema(case_ids))
+        self.assertEqual(json.loads(command[command.index("--json-schema") + 1]),
+                         critique_schema(case_ids, len(sent["prior_objections"])))
 
     def test_the_recorded_readings_answer_their_real_packets(self):
         """Two real replies from run 1bb3f07a, read live on 2026-09-29 ("Reading replies" in
@@ -211,10 +213,15 @@ class RecordedReplyTests(unittest.TestCase):
         v10 lists the claim's facts against the cases, and turns a gap a listed reference or an
         unrecorded search leaves open into a required revision; v11 judges a search by the record
         Python reads from the planner's stream, not by the planner's description; v12 lists those
-        gaps in coverage_gaps whatever the grade, for the coverage-gap return. Each rule is the
+        gaps in coverage_gaps whatever the grade, for the coverage-gap return; v13 gives each earlier
+        concern, required revisions among them, a verdict, for the concern return. Each rule is the
         mirror of a contract passage, which owns it."""
         from sci_ai_verifier.answers import TYPES
-        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v12")
+        from sci_ai_verifier.documentary import PRIOR_VERDICTS
+        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v13")
+        self.assertEqual(set(CRITIQUE_RUBRIC["prior_verdicts"]) - {"instruction"}, set(PRIOR_VERDICTS))
+        self.assertIn("rubric.prior_verdicts", CRITIQUE_RUBRIC["criteria"][4])
+        self.assertIn("revisions they required", CRITIQUE_RUBRIC["prior_objections"])
         self.assertIn("coverage_gaps", CRITIQUE_RUBRIC["coverage"])
         self.assertIn("Whatever your grade", CRITIQUE_RUBRIC["coverage"])
         self.assertIn("rubric.coverage", CRITIQUE_RUBRIC["criteria"][1])
@@ -418,7 +425,7 @@ class SchemaShapeTests(unittest.TestCase):
 
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(CRITIQUE_RUBRIC["criteria"]),
-                "objections": [], "required_revisions": [], "coverage_gaps": [],
+                "objections": [], "required_revisions": [], "coverage_gaps": [], "prior_verdicts": [],
                 "case_verdicts": {"c1": self.verdict(), "c2": self.verdict("leaked", "Ask it without naming the key.")},
                 **changes}
 
@@ -439,6 +446,18 @@ class SchemaShapeTests(unittest.TestCase):
 
     def test_none_becomes_an_absent_grade_not_the_string_none(self):
         self.assertIsNone(validate_critique(self.base(supported_grade="none"), ["c1", "c2"])["supported_grade"])
+
+    def test_every_earlier_concern_gets_exactly_one_verdict(self):
+        """The concern return acts on these verdicts, so a missing, extra or unknown one is refused."""
+        judged = {"verdict": "unanswered", "reason": "The design still keys no case to it."}
+        value = validate_critique(self.base(prior_verdicts=[judged]), ["c1", "c2"], 1)
+        self.assertEqual(value["prior_verdicts"], [judged])
+        for label, verdicts in (("none for one concern", []), ("two for one concern", [judged, judged]),
+                                ("an unknown verdict", [{**judged, "verdict": "partly"}]),
+                                ("no reason", [{"verdict": "answered"}])):
+            with self.subTest(label), self.assertRaises(Fault) as caught:
+                validate_critique(self.base(prior_verdicts=verdicts), ["c1", "c2"], 1)
+            self.assertEqual(caught.exception.code, "critic_response_invalid")
 
     def test_the_shapes_a_free_text_reader_once_tolerated_are_refused(self):
         """A lone string for a one-item list, a sixth finding, a `null` replacement and an extra key

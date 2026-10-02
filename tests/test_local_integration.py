@@ -486,7 +486,7 @@ class GradeNegotiationTests(unittest.TestCase):
             self.assertEqual(h.data["claim_states"][h.claim_id],"local_discovery")
             # Accepting B at once is the planner saying it searched; Python's record says it did not.
             h.select(three,target_grade="B")
-            self.assertEqual((h.data["outcome"],h.data["reason"]),("local_grade_proposal_refused","gaps_unsearched"))
+            self.assertEqual((h.data["outcome"],h.data["reason"]),("local_grade_proposal_refused","return_unsearched"))
             self.assertEqual(h.data["coverage_gaps"],[self.GAP])
             self.assertEqual(len(self.packets),1,"a refused acceptance spends no session")
             # One search for this claim since the return, and the same grade is accepted with no new session.
@@ -526,6 +526,86 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertTrue(key)
         with patch("sci_ai_verifier.documentary.critique",side_effect=self.agreeing("B")):
             h.select(three,target_grade="B")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+
+    REQUEST="Add a case for the zeta row, keyed to the retrieved table."
+
+    def first_round_below(self):
+        """Round one: the five-row design proposed at A and settled at B, with one required revision."""
+        def run(adapter,packet):
+            self.packets.append(packet)
+            return critic_reply(packet,"B",objections=["Three rows do not cover the scope."],
+                                required_revisions=[self.REQUEST])
+        with patch("sci_ai_verifier.documentary.critique",side_effect=run):
+            self.h.select(self.key,target_grade="A")
+        self.assertEqual(self.h.data["outcome"],"local_grade_revision_required")
+
+    def second_round(self,verdict,*,rows=fixture.ROWS,grade="B",name="Fixture table, revised"):
+        """Round two: a revised design whose critique agrees with its grade and gives the carried
+        request `verdict`."""
+        revised=self.h.candidate(lookup=False,rows=rows,name=name)
+        def run(adapter,packet):
+            self.packets.append(packet)
+            return critic_reply(packet,grade,prior={"zeta row":verdict})
+        with patch("sci_ai_verifier.documentary.critique",side_effect=run):
+            self.h.select(revised,target_grade=grade)
+        return revised
+
+    def test_an_agreeing_critique_that_finds_a_required_revision_unanswered_sends_the_claim_back(self):
+        """Run 3303fd93's fourth claim answered two of the five revisions its first critique required,
+        and its second critique, never shown them, agreed with B."""
+        h=self.h
+        log=self.planner_log()
+        self.first_round_below()
+        three=self.second_round("unanswered")
+        # The next critique is shown what the first required, and judges it.
+        self.assertIn("An earlier review required: "+self.REQUEST,self.packets[1]["prior_objections"])
+        self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+        self.assertEqual([item["concern"] for item in h.data["unanswered_concerns"]],
+                         ["An earlier review required: "+self.REQUEST])
+        self.assertIn("earlier review requests",h.data["message"])
+        with patch("sci_ai_verifier.documentary.critique",side_effect=AssertionError("must not run")):
+            h.select(three,target_grade="B")
+            self.assertEqual((h.data["outcome"],h.data["reason"]),("local_grade_proposal_refused","return_unsearched"))
+            self.planner(log,{"type":"tool_use","id":"use-2","name":"WebSearch",
+                              "input":{"query":"zeta row reference table value"}})
+            h.select(three,target_grade="B")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        h.call("write_report_card")
+        report=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Returned for unanswered concerns",report)
+        self.assertIn("Earlier concern left unanswered: An earlier review required: "+self.REQUEST,report)
+
+    def test_a_search_the_record_does_not_show_leaves_the_concern_unanswered(self):
+        """`searched_no_source` is the critique reading Python's record, and Python checks it."""
+        h=self.h
+        self.planner_log()
+        self.first_round_below()
+        self.second_round("searched_no_source")
+        self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+        [concern]=h.data["unanswered_concerns"]
+        self.assertEqual(concern["verdict"],"unanswered")
+        self.assertIn("no search or fetch for this claim since the previous critique",concern["python_checked"])
+
+    def test_a_recorded_search_lets_a_searched_no_source_verdict_stand(self):
+        h=self.h
+        log=self.planner_log()
+        self.first_round_below()
+        self.planner(log,{"type":"tool_use","id":"use-3","name":"WebSearch",
+                          "input":{"query":"zeta row independent source"}})
+        self.second_round("searched_no_source")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+
+    def test_an_answered_request_or_a_plan_at_a_settles_at_once(self):
+        h=self.h
+        self.first_round_below()
+        self.second_round("answered")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        # A is the strongest grade: a critique agreeing with it is not overruled for a concern.
+        self.key=self.build(3,name="at-a")
+        self.first_round_below()
+        self.second_round("unanswered",rows=fixture.FIVE_ROWS,grade="A")
         self.assertEqual(h.data["outcome"],"local_plan_fixed")
 
     def test_with_no_workflow_log_the_returned_grade_is_accepted_unchecked(self):
@@ -742,10 +822,11 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertTrue(self.packets[1]["prior_objections"])
         # The rubric names every grade, so the packet is bound to contain the letters. What
         # it must not carry is a field holding the earlier verdict, or anything beyond the
-        # objection text itself.
+        # concerns themselves: the objection and the revision that review required.
         self.assertNotIn("supported_grade",canonical(self.packets[1]).decode())
         self.assertEqual(self.packets[1]["prior_objections"],
-                         ["Three rows do not cover the whole stated scope."])
+                         ["Three rows do not cover the whole stated scope.",
+                          "An earlier review required: Add cases drawn from the rest of the table."])
 
     def rejecting(self,supported,rejected):
         def run(adapter,packet):

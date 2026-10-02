@@ -707,8 +707,8 @@ The Local profile matrix in workflow.md governs their legality.
   names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling`,
   `no_supported_execution_grade`, `prior_review_in_packet` when a note the critique
   would read mentions an earlier review (step 3 of "Negotiating the grade" in
-  `evidence-rubric.md`), with the `field` and `phrase` found, or `gaps_unsearched` (the
-  coverage-gap return below) — and spends no session.
+  `evidence-rubric.md`), with the `field` and `phrase` found, or `return_unsearched` (the
+  returns below) — and spends no session.
   Only a proposal that would start a critique is checked. A case's applicability and
   the design's scope and limitations are fixed at qualification, so a note there needs
   a revised candidate. A permitted proposal first measures what a subject knowing only
@@ -731,9 +731,10 @@ The Local profile matrix in workflow.md governs their legality.
   claim-only answers' verdict. A design scored by a generated evaluator is not probed,
   because free output needs the sandbox to be scored. The proposal then starts a
   fresh independent critique session, which sees every case with its `case_id` and
-  answer form, receives earlier reviewers' objections and the cases they did not count
-  (verdict, reason, suggested replacement) but never their grades, and may only lower
-  the grade. A `missed` case does not count whatever the critique says: unless the
+  answer form, receives earlier reviewers' objections, required revisions and coverage
+  gaps and the cases they did not count (verdict, reason, suggested replacement) but
+  never their grades, gives each of those concerns a verdict in `prior_verdicts`, and may
+  only lower the grade. A `missed` case does not count whatever the critique says: unless the
   critique already rejected it, Python returns it as `beyond_scope`, with the claim-only
   answers as the reason. Python then recomputes the ceiling over the cases the critique
   counted and the claim-only answers did not miss; the audit records `counted_cases`,
@@ -751,19 +752,26 @@ The Local profile matrix in workflow.md governs their legality.
   The summary also names the critique's own grade whenever it is below the proposal;
   when the counted cases already meet the requirement, that grade is the only limit.
   Run 31b67427's planner accepted B one counting case short of A, believing it lacked
-  an open case it already had. Both outcomes carry the critique's `coverage_gaps`.
-  **The coverage-gap return.** Once per claim, a critique whose settled grade equals a
-  proposal below A, and that names `coverage_gaps`, also returns
-  `local_grade_revision_required`, with those gaps, instead of fixing the plan. A gap is
-  a fact the claim states that no counting case tests and that a listed reference bears
-  on or no recorded search sought (`rubric.coverage`). The planner then revises, and the
-  revised design is critiqued as usual and never returned for gaps again; or it searches
-  and accepts. Accepting the returned design's grade is refused as `gaps_unsearched`
-  until Python's search record shows a search or fetch made for this claim since the
-  return; with no workflow log there is no record to check, and acceptance stands. Run
-  3303fd93's planner built three cases for a twelve-fact claim and proposed B; its
-  critique agreed, named a fetched page that could key two more facts, and the plan
-  was fixed with nothing asked of the planner.
+  an open case it already had. Both outcomes carry the critique's `coverage_gaps` and
+  any `unanswered_concerns`.
+  **The returns.** Two more critiques return `local_grade_revision_required` instead of
+  fixing the plan, when the settled grade equals a proposal below A. *The coverage-gap
+  return* comes once per claim, when the critique names `coverage_gaps`: facts the claim
+  states that no counting case tests and that a listed reference bears on or no recorded
+  search sought (`rubric.coverage`). A revised design is critiqued as usual and never
+  returned for gaps again. Run 3303fd93's planner built three cases for a twelve-fact
+  claim and proposed B; its critique agreed, named a fetched page that could key two more
+  facts, and the plan was fixed with nothing asked of the planner. *The concern return*
+  comes while rounds remain, when the critique judges an earlier concern `unanswered`
+  (`rubric.prior_verdicts`). A `searched_no_source` verdict stands only when Python's
+  search record shows a search or fetch for the claim since the previous critique;
+  otherwise Python counts the concern unanswered. Run 3303fd93's fourth claim answered
+  two of the five revisions its first critique required, and its second critique, never
+  shown those revisions, agreed with B. After either return the planner revises, or
+  searches and accepts. Accepting the returned design's grade is refused as
+  `return_unsearched` until Python's search record shows a search or fetch for this claim
+  made since the return; with no workflow log there is no record to check, and
+  acceptance stands.
   `local_design_unchanged` refuses a repeated proposal on a design already critiqued,
   spending neither a session nor a round, so only real revisions consume the budget.
   `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round,
@@ -784,7 +792,9 @@ The Local profile matrix in workflow.md governs their legality.
   reading it keeps Python's verdict. A critique
   holds `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string
   per rubric criterion, in order), `objections`, `required_revisions` and `coverage_gaps`
-  (each at most eight strings, empty when there are none), and `case_verdicts`: one entry for every case
+  (each at most eight strings, empty when there are none), `prior_verdicts` (one entry for
+  each concern under `prior_objections`, in order, each holding a `verdict`, `answered`,
+  `searched_no_source`, `unanswered` or `no_longer_applies`, and a `reason`), and `case_verdicts`: one entry for every case
   ID in the packet and no other, each holding a `verdict` (one of those defined in
   `evidence-rubric.md`), a `reason`, and a `replacement` that is empty for `counts` and
   otherwise describes a case that would test the claim instead. An assessment holds

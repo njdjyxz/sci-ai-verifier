@@ -380,7 +380,7 @@ class IndependentSessionTests(unittest.TestCase):
     def valid_critique(self):
         return {"supported_grade":"B","findings":["f"]*len(CRITIQUE_RUBRIC["criteria"]),
                 "objections":[],"required_revisions":["Add cases covering the rest of the scope."],
-                "coverage_gaps":[],
+                "coverage_gaps":[],"prior_verdicts":[],
                 "case_verdicts":{"c":{"verdict":"counts","reason":"in scope","replacement":""}}}
 
     def test_critique_must_answer_inside_its_rubric(self):
@@ -406,8 +406,9 @@ class IndependentSessionTests(unittest.TestCase):
                    side_effect=self._replies({**good,"supported_grade":"none"},good,calls=calls)):
             self.assertIsNone(critique(object(),packet)["supported_grade"])
         self.assertEqual(len(calls),1)
-        # A critique gets five minutes; two killed one in run 74eadedd.
-        self.assertEqual(calls[0]["timeout"],300)
+        # A critique gets ten minutes: two killed one in run 74eadedd, and replays judging eleven
+        # earlier concerns ran past five.
+        self.assertEqual(calls[0]["timeout"],600)
         # The schema asks for exactly the packet's cases.
         self.assertEqual(calls[0]["schema"]["properties"]["case_verdicts"]["required"],["c"])
         calls.clear()
