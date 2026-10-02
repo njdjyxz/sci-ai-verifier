@@ -44,6 +44,7 @@ deterministic tools, bounded processes and saved evidence.
 | `fbd49132` (2026-09-29) | tooluniverse-dose-response | 1 at A, 3 at B; 51 of 51 counted trials passed, 0 invalid, 0 faults; every claim left facts it states untested |
 | `26312681` (2026-09-30) | tooluniverse-dose-response | 2 at A, 2 at B; 57 of 57 counted trials passed, 2 of them by the AI reader; 0 invalid, 0 faults |
 | `3303fd93` (2026-10-01) | tooluniverse-dose-response | 1 at A, 3 at B; 48 of 48 counted trials passed, 8 of them by the AI reader; 0 invalid, 0 faults |
+| `1d1c3b6e` (2026-10-01) | tooluniverse-dose-response | 1 at A, 2 at B, 1 at D with no trials; 51 of 51 counted trials passed, none by the AI reader; 0 invalid, 0 faults |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -110,9 +111,11 @@ not pass. Run `d3892f6c` used all three, with claims sized to their tests:
 
 Calculated answers met their first run in `fbd49132`: two designs were keyed by programs that
 first reproduced worked examples quoted from their references. That run also showed planners
-testing only part of what a claim states, which the 2026-09-30 entry addresses.
+testing only part of what a claim states, which the 2026-09-30 entry addresses. In `1d1c3b6e`
+the planner, never told its deadline, gave its last claim no test with an hour left; the
+2026-10-01 entry addresses that.
 
-Automated suite: **438 tests, 436 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **439 tests, 437 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -1163,7 +1166,7 @@ designed below A with no search, and whether its critique names the facts no sea
 critique's required revisions and whether the next design answered them; the grades; and run time
 against 7,200 s and subject calls against 128. It is finished when each has a recorded answer.
 
-## Claude: 2026-10-01 (run 3303fd93; a plan that settles at its own proposal comes back for coverage gaps or unanswered requests)
+## Claude: 2026-10-01 (runs 3303fd93 and 1d1c3b6e; a plan that settles at its own proposal comes back, and the planner is told its time)
 
 ### Current stage and status
 
@@ -1178,7 +1181,17 @@ those findings reached only the report. On the operator's go-ahead, two returns 
   Python checks its `searched_no_source` verdicts against the search record.
 
 After either return the grade is accepted only once Python's record shows a new search for the claim.
-Both are replayed live (below) and **not yet seen in a run**.
+Both were replayed live (sections 2 and 3).
+
+Run `1d1c3b6e` (section 4) used them, and **neither fired**: the planner proposed A in every round,
+and both need a critique that agrees with a grade below A. It settled C1 at A and C2 and C3 at B.
+C4 got a documentary D with no design, the planner saying its deadline was near with 62 of 120
+minutes left. On the operator's go-ahead two fixes are built (section 5):
+- every reply to the planner states the seconds it has left;
+- the search record reads fetches from Python's own record of each call. This run's record had
+  called five of ten successful fetches unreadable.
+
+Neither fix is yet seen in a run, and neither return has yet fired in one.
 
 ### What has been done
 
@@ -1308,6 +1321,80 @@ changed nothing. Contracts first:
     Neither sample would return the claim: one supported A, the other B below the proposed A.
   - Not verified: any of this in a run.
 
+**4. Run `1d1c3b6e`**, tooluniverse-dose-response, on `f469ad6`, from a session whose `serve-local`
+started at 18:45, after that commit, with `--timeout 7200`; `local_method_ref` is `dcfadc5e…`.
+`3303fd93`'s files, 2,862 and six candidates, were moved first, to `cleaned-3303fd93` in scratchpad
+`c7991202…`.
+- **Result.** C1 (the 4PL model) at A; C2 (data preparation) and C3 (reading the parameters) at B,
+  all `pass`; C4 (quality gotchas) at D, `inconclusive`, with no design. 51 of 51 counted trials
+  passed, all by Python's reader; the AI reader decided none. Of 3 uncounted trials, 1 passed.
+- **Rounds.**
+  - C1: A → B (4 counting cases, one `leaked` and one `beyond_scope`), then A → A.
+  - C2: A → B three times, a case `leaked` each round (`c2_x_values` twice), fixed at B by the
+    round limit.
+  - C3: A → B, with 5 coverage gaps and 5 required revisions. After one search the planner wrote
+    "Time is tight" and accepted B. Two of those revisions pointed at pages it had already fetched.
+- **No return fired.** Every proposal was A, so no critique agreed with a grade below A, and no
+  acceptance was refused as `return_unsearched`.
+- **The concern verdicts ran.** C1's second critique judged 16 earlier concerns, and C2's second and
+  third 16 each. In C2's third, Python counted 5 `searched_no_source` verdicts unanswered, there
+  being no search since the round before. Neither changed a grade: C1 settled at A, and C2 ran out
+  of rounds.
+- **C4.** At 57 minutes the planner wrote "With the attempt deadline near, I'll secure claim 4 via the
+  documentary path", with 62 of its 120 minutes left. It fetched one page; its first assessment was
+  refused for an inexact quote; the assessor found that page short of the claim. The documentary
+  path was legal there (`workflow.md`, the local transitions: a lookup and one retrieved reference),
+  as the operator accepted for `84e90683`. The planner was never told its deadline, and
+  `local-contract.md` told it a six-claim run "used all but 8 seconds of its 90 minutes".
+- **Search record.** WebSearch: C1 4 queries, C2 2, C3 1, C4 none. Fetches: 5, 3, 1 and 1. **Five
+  of the ten fetches showed as "unreadable result"**: each reply was over 16,000 characters, the
+  workflow log keeps that much of the planner's copy, and the record parsed that copy. The critiques
+  of C1 (round 1), C2 (round 3) and C3 then asked the planner to reconcile its fetches or its
+  provenance text with the record.
+- **Facts tested**, from each final critique's list: C1 6 of 10, C2 5 of 8, C3 5 of about 10.
+- **Time and cost.** 3,583 s of 7,200, and 54 of 128 subject calls. About $23.0 at API rates: the
+  planner $15.14 over 50 turns, 54 subjects $2.33, 6 critiques $4.52 (165 to 261 s each), 50
+  claim-only sessions $0.82, 3 readings $0.05, the assessor $0.12. The 5-hour window went from 3%
+  to 49%.
+- **Against `3303fd93`:**
+  - grades 1 A + 2 B + 1 D, against 1 A + 3 B;
+  - AI-reader trials 0, against 8;
+  - every design proposed at A, against B for C2 and C3;
+  - facts tested: C1 6 of 10 (3 of 6), C2 5 of 8 (2 of 7), C3 5 of about 10 (3 of about 12);
+  - WebSearch for C3 1 query, against none; for C4 none in either.
+- Report: `.verifier/runs/1d1c3b6e-7d26-4a9e-b6db-59af72c207ee/report-card.md`, outside Git.
+
+**5. The planner's clock and the search record**, on the operator's go-ahead ("yes, build both fixes
+and record the run"), contracts first:
+- `local-contract.md`, "Acceptance", owns the clock. Every reply to the planner carries
+  `attempt_seconds_remaining`, the whole seconds left before the planner is stopped. "At most five"
+  no longer says "90 minutes". `tool-contracts.md`'s "Local profile tools" points to it.
+- `local-contract.md`'s critique paragraph: the search record's fetches, and their outcomes, are
+  Python's own record of each call.
+- Code:
+  - `local_entry.py`: `BoundRuntime` adds the field to every reply, refusals included. It is
+    computed from the deadline the runner already gives the planner's tool server for the end-of-run
+    re-run. The planner prompt says to judge time by it, never by a guess.
+  - `local.py`: `search_record` reads each fetch from the `tool_started` and `tool_finished` events
+    Python writes for the call, and WebSearch queries and their claim from the planner's stream as
+    before. A call that never reached Python's tools fetched nothing. A page's size is no longer
+    printed: Python's call record does not hold it, and it appeared only for pages over 40 KiB.
+- Verification:
+  - Suite 438 → 439 tests, 437 passing and 2 skipped.
+    - New: every reply through `BoundRuntime`, a refusal included, carries the seconds left. The
+      value is 0 past the deadline, and the field is absent with no deadline or an unreadable one.
+      The prompt and the pinned contract name it.
+    - The search-record test now records its fetches through `recorded_call`: a reply over 16,000
+      characters, still `reference_fetched`; a refusal; a raised fault; a call that never reached
+      Python; and malformed events.
+  - **On this run's own log**, the new record reads all ten fetches as `reference_fetched`, where
+    the old one read five as unreadable. The counts per claim are unchanged.
+  - Sizes: the pinned `local-contract.md` is 40,281 of 40,960 bytes, and the verification bootstrap
+    is unchanged at 199,970 of 200,000. The `tool-contracts.md` pointer, first put in its common
+    protocol, which that bootstrap pins, took it past 200,000; it now sits in "Local profile tools".
+  - The rubric did not change, so nothing was re-recorded.
+  - Not verified: either fix in a run.
+
 ### Decisions taken 2026-10-01
 
 - **Build the coverage-gap return** (operator), answering open question 4 of the 2026-09-30 entry.
@@ -1319,17 +1406,27 @@ changed nothing. Contracts first:
   design; below A only; while rounds remain rather than once, since each round costs a critique and
   the round limit bounds it; Python checks `searched_no_source` against its record; one refusal reason
   for both returns. `gaps_unsearched` became `return_unsearched` before any run used it.
+- **Tell the planner its time, and read fetches from Python's record** (operator), after run
+  `1d1c3b6e`. Proposed here and built: the time goes in every reply, not the prompt alone, since a
+  session sees no clock; there is no field when nothing bounds the attempt or the deadline cannot be
+  read, so a bad value never fails a reply; the page size leaves the record.
+- **Not built:** a check on accepting a lowered grade (open question 4).
 
 ### Open questions for the operator
 
 1. The 2026-09-30 entry's questions 1 to 3, 5 and 6 stand; question 4 is answered above.
 2. **The AI reader now decides grades.** C2 and C4 pass only through it, and "wider concentrations"
-   for "concentration range" is a paraphrase, not a format difference (2026-09-29, question 1).
+   for "concentration range" is a paraphrase, not a format difference (2026-09-29, question 1). In
+   `1d1c3b6e` it decided no trial.
 3. A revision answering only some required revisions is now answered by the concern return (section
    3). **Its search check is strict:** a request answered by recording a search made before it was
    raised still needs a new search before the grade is accepted, one search call at worst. The
    negative control met exactly this, harmlessly. Relaxing it to any search for the claim would let a
    planner cite searches made for other facts.
+4. **A lowered grade can still be accepted at once.** The returns guard only a critique that agrees
+   with a grade below A. A planner that proposes A and accepts the B it is given passes neither, as
+   C3 of `1d1c3b6e` did with five required revisions unanswered. Requiring a new search would not
+   have stopped it, since it made one. Whether the clock is enough is for the next run to show.
 
 ### Urgent next steps, if any
 
@@ -1337,28 +1434,33 @@ None. Committed and pushed on `skill-environments` with this entry.
 
 ### Suggested next move
 
-Run tooluniverse-dose-response again, so the coverage-gap return meets a planner that builds to the
-minimum.
+Run tooluniverse-dose-response again, so the planner works with its clock, and see whether every
+claim gets a design and whether a lowered grade is still accepted at once.
 
 ### Recommended next action
 
 With the operator's go-ahead:
 1. Move, do not delete, into the session scratchpad:
-   - `.verifier/runs/3303fd93-9621-42bc-8253-ea2115cc2709`
-   - `.verifier/attempts/5f8d7dc2-6b53-44cc-a04b-d4a7d012ee03`
-   - `.verifier/subject-runs/3303fd93-9621-42bc-8253-ea2115cc2709`
-   - the six candidates it wrote, dated 2026-10-01, 13:50 to 14:24
+   - `.verifier/runs/1d1c3b6e-7d26-4a9e-b6db-59af72c207ee`
+   - `.verifier/attempts/9b34b883-422f-4918-a717-10f4c36b8dcd`
+   - `.verifier/subject-runs/1d1c3b6e-7d26-4a9e-b6db-59af72c207ee`
+   - the eight candidates it wrote, dated 2026-10-01, 18:58 to 19:40
 
    Keep the glycoengineering run, its attempt, subject-runs and five candidates, and
-   `.verifier/store/`. `26312681`'s files, 3,311 and ten candidates, were moved on 2026-10-01 to
-   `cleaned-26312681` in scratchpad `c7991202…`.
-2. Start a new Code-tab session, so that `serve-local` starts after this commit, and check Docker and
-   the 5-hour window as the 2026-09-28 entry says.
+   `.verifier/store/`. `3303fd93`'s files, 2,862 and six candidates, were moved on 2026-10-01 to
+   `cleaned-3303fd93` in scratchpad `c7991202…`.
+2. Start a new Code-tab session, so that `serve-local` starts after this commit (the run's
+   `local_method_ref` is then `cb7ef8a4…`), and check Docker and the 5-hour window as the 2026-09-28
+   entry says.
 3. Run tooluniverse-dose-response.
 
-Record, against `3303fd93`: each coverage-gap return and concern return, with the concerns the
-critiques judged unanswered and any `searched_no_source` verdict Python overruled, and what the planner
-did after each (searches, new cases, or an acceptance and whether it was refused); the facts tested
-per claim; the WebSearch
-queries per claim; the grades; the trials the AI reader decided; and run time against 7,200 s and
-subject calls against 128. It is finished when each has a recorded answer.
+Record, against `1d1c3b6e`:
+- the `attempt_seconds_remaining` the planner saw when it finished each claim, accepted a lowered
+  grade or took the documentary path, and whether every claim got a design;
+- each coverage-gap return and concern return, with the concerns judged unanswered and any
+  `searched_no_source` verdict Python overruled, and what the planner did after each;
+- the fetch outcomes in the critiques' search record;
+- the facts tested and WebSearch queries per claim, the grades and the trials the AI reader decided;
+- run time against 7,200 s and subject calls against 128.
+
+It is finished when each has a recorded answer.

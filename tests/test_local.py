@@ -749,6 +749,36 @@ class LocalTests(unittest.TestCase):
         bound = BoundRuntime(self.runtime, self.data["run_id"])
         self.assertEqual(bound.call("get_verifier_context", {"run_id": "other"})["status"], "retryable")
 
+    def test_every_reply_to_the_planner_says_how_long_it_has_left(self):
+        """Run 1d1c3b6e's planner, told nothing, called its deadline near with 62 of 120 minutes
+        left, accepted a lowered grade and gave its last claim a documentary D untested."""
+        import os
+        import time
+        from sci_ai_verifier.local import DEADLINE_ENV
+        from sci_ai_verifier.local_entry import PLANNER_PROMPT
+        bound = BoundRuntime(self.runtime, self.data["run_id"])
+        with patch.dict(os.environ, {DEADLINE_ENV: str(int(time.time()) + 600)}):
+            ok = bound.call("get_verifier_context", {"run_id": self.data["run_id"]})
+            refused = bound.call("get_verifier_context", {"run_id": "other"})
+        self.assertEqual(ok["status"], "ok")
+        self.assertTrue(590 <= ok["data"]["attempt_seconds_remaining"] <= 600)
+        self.assertTrue(590 <= refused["error"]["attempt_seconds_remaining"] <= 600)
+        with patch.dict(os.environ, {DEADLINE_ENV: str(int(time.time()) - 5)}):
+            self.assertEqual(bound.call("get_verifier_context", {"run_id": self.data["run_id"]})
+                             ["data"]["attempt_seconds_remaining"], 0)
+        # Nothing bounds an attempt the runner gave no deadline, so nothing is claimed.
+        for value in (None, "", "not a time", "inf"):
+            with self.subTest(deadline=value), patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(DEADLINE_ENV, None)
+                if value is not None:
+                    os.environ[DEADLINE_ENV] = value
+                self.assertNotIn("attempt_seconds_remaining",
+                                 bound.call("get_verifier_context", {"run_id": self.data["run_id"]})["data"])
+        self.assertIn("attempt_seconds_remaining", " ".join(PLANNER_PROMPT.split()))
+        pinned = dict(self.runtime._instruction_blocks())["references/local-contract.md"]
+        self.assertIn("`attempt_seconds_remaining`", pinned)
+        self.assertNotIn("90 minutes", pinned)
+
     def test_reference_url_rejects_private_credentials_and_redirects(self):
         for url in ("http://example.org", "https://user:pass@example.org", "https://example.org:44", "https://example.org/#fragment", "https://[bad"):
             with self.subTest(url=url), self.assertRaises(Fault):

@@ -390,10 +390,13 @@ class GradeNegotiationTests(unittest.TestCase):
         h.call("write_report_card")
         self.assertIn("evidence grade: A",Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
 
-    def test_the_critique_judges_searches_by_python_s_record_of_the_planner_s_stream(self):
+    def test_the_critique_judges_searches_by_python_s_record_of_what_the_planner_ran(self):
         """Run 26312681's critiques took two claims' described searches as made, and no search had
-        sought their untested facts. The packet now carries what the planner's own stream shows."""
-        from sci_ai_verifier.runlog import WorkflowLog
+        sought their untested facts. The packet now carries the planner's searches from its own
+        stream and its fetches from Python's record of each call. Run 1d1c3b6e's record read the
+        fetches from the planner's copy of each reply, which the log cuts at 16,000 characters,
+        and called five of ten successful fetches unreadable."""
+        from sci_ai_verifier.runlog import MAX_TEXT,WorkflowLog,recorded_call
         h=self.h
         log=WorkflowLog(h.base)
         h.subject.log=log
@@ -405,25 +408,43 @@ class GradeNegotiationTests(unittest.TestCase):
         def use(index,name,**given):
             return {"type":"tool_use","id":"use-"+str(index),"name":name,"input":given}
 
-        def result(index,reply):
-            return {"type":"tool_result","tool_use_id":"use-"+str(index),"content":[{"type":"text","text":json.dumps(reply)}]}
+        class Server:
+            """Python's tool server, answering a call with `reply` or raising it."""
+            def __init__(self,reply):
+                self.reply=reply
 
+            def call(self,name,arguments,call_id=None):
+                if isinstance(self.reply,BaseException):
+                    raise self.reply
+                return self.reply
+
+        def fetch(index,reply,tool="fetch_local_reference",**given):
+            planner(use(index,"mcp__verifier_internal__"+tool,**given))
+            try:
+                recorded_call(log,Server(reply),tool,given)
+            except Fault:
+                pass
+
+        long_page={"status":"ok","data":{"outcome":"reference_fetched","untrusted_reference":{"text":"x"*MAX_TEXT}}}
         planner(use(1,"WebSearch",query="before any claim was named"))
         planner(use(2,"mcp__verifier_internal__list_local_candidates",claim_id=h.claim_id))
         planner(use(3,"WebSearch",query="fixture table alpha beta gamma"))
-        planner(use(4,"mcp__verifier_internal__fetch_local_reference",claim_id=h.claim_id,url="https://example.org/reference"))
-        planner(result(4,{"status":"ok","data":{"outcome":"reference_fetched","untrusted_reference":{"text_bytes_total":96}}}),
+        fetch(4,{"status":"ok","data":{"outcome":"reference_fetched"}},claim_id=h.claim_id,url="https://example.org/reference")
+        # The log keeps no whole copy of a long reply; the fetch still succeeded.
+        fetch(5,long_page,claim_id=h.claim_id,url="https://example.org/long")
+        planner({"type":"tool_result","tool_use_id":"use-5","content":[{"type":"text","text":json.dumps(long_page)}]},
                 kind="user")
-        planner(use(5,"mcp__verifier_internal__fetch_local_reference",claim_id="claim-other",url="https://example.org/blocked"))
-        planner(result(5,{"status":"retryable","error":{"code":"reference_unavailable"}}),kind="user")
-        planner(use(6,"WebSearch",query="another claim's source"))
+        fetch(6,{"status":"retryable","error":{"code":"reference_unavailable"}},claim_id="claim-other",
+              url="https://example.org/blocked")
+        planner(use(7,"WebSearch",query="another claim's source"))
         # Only the planner's stream counts: a subject session's tool calls are not the planner's searches.
-        planner(use(7,"WebSearch",query="a subject's search"),role="subject")
-        # A result in no expected shape is reported as such; it never fails the selection.
-        planner(use(8,"mcp__verifier_internal__fetch_local_reference",claim_id=h.claim_id,url="https://example.org/odd"))
-        planner({"type":"tool_result","tool_use_id":"use-8","content":"not a reply"},kind="user")
-        planner(use(9,"mcp__verifier_internal__fetch_local_reference",claim_id=h.claim_id,url="https://example.org/plain"))
-        planner(result(9,{"status":"retryable","error":"a bare string"}),kind="user")
+        planner(use(8,"WebSearch",query="a subject's search"),role="subject")
+        fetch(9,Fault("resource_timeout","slow"),tool="load_local_resource",claim_id=h.claim_id,resource_name="table")
+        # A call that never reached Python's tools fetched nothing.
+        planner(use(10,"mcp__verifier_internal__fetch_local_reference",claim_id=h.claim_id,url="https://example.org/unserved"))
+        # Shapes in no expected form never fail the selection.
+        log.emit("tool_started",tool="fetch_local_asset",invocation_id=["not","a","string"],arguments="not an object")
+        log.emit("tool_finished",tool="fetch_local_asset",invocation_id=None,status="ok",outcome="asset_fetched")
         planner({"type":"tool_use","id":["not","a","string"],"name":"mcp__verifier_internal__fetch_local_reference",
                  "input":"not an object"})
         with patch("sci_ai_verifier.documentary.critique",side_effect=self.critic("A")):
@@ -435,17 +456,17 @@ class GradeNegotiationTests(unittest.TestCase):
                                              {"query":"another claim's source","for":"another claim"}])
         self.assertEqual(record["fetches"],[
             {"tool":"fetch_local_reference","url":"https://example.org/reference","for":"this claim",
-             "outcome":"reference_fetched, 96 bytes of text"},
+             "outcome":"reference_fetched"},
+            {"tool":"fetch_local_reference","url":"https://example.org/long","for":"this claim",
+             "outcome":"reference_fetched"},
             {"tool":"fetch_local_reference","url":"https://example.org/blocked","for":"another claim",
              "outcome":"refused: reference_unavailable"},
-            {"tool":"fetch_local_reference","url":"https://example.org/odd","for":"this claim",
-             "outcome":"unreadable result"},
-            {"tool":"fetch_local_reference","url":"https://example.org/plain","for":"this claim",
-             "outcome":"refused: retryable"},
-            {"tool":"fetch_local_reference","url":"operator-resource:","for":"no claim yet",
+            {"tool":"load_local_resource","url":"operator-resource:table","for":"this claim",
+             "outcome":"failed: resource_timeout"},
+            {"tool":"fetch_local_asset","url":"operator-resource:","for":"no claim yet",
              "outcome":"no result recorded"}])
         self.assertEqual((record["searches_total"],record["fetches_total"]),(3,5))
-        # Counted over the whole stream, not the listed entries, so a long run still shows a new search.
+        # Counted over the whole log, not the listed entries, so a long run still shows a new search.
         self.assertEqual(record["this_claim"],{"searches":1,"fetches":3})
         # The rubric tells the critique to judge a described search by this record.
         self.assertIn("search_record",self.packets[0]["rubric"]["coverage"])

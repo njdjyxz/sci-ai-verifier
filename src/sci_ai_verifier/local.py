@@ -350,10 +350,11 @@ FETCH_TOOLS = ("fetch_local_reference", "fetch_local_asset", "load_local_resourc
 def search_record(log, claim_id):
     """How the planner looked for sources, read from this attempt's workflow log.
 
-    The planner's notes say what it searched; this is what its stream shows it ran ("the search
-    record" in local-contract.md). A WebSearch belongs to the claim the planner's last verifier
-    tool call named, and a fetch to the claim it names itself. Event files are written once and
-    never replaced, so they are read without the log's lock.
+    The planner's notes say what it searched; this is what it ran ("the search record" in
+    local-contract.md). A WebSearch, read from the planner's own stream, belongs to the claim its
+    last verifier tool call named. A fetch is read from Python's own record of the call, because
+    the log cuts the planner's copy of a long reply short, and belongs to the claim it names.
+    Event files are written once and never replaced, so they are read without the log's lock.
     """
     if log is None:
         return {"recorded": False, "note": "No workflow log was attached, so Python recorded no search."}
@@ -361,24 +362,14 @@ def search_record(log, claim_id):
     def whose(named):
         return "this claim" if named == claim_id else "another claim" if named else "no claim yet"
 
-    # A selection must never fail on what the stream holds, so every shape is checked, not assumed.
-    def outcome(block):
-        content = block.get("content")
-        parts = content if isinstance(content, list) else [{"text": content}]
-        text = "".join(str(part.get("text") or "") for part in parts if isinstance(part, dict))
-        try:
-            reply = json.loads(text)
-        except (ValueError, RecursionError):
-            return "unreadable result"
-        if not isinstance(reply, dict):
-            return "unreadable result"
-        if reply.get("status") != "ok":
-            error = reply.get("error")
-            return "refused: " + str(error.get("code") if isinstance(error, dict) else reply.get("status"))
-        data = reply.get("data") if isinstance(reply.get("data"), dict) else {}
-        shown = data.get("untrusted_reference") if isinstance(data.get("untrusted_reference"), dict) else {}
-        size = shown.get("text_bytes_total")
-        return str(data.get("outcome")) + (f", {size} bytes of text" if isinstance(size, int) else "")
+    # A selection must never fail on what the log holds, so every shape is checked, not assumed.
+    def outcome(event, data):
+        if event == "tool_failed":
+            return "failed: " + str(data.get("code"))
+        if data.get("status") != "ok":
+            error = data.get("error")
+            return "refused: " + str(error.get("code") if isinstance(error, dict) else data.get("status"))
+        return str(data.get("outcome"))
 
     searches, fetches, pending, active = [], [], {}, None
     for path in sorted(no_links(log.directory / "events").glob("[0-9]*.json")):
@@ -386,40 +377,44 @@ def search_record(log, claim_id):
             item = json.loads(path.read_bytes())
         except (OSError, ValueError, UnicodeError, RecursionError):
             continue
+        event = item.get("event") if isinstance(item, dict) else None
         data = item.get("data") if isinstance(item, dict) else None
-        if not isinstance(data, dict) or item.get("event") != "claude_event" or data.get("role") != "planner":
+        if not isinstance(data, dict):
+            continue
+        call = data.get("invocation_id") if isinstance(data.get("invocation_id"), str) else None
+        if event == "tool_started" and data.get("tool") in FETCH_TOOLS:
+            given = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
+            target = given.get("url") or "operator-resource:" + str(given.get("resource_name", ""))
+            entry = {"tool": data["tool"], "url": str(target)[:200], "for": whose(given.get("claim_id")),
+                     "outcome": "no result recorded"}
+            fetches.append(entry)
+            if call:
+                pending[call] = entry
+            continue
+        if event in ("tool_finished", "tool_failed") and call in pending:
+            pending.pop(call)["outcome"] = outcome(event, data)[:80]
+            continue
+        if event != "claude_event" or data.get("role") != "planner":
             continue
         payload = data.get("payload")
         message = payload.get("message") if isinstance(payload, dict) else None
         blocks = message.get("content") if isinstance(message, dict) else None
         for block in blocks if isinstance(blocks, list) else []:
-            if not isinstance(block, dict):
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
-            if block.get("type") == "tool_use":
-                name = str(block.get("name", "")).rsplit("__", 1)[-1]
-                given = block.get("input") if isinstance(block.get("input"), dict) else {}
-                if name == "WebSearch":
-                    searches.append({"query": str(given.get("query", ""))[:200], "for": whose(active)})
-                    continue
-                if isinstance(given.get("claim_id"), str):
-                    active = given["claim_id"]
-                if name in FETCH_TOOLS:
-                    target = given.get("url") or "operator-resource:" + str(given.get("resource_name", ""))
-                    entry = {"tool": name, "url": str(target)[:200], "for": whose(given.get("claim_id")),
-                             "outcome": "no result recorded"}
-                    fetches.append(entry)
-                    if isinstance(block.get("id"), str):
-                        pending[block["id"]] = entry
-            elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str) \
-                    and block["tool_use_id"] in pending:
-                pending.pop(block["tool_use_id"])["outcome"] = outcome(block)
+            given = block.get("input") if isinstance(block.get("input"), dict) else {}
+            if str(block.get("name", "")).rsplit("__", 1)[-1] == "WebSearch":
+                searches.append({"query": str(given.get("query", ""))[:200], "for": whose(active)})
+            elif isinstance(given.get("claim_id"), str):
+                active = given["claim_id"]
     return {"recorded": True, "searches_total": len(searches), "fetches_total": len(fetches),
             "this_claim": {"searches": sum(item["for"] == "this claim" for item in searches),
                            "fetches": sum(item["for"] == "this claim" for item in fetches)},
             "searches": searches[:RECORD_ITEMS], "fetches": fetches[:RECORD_ITEMS],
-            "note": "Python read these from the planner's own stream in this attempt's workflow log. The "
-                    "justification describes the planner's searches; this records them. A search shown here "
-                    "for another claim can still bear on this one."}
+            "note": "Python read the searches from the planner's own stream in this attempt's workflow log, "
+                    "and the fetches from its own record of each call. The justification describes the "
+                    "planner's searches; this records them. A search shown here for another claim can "
+                    "still bear on this one."}
 
 
 def looked(record):

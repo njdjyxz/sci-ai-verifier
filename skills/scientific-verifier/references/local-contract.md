@@ -170,10 +170,13 @@ gaps, and every case they did not count, with its verdict, reason and suggested
 replacement), each of which it judges answered or not, and the fixed critique rubric.
 The search record is read from this attempt's workflow log, not from the planner's notes:
 every WebSearch query the planner ran, marked with the claim it was working on (the one its
-last verifier tool call named), and every reference, resource or asset fetch with the claim
-it was for and its outcome. Run `26312681`'s critiques read the planner's description of
-its searches clipped at 2,000 characters and its limitations at 800, and took it as true
-for two claims whose untested facts no search had sought. It never sees the
+last verifier tool call named), and every reference, resource or asset fetch Python served,
+with the claim it was for and its outcome as Python recorded the call. Run `26312681`'s
+critiques read the planner's description of its searches clipped at 2,000 characters and
+its limitations at 800, and took it as true for two claims whose untested facts no search
+had sought. Run `1d1c3b6e`'s record took each outcome from the planner's copy of the reply,
+which the log cuts at 16,000 characters, and called five of ten successful fetches
+unreadable. It never sees the
 planning conversation, any subject answer, or any earlier reviewer's grade: objections
 carry forward so a revision can be checked, grades do not, because a reviewer shown a
 previous verdict would anchor on it. That separation is imperfect and is not claimed to
@@ -334,7 +337,7 @@ cases as restatements of another. A local claim is therefore sized to its tests:
   of them, preferring what the skill tells its user to do and conclude over facts about a
   library it calls, in the skill's order.
 - **At most five.** Broader claims need more trials, and a run of six narrower claims
-  used all but 8 seconds of its 90 minutes, so a manifest holds at most five claims and
+  ended 8 seconds before its deadline, so a manifest holds at most five claims and
   Python refuses a larger one. When more sections qualify, keep those whose behaviour the
   skill's workflow depends on most.
 
@@ -566,8 +569,12 @@ The public stdio connection processes cancellation notifications while a request
 is running and permits one active verification per connection. Cancellation or
 connection closure stops the managed process tree and preserves partial evidence;
 cleanup/reporting may continue briefly. A total attempt deadline covers setup and
-catalog qualification as well as the planner. Clients supplying a progress token
-receive bounded stage notifications, without subject text or credentials.
+catalog qualification as well as the planner. Every reply to the planner carries
+`attempt_seconds_remaining`, the whole seconds left before the planner is stopped. Told
+nothing, run `1d1c3b6e`'s planner called its deadline near with 62 of 120 minutes left,
+accepted a lowered grade and gave its last claim a documentary D without testing it.
+Clients supplying a progress token receive bounded stage notifications, without subject
+text or credentials.
 
 Fixtures must cover empty lookup/discovery, qualification and offline reuse,
 rejected provenance/controls, unknown license metadata, hidden-answer exclusion,

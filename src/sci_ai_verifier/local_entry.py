@@ -29,10 +29,11 @@ Pass that string, unchanged, as `source_path` to load_submitted_skill. Do not sh
 make it relative, or substitute a file name inside it.
 
 Your current state token is {state_token}. Every tool reply returns the next one; always
-use the newest. The pinned contracts that govern this run are appended to this message --
-read them before acting. get_verifier_context returns your current state, token and
-authorized path, and takes an optional `section` to re-read one pinned document or
-committed artifact if you lose this message.
+use the newest. Each reply also gives attempt_seconds_remaining, the time left before you
+are stopped: judge your time by it, never by a guess. The pinned contracts that govern
+this run are appended to this message -- read them before acting. get_verifier_context
+returns your current state, token and authorized path, and takes an optional `section` to
+re-read one pinned document or committed artifact if you lose this message.
 
 1. Read every submitted text file, then commit the claim manifest quoting only what you read:
    at most five claims, each one behaviour broad enough for about six independent questions,
@@ -155,8 +156,23 @@ class BoundRuntime:
 
     def call(self, name, arguments, call_id=None):
         if name not in INTERNAL_NAMES or arguments.get("run_id") != self.run_id:
-            return {"status": "retryable", "error": {"code": "bound_run_required", "message": "Use the supplied run and internal tools only."}}
-        return recorded_call(self.log, self.runtime, name, arguments, call_id)
+            return timed({"status": "retryable", "error": {"code": "bound_run_required", "message": "Use the supplied run and internal tools only."}})
+        return timed(recorded_call(self.log, self.runtime, name, arguments, call_id))
+
+
+def timed(result):
+    """Add the seconds left before the planner is stopped ("Acceptance" in local-contract.md).
+
+    Run 1d1c3b6e's planner, told nothing, called its deadline near with 62 of 120 minutes left.
+    """
+    body = "data" if result.get("status") == "ok" else "error"
+    try:
+        left = max(0, int(float(os.environ.get(DEADLINE_ENV, "")) - time.time()))
+    except (ValueError, OverflowError):
+        return result  # No deadline bounds this attempt, so none is claimed.
+    if not isinstance(result.get(body), dict):
+        return result
+    return {**result, body: {**result[body], "attempt_seconds_remaining": left}}
 
 
 def verify(source_path, *, workspace, instructions, model="opus", auth="subscription", executable="claude", timeout=1800, config_path=None):

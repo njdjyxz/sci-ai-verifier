@@ -543,7 +543,9 @@ The same limit applies to the subject side. The agent selects and configures an 
 ## Local profile tools
 
 All operations below require the current `run_id`, `state_token` and `claim_id`.
-The Local profile matrix in workflow.md governs their legality.
+The Local profile matrix in workflow.md governs their legality. Every reply to the planner
+carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
+`local-contract.md` says.
 
 - `list_local_candidates`: in local_lookup, return immutable local candidate
   summaries for semantic matching, then enter local_discovery. Empty is normal.
