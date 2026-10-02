@@ -45,6 +45,7 @@ deterministic tools, bounded processes and saved evidence.
 | `26312681` (2026-09-30) | tooluniverse-dose-response | 2 at A, 2 at B; 57 of 57 counted trials passed, 2 of them by the AI reader; 0 invalid, 0 faults |
 | `3303fd93` (2026-10-01) | tooluniverse-dose-response | 1 at A, 3 at B; 48 of 48 counted trials passed, 8 of them by the AI reader; 0 invalid, 0 faults |
 | `1d1c3b6e` (2026-10-01) | tooluniverse-dose-response | 1 at A, 2 at B, 1 at D with no trials; 51 of 51 counted trials passed, none by the AI reader; 0 invalid, 0 faults |
+| `90c60cbe` (2026-10-02) | tooluniverse-dose-response | 4 at A, one of them `fail` on a single case; 57 of 60 counted trials passed, 1 by the AI reader; 0 invalid, 0 faults |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -113,7 +114,8 @@ Calculated answers met their first run in `fbd49132`: two designs were keyed by 
 first reproduced worked examples quoted from their references. That run also showed planners
 testing only part of what a claim states, which the 2026-09-30 entry addresses. In `1d1c3b6e`
 the planner, never told its deadline, gave its last claim no test with an hour left; the
-2026-10-01 entry addresses that.
+2026-10-01 entry addresses that. In `90c60cbe`, told, it tested all four. The 2026-10-02 entry
+sets a bar for changes, so that rules drawn from one run do not overfit.
 
 Automated suite: **439 tests, 437 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
@@ -1464,3 +1466,128 @@ Record, against `1d1c3b6e`:
 - run time against 7,200 s and subject calls against 128.
 
 It is finished when each has a recorded answer.
+
+## Claude: 2026-10-02 (run 90c60cbe; one false fail, and a bar for changes so that fixes do not overfit)
+
+### Current stage and status
+
+Version 0.7.0, local workflow, on `skill-environments`. Run `90c60cbe` used the 2026-10-01 fixes
+(`ddc5f84`) and settled all four claims at A, a first for this skill. C1's status is `fail` on one
+case, whose question, not its key, was at fault. The operator raised a concern that fixes drawn
+from single runs overfit. The records support it, so no fix is made for that case, and a bar for
+future changes is recorded below. The two returns built on 2026-10-01 have not fired in any run
+since.
+
+### What has been done
+
+This session, 2026-10-02:
+
+**1. Run `90c60cbe`**, tooluniverse-dose-response, on `ddc5f84`. Its session's `serve-local` started
+at 23:01 on 2026-10-01, after that commit, with `--timeout 7200`. `1d1c3b6e`'s files had already
+been moved, at 20:44 on 2026-10-01, to `cleaned-1d1c3b6e` in scratchpad `d9761800…`, so nothing was
+moved. The Western-blot run `32e60bd6` was left in place, as the operator asked.
+- **Result.** C1 (the 4PL model) at A, `fail`; C2 (data preparation), C3 (reading the parameters)
+  and C4 (quality gotchas) at A, `pass`. 57 of 60 counted trials passed, and every case was
+  unanimous. The AI reader decided one trial, "Cheng-Prusoff correction" for the term key
+  "Cheng-Prusoff", in C4. By Python's reader alone C4 is 14 of 15, `fail`.
+- **Rounds.** C1 and C2: A → A. C3 and C4: A → B, then searches and a revised design, then A → A.
+  Two proposals were refused as `prior_review_in_packet`, and two fetches sent in parallel as
+  `illegal_transition`. No return fired.
+- **The clock worked.** Every reply carried `attempt_seconds_remaining`: 7,068 s at the first lookup,
+  3,042 s at the last selection. The planner designed and ran every claim, made no remark about
+  time, and ended with about 2,830 s left.
+- **The search record worked.** Every critique's record showed each fetch's outcome:
+  `reference_fetched`, or `refused: illegal_transition` for the parallel calls. No critique asked
+  to reconcile the record.
+- **Against `1d1c3b6e`'s list:** facts left untested per final critique 2, 2, 3 and 3; WebSearch
+  queries 5, 3, 2 and 2 (C1's include 2 made for C2 before the planner named that claim); fetches
+  4, 6, 6 and 4; earlier requests judged unanswered at the final round, both at A, 2 in C3 and 4
+  in C4; grades 4 A against 1 A, 2 B and 1 D.
+- **Time and cost.** 4,371 s of 7,200, and 78 of 128 subject calls. About $29.6 at API rates: the
+  planner $20.70 over 66 turns, 78 subjects $3.38, 6 critiques $4.47 (101 to 297 s each), 58
+  claim-only sessions $0.98, 6 readings $0.10. The 5-hour window went from 3% to 60%, the most for
+  this skill.
+- Report: `.verifier/runs/90c60cbe-4ffd-44f1-8e2c-c2122af3e5d6/report-card.md`, outside Git.
+
+**2. Why C1 failed: one case, a false fail.** `dr1_agonist_measure` asked "Which half-maximal
+concentration parameter does the fit report for that activation curve?". Its key was `EC50`, of
+type `exact`.
+- **The key is right.** SKILL.md says "'IC50' for inhibition, 'EC50' for activation".
+- **The question is at fault.** SKILL.md also says the tool "Returns `ic50`, …" for any curve, and
+  the `exact` format line asks for "the exact token, written as it appears in code or data". All
+  three subjects answered `ic50`, each adding that the value is read as the EC50 for an agonist; two
+  searched the skill's scripts for the token first. The claim-only sessions got the same question
+  and format line, had no skill, and answered `EC50`.
+- **The process could not see it.** The critique and the claim-only sessions see the claim, not the
+  skill. The AI reader read the replies correctly as `differs`. Under the unanimity rule one case at
+  0 of 3 fails the claim; without it C1 is 12 of 12. Its grade stands either way.
+- **The other two misses were handled as designed.** In C3, `dr3_range` keyed an option that is
+  GraphPad's sentence with its condition ("If the top plateau is not defined…") cut, so it reads as
+  "curve fitting is useless". Subjects and claim-only sessions all chose "none of these", and
+  Python's claim-only check dropped the case, which the critique had counted against its own
+  rubric rule. In C4, `dr4_cheng` was the AI reader's trial above.
+
+**3. The overfitting check**, after the operator's concern:
+- Across the 10 runs whose records are kept (166 counted cases on sar-analysis, scikit-survival,
+  glycoengineering, western-blot-quantification and five dose-response runs), only
+  `dr1_agonist_measure` has claim-only sessions reaching a key that every subject missed.
+- Since the `exact` format line was added in `73496d6`, 10 other `exact` cases, in the 5 of 7 runs
+  that used the type, passed all 30 of their trials.
+- In the three runs since the two returns were built, `1d1c3b6e`, `90c60cbe` and `32e60bd6`, every
+  proposal was A except two acceptances of a lowered B, one in `1d1c3b6e` and one in `32e60bd6`.
+  `32e60bd6` was run from another session and is not recorded here. An acceptance runs no
+  critique, so neither return could fire. The acceptances are the 2026-10-01 entry's open
+  question 4.
+- So neither proposed fix was built: a planner rule against asking what a tool "reports", and a
+  reworded `exact` format line.
+- The scan is `divergence.py` in scratchpad `c7991202…`; it ran no model session.
+
+### Decisions taken 2026-10-02
+
+- **A bar for changes** (operator: "yes, record it in the plan"):
+  - fix a bug or a missing fact at once, as the search record and the clock were fixed;
+  - change a planner, critique or reader rule only for a failure seen on at least two skills, and
+    check the change against kept runs of other skills before adopting it;
+  - run the next verifications on skills other than tooluniverse-dose-response.
+- **No fix for `dr1_agonist_measure`.** It is a recorded false fail. A rule waits until the same
+  pattern, claim-only sessions reaching a key every subject misses, appears on a second skill.
+- **The returns stay, and nothing like them is added.** They are judged after runs on other skills.
+  If they still never fire, they are complexity the workflow does not need.
+
+### Open questions for the operator
+
+1. The 2026-10-01 entry's questions 2 to 4 stand. Question 4, a lowered grade accepted at once, came
+   up again in `32e60bd6`.
+2. Keep or remove the two returns, after the next runs on other skills.
+
+### Urgent next steps, if any
+
+None. Committed and pushed on `skill-environments` with this entry.
+
+### Suggested next move
+
+Verify a skill other than tooluniverse-dose-response on `ddc5f84`, to see whether the recent rules
+hold away from the skill that produced them.
+
+### Recommended next action
+
+With the operator's go-ahead:
+1. Choose a skill other than tooluniverse-dose-response.
+2. Move, do not delete, into the session scratchpad:
+   - `.verifier/runs/90c60cbe-4ffd-44f1-8e2c-c2122af3e5d6`
+   - `.verifier/attempts/462b41d5-ad18-4937-bde6-5102d1bdaf48`
+   - `.verifier/subject-runs/90c60cbe-4ffd-44f1-8e2c-c2122af3e5d6`
+   - the ten candidates it wrote, dated 2026-10-02, 01:30 to 02:26
+
+   Leave the Western-blot run `32e60bd6`, its attempt `350bcb4c…`, its subject-runs and its eight
+   candidates (2026-10-01 23:52 to 2026-10-02 00:54) to the operator. Keep the glycoengineering run,
+   its attempt, subject-runs and five candidates, and `.verifier/store/`.
+3. Use a session whose `serve-local` started after `ddc5f84` (its runs' `local_method_ref` is
+   `cb7ef8a4…`), and check Docker and the 5-hour window as the 2026-09-28 entry says. A run has
+   taken up to 63 points of that window.
+4. Run the chosen skill.
+
+Record: any case where claim-only sessions reach a key that every subject misses, and why; whether
+either return fires; how many lowered grades are accepted at once; the time left as the planner
+ends each claim; grades, statuses and the trials the AI reader decided; run time against 7,200 s
+and subject calls against 128. It is finished when each has a recorded answer.
