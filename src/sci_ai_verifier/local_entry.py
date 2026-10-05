@@ -175,7 +175,8 @@ def timed(result):
     return {**result, body: {**result[body], "attempt_seconds_remaining": left}}
 
 
-def verify(source_path, *, workspace, instructions, model="opus", auth="subscription", executable="claude", timeout=1800, config_path=None):
+def verify(source_path, *, workspace, instructions, model="opus", auth="subscription", executable="claude", timeout=1800, config_path=None,
+           html_report=True):
     log = WorkflowLog(workspace)
     started = time.monotonic()
     log.emit("verification_started", source_path=str(source_path), model=model, auth_mode=auth)
@@ -199,6 +200,13 @@ def verify(source_path, *, workspace, instructions, model="opus", auth="subscrip
     except Fault:
         result["logging_error"] = "workflow_log_unavailable"
     result["log"] = log.paths
+    run_id = (result.get("data") or {}).get("run_id") if result.get("status") == "ok" else None
+    if html_report and run_id:
+        from .report_html import publish
+        try:
+            result["data"]["html_report"] = publish(workspace, run_id)
+        except Exception as error:  # A page is a reading aid: failing to draw one never changes a run's outcome.
+            result["data"]["html_report"] = {"error": "The HTML page could not be written: " + str(error)}
     return result
 
 
@@ -352,9 +360,15 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
 class PublicRuntime:
     interruptible=True
     control=None
-    instructions = "Call verify_skill once for the user's selected skill path. It returns the completed report or an honest operational limitation."
-    definitions = [{"name": "verify_skill", "description": "Verify a local skill in fresh Claude Code sessions and return its traceable report.",
-                    "inputSchema": obj({"source_path": string(4096)}),
+    instructions = ("Call verify_skill once for the user's selected skill path. It returns the completed report or an "
+                    "honest operational limitation. A completed run also gets a readable HTML page: pass html_report "
+                    "false only when the user asked for no HTML report. Otherwise, once it returns, follow "
+                    "data.html_report.next_step to write the page's plain-language summaries.")
+    definitions = [{"name": "verify_skill",
+                    "description": "Verify a local skill in fresh Claude Code sessions and return its traceable report. "
+                                   "A completed run also gets an HTML page unless html_report is false.",
+                    "inputSchema": obj({"source_path": string(4096), "html_report": {"type": "boolean"}},
+                                       required=["source_path"]),
                     "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True}}]
 
     def __init__(self, **configuration):
@@ -368,7 +382,7 @@ class PublicRuntime:
             if name != "verify_skill":
                 raise Fault("unknown_tool", "The public local interface exposes verify_skill only.")
             validate(arguments, self.definitions[0]["inputSchema"])
-            return verify(arguments["source_path"], **self.configuration)
+            return verify(arguments["source_path"], html_report=arguments.get("html_report", True), **self.configuration)
         except (Fault, OSError) as error:
             return {"status": "unavailable", "error": {"code": error.code if isinstance(error, Fault) else "configuration_unavailable",
                     "message": str(error) if isinstance(error, Fault) else "Local configuration is unavailable.", "verification_complete": False}}

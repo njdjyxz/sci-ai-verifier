@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--catalog", type=Path, help="Operator-selected local release directory for testing")
     parser.add_argument("--subject-fixture", type=Path,
                         help="Explicit synthetic replay file; never invokes a live subject or API")
+    parser.add_argument("--no-html", action="store_true", help="verify: do not write the run's HTML page")
     parser.add_argument("--instructions", type=Path,
                         default=Path(__file__).resolve().parents[2] / "skills" / "scientific-verifier")
     args = parser.parse_args()
@@ -42,7 +43,8 @@ def main():
         if args.command == "verify":
             if args.source is None:
                 parser.error("verify needs a skill directory or SKILL.md path.")
-            result = public.call("verify_skill", {"source_path": str(args.source.resolve())})
+            result = public.call("verify_skill", {"source_path": str(args.source.resolve()),
+                                                  "html_report": not args.no_html})
         else:
             try:
                 from .local_config import load_configuration

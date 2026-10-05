@@ -74,7 +74,7 @@ def validate(value, schema, field="arguments"):
                 continue
         raise Fault("invalid_arguments", f"{field} matches none of its allowed forms.", [field])
     kind = schema["type"]
-    types = {"object": dict, "array": list, "string": str, "integer": int}
+    types = {"object": dict, "array": list, "string": str, "integer": int, "boolean": bool}
     if type(value) is not types[kind]:
         raise Fault("invalid_arguments", f"{field} must be {kind}.", [field])
     if "enum" in schema and value not in schema["enum"]:
@@ -97,5 +97,5 @@ def validate(value, schema, field="arguments"):
         # JSON Schema patterns search rather than match, as re.search does.
         if "pattern" in schema and not re.search(schema["pattern"], value):
             raise Fault("invalid_arguments", f"{field} does not match its pattern.", [field])
-    elif not schema["minimum"] <= value <= schema["maximum"]:
+    elif kind == "integer" and not schema["minimum"] <= value <= schema["maximum"]:
         raise Fault("invalid_arguments", f"{field} is outside its bounds.", [field])

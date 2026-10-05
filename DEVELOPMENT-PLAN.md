@@ -117,7 +117,7 @@ the planner, never told its deadline, gave its last claim no test with an hour l
 2026-10-01 entry addresses that. In `90c60cbe`, told, it tested all four. The 2026-10-02 entry
 sets a bar for changes, so that rules drawn from one run do not overfit.
 
-Automated suite: **444 tests, 442 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **448 tests, 446 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -1592,15 +1592,16 @@ either return fires; how many lowered grades are accepted at once; the time left
 ends each claim; grades, statuses and the trials the AI reader decided; run time against 7,200 s
 and subject calls against 128. It is finished when each has a recorded answer.
 
-## Claude: 2026-10-05 (an HTML page for reading a run; the final reviewer planned)
+## Claude: 2026-10-05 (an HTML page after every run, summarized by the calling agent; the final reviewer planned)
 
 ### Current stage and status
 
-Version 0.7.0, local workflow, on `skill-environments`. Any finished run can now be read as one
-web page, made from its records by `scripts/report_html.py`, for the operator and the lab. The page
-is a view of the record made outside the run; runs do not make it yet, and nothing in a run changed.
+Version 0.7.0, local workflow, on `skill-environments`. Every completed run now gets one web page,
+made from its records, for the operator and the lab, unless the user asks for none (section 3). The
+agent that asked for the verification then writes the page's plain-language summaries into a notes
+file and redraws it. The page and its notes sit outside the run, and nothing the run grades changed.
 A final reviewer is planned, not built. The operator has decided what it reviews and what follows
-when it disputes a test (below).
+when it disputes a test (section 2).
 
 ### What has been done
 
@@ -1650,7 +1651,8 @@ first").
   - notes appear, marked;
   - the same records give the same page;
   - a run without a report card says it stopped early.
-- Not done: runs do not make the page themselves, and stopped runs' partial reports are not rendered.
+- Not done: stopped runs' partial reports are not rendered. That runs did not make the page themselves
+  is superseded by section 3.
 
 **2. The final reviewer, planned** (the operator: "leave the final reviewer into the dev plan").
 - Decided by the operator, 2026-10-05:
@@ -1674,24 +1676,69 @@ first").
   - **Test it first.** Run it over the kept runs before it joins the workflow: it should flag
     `dr1_agonist_measure` as a question fault and leave the true passes alone.
 
+**3. The page after every run, summarized by the calling agent.** The operator: "I need this html
+generate automatically after each run unless the user explicitly says not to in the prompt. Then the
+default agent should be able to touch it and summarize the claim. Current claim description is too
+long and very unreadable."
+- Contracts first:
+  - `local-contract.md`, which owns the public interface, now reads `verify_skill(source_path,
+    html_report)`. A completed run also gets the page and a notes file for the calling agent's
+    summaries, unless `html_report` is false or `--no-html` is given.
+  - `LOCAL-INSTALL.md` tells the operator what is written and how to skip it.
+- Code:
+  - The renderer moved into the package as `report_html.py`; `scripts/report_html.py` only calls it.
+  - After a completed run, `verify()` publishes, unless the caller passed `html_report` false. The
+    page goes to `.verifier/reports/<run>.html`. Beside it goes an unfilled notes file: a short guide,
+    then, for each claim and test, what the agent needs (the claim as written, each question, key and
+    answers, the result, the facts left untested) next to empty plain-language fields. Notes already
+    written are kept.
+  - The tool's reply gains `html_report`: the page, the notes file, the command that redraws the
+    page, and the next step. Its key sorts before the long report, so an agent sees it in the first
+    lines.
+  - `verify_skill` takes the optional `html_report`, and the server's instructions tell the agent to
+    follow the next step unless the user asked for no page. The CLI's `verify` takes `--no-html`.
+  - The schema check learned booleans.
+  - A page that cannot be drawn is reported beside the result and never changes it.
+- Without notes, a claim shows "No plain summary yet" and the planner's one-sentence scope, and its
+  full statement (90 to 190 words in `90c60cbe`) is folded away. A test shows the sentence that asks,
+  not its whole question.
+- Shown working on `32e60bd6`. Publishing wrote its page and notes outside its run, which was left
+  untouched. Acting as the calling agent, I filled the notes for 4 claims and 24 tests and redrew the
+  page. `90c60cbe`'s page was redrawn too.
+- Verification: suite 444 → 448 tests, 446 passing and 2 skipped. New tests:
+  - without notes the long claim folds away and a test shows its question;
+  - publishing writes the page and an unfilled notes file, and keeps notes already written;
+  - `verify()` publishes after a completed run, writes nothing when told not to, and reports a page
+    it cannot draw without changing the result;
+  - the public tool takes an optional boolean `html_report` and refuses anything else.
+- Sizes: the pinned `local-contract.md` is 40,484 of 40,960 bytes; the verification bootstrap is
+  unchanged at 199,970 of 200,000.
+- `src/` changed, so a run needs a session whose `serve-local` started after this commit.
+- Not verified: a live run that publishes the page, and an agent following the next step unprompted.
+
 ### Decisions taken 2026-10-05
 
 - **The page is for the lab and the operator**, and may later be served from a web server (operator).
 - **The final reviewer**: failures plus a sample of passes; disputed tests re-run, fixing the part at
   fault (operator).
 - **Build the page first and test it before the reviewer** (operator).
+- **A page after every completed run unless the user declines, and the calling agent writes its
+  summaries** (operator).
 - Proposed here and built:
-  - the page is a view made by a script, not yet a run artifact, so no contract changes;
   - plain text comes from a notes file and is marked as written after the run;
-  - the page has no JavaScript.
+  - the page has no JavaScript;
+  - the opt-out is an argument the agent sets from the user's words, and `--no-html` on the CLI;
+  - the agent fills a template beside the page, and a page that fails never changes a run.
+- Superseded the same day: "a view made by a script, not yet a run artifact, so no contract changes".
+  Runs now make the page, and the public interface sentence in `local-contract.md` changed.
 
 ### Open questions for the operator
 
 1. The 2026-10-02 entry's questions stand.
-2. Should runs make the page themselves, from `write_report_card`, and who writes the notes then: the
-   final reviewer, or a session of its own?
-3. For the final reviewer: how large a sample of passes; how much time and how many subject calls a
+2. For the final reviewer: how large a sample of passes; how much time and how many subject calls a
    re-run may use; and whether a re-run repeats the whole claim or only the disputed tests.
+3. Should the final reviewer, once built, write into the same notes, beside the calling agent's
+   summaries?
 
 ### Urgent next steps, if any
 
@@ -1699,15 +1746,21 @@ None. Committed and pushed on `skill-environments` with this entry.
 
 ### Suggested next move
 
-Read `90c60cbe`'s page and settle its design. Then build the final reviewer as an offline step over
-the kept runs, before it joins the workflow. The 2026-10-02 entry's next run, on a skill other than
-dose-response, still stands.
+Run a skill other than dose-response, as the 2026-10-02 entry asked, so that a live run publishes
+its page and the calling agent writes the summaries. Then build the final reviewer as an offline
+step over the kept runs, before it joins the workflow.
 
 ### Recommended next action
 
 With the operator's go-ahead:
-1. Open `.verifier/reports/90c60cbe-4ffd-44f1-8e2c-c2122af3e5d6.html` and list what to change.
-2. Then build the final reviewer offline. It is finished when, run over the kept runs, it:
+1. Open `.verifier/reports/32e60bd6-aa9c-45a1-ac0a-50bd8cfd03a4.html` and `90c60cbe-…html`, and list
+   what to change.
+2. Run the next skill from a new session, as the 2026-10-02 entry's next action says; its runs'
+   `local_method_ref` is then `79780cdb…`. Record:
+   - whether `data.html_report` came back;
+   - whether the agent filled the notes and redrew the page without being asked;
+   - how readable its summaries are.
+3. Then build the final reviewer offline. It is finished when, run over the kept runs, it:
    - flags `dr1_agonist_measure` as a question fault;
    - writes its findings into the run's notes file, where the page shows them;
    - leaves the kept runs' true passes alone.
