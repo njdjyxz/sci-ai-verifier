@@ -117,7 +117,7 @@ the planner, never told its deadline, gave its last claim no test with an hour l
 2026-10-01 entry addresses that. In `90c60cbe`, told, it tested all four. The 2026-10-02 entry
 sets a bar for changes, so that rules drawn from one run do not overfit.
 
-Automated suite: **439 tests, 437 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **444 tests, 442 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -1591,3 +1591,123 @@ Record: any case where claim-only sessions reach a key that every subject misses
 either return fires; how many lowered grades are accepted at once; the time left as the planner
 ends each claim; grades, statuses and the trials the AI reader decided; run time against 7,200 s
 and subject calls against 128. It is finished when each has a recorded answer.
+
+## Claude: 2026-10-05 (an HTML page for reading a run; the final reviewer planned)
+
+### Current stage and status
+
+Version 0.7.0, local workflow, on `skill-environments`. Any finished run can now be read as one
+web page, made from its records by `scripts/report_html.py`, for the operator and the lab. The page
+is a view of the record made outside the run; runs do not make it yet, and nothing in a run changed.
+A final reviewer is planned, not built. The operator has decided what it reviews and what follows
+when it disputes a test (below).
+
+### What has been done
+
+This session, 2026-10-05:
+
+**1. The HTML run report**, on the operator's request ("Now build the html … we will test the html
+first").
+- `scripts/report_html.py RUN` writes `.verifier/reports/<run>.html`. The page is one file with no
+  scripts and no outside styles. Every recorded string is escaped, and only `http(s)` sources become
+  links.
+- It reads only the run's records:
+  - the report card;
+  - the run journal, for grading rounds and time per claim;
+  - the workflow log, for session costs and Python's search record;
+  - the store, for designs and sources.
+
+  A part that is missing leaves its figure blank.
+- The page follows the operator's outline:
+  - the skill in plain words, with its sections and the claim that tested each, folded when there
+    are more than ten;
+  - a summary table, one row per claim: grade, status, answers right, agreement, tests and trials
+    counted, AI-reader passes, grading rounds, searches and fetches, facts left untested, time and
+    cost;
+  - one chapter per claim:
+    - a plain description and a summary;
+    - a table with one row per test;
+    - one fold holding each test's full question, answer format, key, source quote, reviewer
+      verdict, claim-only answers and every try, plus the sources, grading rounds, untested facts
+      and the planner's recorded limits;
+  - cautions and limitations;
+  - how to read the page.
+- The plain-language text comes from a notes file, `.verifier/reports/<run>.notes.json`: the skill
+  summary, claim descriptions and summaries, what each test asks, review notes and cautions. The page
+  marks it "✎ written by Claude" and says it is not part of the scored record. I wrote run
+  `90c60cbe`'s notes in this session. The final reviewer is to write into the same file.
+- Checked on every kept run that has a report card: `90c60cbe` with notes, and without notes
+  `32e60bd6`, `1d1c3b6e` (one documentary claim), `3303fd93`, `26312681`, `fbd49132`, `d3892f6c`,
+  `0aeca4c6` and `d416f79d`. `32e60bd6`'s page was written outside its run, which was left untouched.
+  Five kept runs have no report card: four kept only their event logs, and `4a8c380d` stopped at the
+  usage limit with a partial report. For those the script says so.
+- Read in Edge at 1,400 px, every column shows, and each fold opens to readable text.
+- `LOCAL-INSTALL.md` tells the operator how to make the page.
+- Verification: suite 439 → 444 tests, 442 passing and 2 skipped. The new tests check that:
+  - a hostile reply is escaped and a `javascript:` source is never linked;
+  - there is one chapter per claim and one row per test;
+  - a choice key shows the option it names;
+  - notes appear, marked;
+  - the same records give the same page;
+  - a run without a report card says it stopped early.
+- Not done: runs do not make the page themselves, and stopped runs' partial reports are not rendered.
+
+**2. The final reviewer, planned** (the operator: "leave the final reviewer into the dev plan").
+- Decided by the operator, 2026-10-05:
+  - it reviews every failed test plus a sample of passed ones;
+  - a test it disputes is re-run, with the question, key or other part at fault fixed.
+- Proposed here, for the build:
+  - **Where and what it sees.** A fresh session after all claims ran and before the report. It sees
+    the skill's own text and, for each test it reviews, the question, the answer-format line, the key
+    and its source quote, the subjects' replies and the claim-only answers. The critique sees none of
+    the skill; `90c60cbe`'s false fail came from the skill's own words ("Returns `ic50`") and our
+    format line.
+  - **It can only withdraw a verdict, never give one.** A disputed fail is `inconclusive` until the
+    re-run settles it, and the first verdict stays in the record beside the review.
+  - **Each finding names its fault from a short list** (the question, the key, the answer format or
+    reader, the skill) with a reason.
+  - **Fixes.** A fault in a question or key is fixed through the normal design path (qualification,
+    critique, claim-only answers), and the claim is re-run once. A fault in our own process (a format
+    line, the reader) is recorded for the developers, and the test stays `inconclusive`.
+  - **It meets the 2026-10-02 bar.** False fails have come up on sar-analysis (`b43780be`,
+    `3b3f3c94`) and on dose-response (`90c60cbe`).
+  - **Test it first.** Run it over the kept runs before it joins the workflow: it should flag
+    `dr1_agonist_measure` as a question fault and leave the true passes alone.
+
+### Decisions taken 2026-10-05
+
+- **The page is for the lab and the operator**, and may later be served from a web server (operator).
+- **The final reviewer**: failures plus a sample of passes; disputed tests re-run, fixing the part at
+  fault (operator).
+- **Build the page first and test it before the reviewer** (operator).
+- Proposed here and built:
+  - the page is a view made by a script, not yet a run artifact, so no contract changes;
+  - plain text comes from a notes file and is marked as written after the run;
+  - the page has no JavaScript.
+
+### Open questions for the operator
+
+1. The 2026-10-02 entry's questions stand.
+2. Should runs make the page themselves, from `write_report_card`, and who writes the notes then: the
+   final reviewer, or a session of its own?
+3. For the final reviewer: how large a sample of passes; how much time and how many subject calls a
+   re-run may use; and whether a re-run repeats the whole claim or only the disputed tests.
+
+### Urgent next steps, if any
+
+None. Committed and pushed on `skill-environments` with this entry.
+
+### Suggested next move
+
+Read `90c60cbe`'s page and settle its design. Then build the final reviewer as an offline step over
+the kept runs, before it joins the workflow. The 2026-10-02 entry's next run, on a skill other than
+dose-response, still stands.
+
+### Recommended next action
+
+With the operator's go-ahead:
+1. Open `.verifier/reports/90c60cbe-4ffd-44f1-8e2c-c2122af3e5d6.html` and list what to change.
+2. Then build the final reviewer offline. It is finished when, run over the kept runs, it:
+   - flags `dr1_agonist_measure` as a question fault;
+   - writes its findings into the run's notes file, where the page shows them;
+   - leaves the kept runs' true passes alone.

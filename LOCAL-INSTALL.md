@@ -224,6 +224,13 @@ Each run gets its own ID. Open **`report-card.md`** for the readable report;
 `report-card.json` is the structured version. The report shows inputs, expected
 and actual answers, references, outcomes, and limitations.
 
+To read a finished run as one web page, run `python scripts/report_html.py <run-id>`
+from the repository folder. It writes `.verifier\reports\<run-id>.html`: a summary
+table, one chapter per claim with a row per test, and the details and sources behind
+each test, folded away until opened. If `.verifier\reports\<run-id>.notes.json`
+exists, its plain-language text is shown too, marked as written after the run and not
+part of the scored record.
+
 Completion is not automatically a scientific pass. Scripts, binary inputs and
 generated files use the configured container; the installed comparison methods and
 generated Python evaluators compare the observations. A reply the installed reader
