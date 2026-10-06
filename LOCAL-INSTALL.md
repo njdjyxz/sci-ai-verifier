@@ -5,13 +5,13 @@ command-line program once as well: this verifier uses it to start separate test
 sessions. You can then request verification in the app, without typing commands
 for everyday use.
 
-This guide is for **version 0.7.0**, your Claude subscription, and the **Code** tab.
+This guide is for **version 0.8.0**, your Claude subscription, and the **Code** tab.
 The older verifier desktop extensions are compatibility packages; installing one
 does not set up this version's `verify_skill` action.
 
-This build adds computational execution, resources, generated evaluators, repeated
-trials, a negotiated evidence grade with an independent critique, independent
-documentary assessment and workflow logs. **Live acceptance is pending your manual tests below.** The
+This build tests each claim by running the skill on tasks in a container, and adds
+resources, repeated trials, a negotiated evidence grade with an independent critique,
+independent documentary assessment and workflow logs. **Live acceptance is pending your manual tests below.** The
 [development plan](DEVELOPMENT-PLAN.md) remains the complete project checklist and its
 latest entry is the current roadmap; automated fixtures do not establish scientific
 acceptance.
@@ -224,8 +224,8 @@ D:\Su Lab\sci-ai-verifier\.verifier\runs\<run-id>\
 ```
 
 Each run gets its own ID. Open **`report-card.md`** for the readable report;
-`report-card.json` is the structured version. The report shows inputs, expected
-and actual answers, references, outcomes, and limitations.
+`report-card.json` is the structured version. The report shows each task, its
+expected and found outputs, references, outcomes, and limitations.
 
 After each completed run the verifier also writes the run as one web page,
 `.verifier\reports\<run-id>.html`: a summary table, one chapter per claim with a row
@@ -237,17 +237,17 @@ record. To skip the page, say so when you ask for the verification, or give `--n
 to `verify`. To redraw a page yourself, run `python scripts/report_html.py <run-id>`
 from the repository folder.
 
-Completion is not automatically a scientific pass. Scripts, binary inputs and
-generated files use the configured container; the installed comparison methods and
-generated Python evaluators compare the observations. A reply the installed reader
-does not pass is read again by a fresh AI session, and the report marks every trial
-that session decided. The default is three trials per case.
+Completion is not automatically a scientific pass. Each trial runs the skill in the
+configured container on a task's input files and writes a results file, and Python
+checks every output itself; no AI session reads a trial. The default is three trials
+per task.
 Generated files have saved paths in the JSON report.
 
 The evidence grade in the report says how strong the evidence was, not whether
-anyone endorses the skill, and you never enter or approve one. A means the answers
-came from a source the verifier itself retrieved and were scored by installed code;
-B means a dataset you pinned or a generated evaluator did the scoring; C means the
+anyone endorses the skill, and you never enter or approve one. A means the expected
+values were planted from, or quoted out of, a source the verifier itself retrieved and
+were checked by Python; B means a dataset you pinned supplied them, or fewer
+independent tasks counted than A needs; C means the
 comparison is reproducible but the traceability, independence or trial count is
 weaker; D means a fresh assessor judged cited sources and execution accuracy stays
 unverified; U means no acceptable evidence was found. The verifier proposes a grade
@@ -303,16 +303,15 @@ available. They do not claim verification completed.
 | `sandbox_unavailable` or no Docker server information | Open Docker Desktop, wait for its engine, and use Linux containers. |
 | `sandbox_configuration_required` | Complete step 4 and ensure the connection includes the settings path. |
 | `sandbox_image_unavailable` or `sandbox_start_failed` | Check Docker is running and the pinned image still exists. Retain the log; do not change an active run's settings. |
-| A Python import/package error | Prepare a new image with that dependency, pin it to a new settings file, then start a new verification. |
+| A Python import/package error | The report names the missing module on each trial it stopped. If the skill declares the package, or imports a module listed under "Packages a skill declares or imports" in LOCAL-CONFIG.md, setting `package_index` lets the verifier install it; otherwise prepare a new image with that dependency, pin it to a new settings file, then start a new verification. |
 | `resource_not_authorized` or `app_not_authorized` | Configure the exact resource host or a reviewed read-only app adapter in LOCAL-CONFIG.md. |
 | `assessor_unavailable` | The independent documentary session did not complete. This is an operational problem, not grade U. |
 | `critic_unavailable` | The independent grade critique session did not complete. The claim is recorded as an operational limitation; it does not become an ungraded pass. |
 | `critic_response_invalid` or `assessor_response_invalid` | That session answered outside its fixed rubric, so its reply could not be recorded. Operational, never a grade. Keep the attempt log: the reply is in it, and a reply the verifier should have accepted is a defect worth reporting. |
-| `subject_refused` | Anthropic's safety classifiers declined the test question, naming the category. Nothing was observed, so this reports that the provider would not answer, never that the skill failed. It is not retried, because the frozen case input would refuse again. Its trials stay missing rather than being replaced. |
+| `subject_refused` | Anthropic's safety classifiers declined the test task, naming the category. Nothing was observed, so this reports that the provider would not answer, never that the skill failed. The claim is re-run once at the end of the run; if that is refused too, its trials stay missing rather than being replaced. |
 | `claude_incomplete` | A test session exited without a complete observation and was not retried. Check the attempt log for that session before assuming the skill is at fault. |
 | `subject_model_changed` | The observed model identity changed partway through one claim's trials. A grade describes one subject, so the claim stops rather than mixing them. |
 | `subject_response_invalid` | A test session returned no usable text, or did not explicitly invoke the pinned skill. |
-| `evaluator_failed` | The scoring program did not print exactly one JSON object with a `status` of pass, fail or invalid. Check the evaluator's own output in the log. |
 | `local_grade_proposal_refused` with `above_evidence_ceiling` | The planner proposed a grade its own recorded facts cannot support. It should strengthen the design or propose the stated ceiling; no action is needed from you, and no critique session is spent. |
 | `local_grade_proposal_refused` with `below_evidence_ceiling` | The planner proposed a weaker grade than its evidence supports. Aiming low is refused for the same reason as overclaiming. |
 | `local_design_unchanged` or `local_grade_rounds_exhausted` | The planner re-proposed a grade on a design already critiqued, or spent its negotiation budget. Neither consumes a session; the claim settles or continues without one. |
@@ -368,8 +367,8 @@ using the commands above. Use copies when deliberately introducing errors.
 | Test | What to check in the report and workflow log |
 | --- | --- |
 | First small skill | The planner calls internal verifier tools; each subject explicitly invokes `verifier-subject:submitted`; real model/session IDs are recorded. |
-| Repeated trials | Three observations per selected case by default, with distinct sessions, individual scores, and planned/attempted/obtained/evaluated counts. |
-| Deliberately wrong answer | Modify a copied skill to give an obviously wrong answer. It must fail the relevant comparison; it must not gain a scientific grade merely because it ran. |
+| Repeated trials | Three observations per selected task by default, with distinct sessions, individual scores, and planned/attempted/obtained/evaluated counts. |
+| Deliberately wrong result | Modify a copied skill to give an obviously wrong result. It must fail the relevant output; it must not gain a scientific grade merely because it ran. |
 | Script and generated file | Use a skill with a small script and output file. The log must show container execution; inspect the saved output path and content digest in the JSON report. |
 | Binary input | Use a skill with a small known binary input and its required preinstalled library. Check that exact bytes were used and the result is inspectable. |
 | Boundary check | In a disposable copied skill, ask it to read an arbitrary host file or contact an unapproved host. It must not obtain that content. Use a harmless sentinel file, never a real secret. |
@@ -452,7 +451,7 @@ Set-Location "D:\Su Lab\sci-ai-verifier"
 The fixture uses synthetic data and needs no Claude account; it does not validate
 the desktop connection. See the [development log](DEVELOPMENT-PLAN.md) for status.
 
-The builder creates `dist/scientific-verifier-local-0.7.0.zip`, including editable
+The builder creates `dist/scientific-verifier-local-0.8.0.zip`, including editable
 source, tests, and this guide. Credentials and saved runs are excluded. If you
 move or extract the checkout elsewhere, remove the old connection as described
 above, then repeat step 5 with the new paths.

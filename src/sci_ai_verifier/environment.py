@@ -1,6 +1,6 @@
 """The packages a skill declares, installed before its run into an image for its subject trials only.
 
-"Skill environment" in local-contract.md owns this mechanism, and "Packages a skill declares" in
+"Skill environment" in local-contract.md owns this mechanism, and "Packages a skill declares or imports" in
 resource-policy.md owns the trust decision. `_build` below holds the only container of a
 verification that has a network. Setup calls it after the model probe and before the run or its
 planner exists; no tool reaches it, and nothing a model writes can add a package to it.
@@ -58,6 +58,16 @@ WHEEL = re.compile(r"(?P<name>[A-Za-z0-9](?:[A-Za-z0-9._]*[A-Za-z0-9])?)-(?P<ver
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
 SAFE_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?")
 SAFE_VERSION = re.compile(r"[A-Za-z0-9.!+_-]{1,64}")
+# The reviewed table of "Packages a skill declares or imports" in resource-policy.md, which owns it:
+# the distribution a skill's undeclared import of each module is installed as. A module outside it
+# is reported, never guessed, so a skill cannot make the verifier install a name of its choosing.
+IMPORT_DISTRIBUTIONS = {
+    "numpy": "numpy", "scipy": "scipy", "pandas": "pandas", "matplotlib": "matplotlib", "seaborn": "seaborn",
+    "sklearn": "scikit-learn", "skimage": "scikit-image", "statsmodels": "statsmodels", "sympy": "sympy",
+    "networkx": "networkx", "PIL": "pillow", "cv2": "opencv-python-headless", "yaml": "pyyaml",
+    "Bio": "biopython", "rdkit": "rdkit", "lifelines": "lifelines", "sksurv": "scikit-survival",
+    "openpyxl": "openpyxl", "h5py": "h5py", "pyarrow": "pyarrow", "xarray": "xarray", "anndata": "anndata",
+    "scanpy": "scanpy", "joblib": "joblib", "requests": "requests", "tqdm": "tqdm"}
 
 # The fixed programs the operator's image runs. Their digests are part of the cache key, so a
 # change to either one rebuilds every environment rather than reusing one it did not make.
@@ -339,6 +349,17 @@ def imported_modules(files):
                   if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,99}", name))[:200]
 
 
+def implied_requirements(record):
+    """The requirements the skill's undeclared imports add, by the reviewed table, in module order."""
+    declared = {item["name"] for item in record["requirements"]}
+    found = []
+    for module in record["imports"]:
+        name = IMPORT_DISTRIBUTIONS.get(module)
+        if name and normalized(name) not in declared and normalized(name) not in {item["name"] for item in found}:
+            found.append({"requirement": normalized(name), "name": normalized(name), "sources": ["import " + module]})
+    return found
+
+
 def unavailable(message):
     return Fault("skill_environment_unavailable", message)
 
@@ -598,12 +619,21 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
     files = [(entry["path"], store.get(entry["digest"]).decode("utf-8"))
              for entry in taken["files"] if entry["encoding"] == "utf-8"]
     record.update(Declarations(files).record(), imports=imported_modules(files))
+    implied = implied_requirements(record)
+    if not record["requirements"] and record["imports"]:
+        # Nothing declared: the operator's image serves unless it lacks a listed module the skill imports.
+        record["manifest"] = manifest(docker, operator, record["imports"], settings, required=False, log=log)
+        lacking = [module for module in record["manifest"].get("imports_unavailable") or []
+                   if module in IMPORT_DISTRIBUTIONS]
+        if not lacking:
+            implied = []
+    record["requirements"] = record["requirements"] + implied
     if record["requirements"] and settings["package_index"]:
         _build(docker, store, record, settings, log)
         return finish(record, log)
     record["status"] = ("disabled" if record["requirements"] else "all_rejected" if record["rejected"]
                         else "not_needed")
-    if record["imports"]:
+    if record["imports"] and record["manifest"] is None:
         record["manifest"] = manifest(docker, operator, record["imports"], settings, required=False, log=log)
     return finish(record, log)
 
@@ -640,17 +670,20 @@ def planner_block(record):
                      + (f", and {len(entries) - len(shown)} more" if len(shown) < len(entries) else "") + ".")
     else:
         lines.append(f"Subject trials run in the operator's image {operator}.")
-        lines.append({"disabled": f"The skill declares {len(record['requirements'])} package requirements, but no "
+        lines.append({"disabled": f"The skill needs {len(record['requirements'])} package requirements, but no "
                                   "package index is configured, so none was installed.",
                       "all_rejected": "Every package declaration in the skill was rejected, so none was installed.",
                       "not_needed": "The skill declares no packages to install.",
                       "source_unavailable": "Setup could not read the skill, so nothing was installed; "
                                             "load_submitted_skill reports why."}[status])
     reasons = sorted({item["reason"] for item in record["rejected"]} & REASONS)
-    lines.append(f"Declarations: {len(record['requirements'])} accepted, {len(record['rejected'])} rejected"
-                 + (" (" + ", ".join(reasons) + ")" if reasons else "") + ".")
-    lines.append("Task generators and reference solutions, calculations, generated evaluators and scoring run in "
-                 "the operator's image, without the skill's packages.")
+    imported = [item["name"] for item in record["requirements"] if from_import(item)]
+    lines.append(f"Declarations: {len(record['requirements']) - len(imported)} accepted, {len(record['rejected'])} "
+                 "rejected" + (" (" + ", ".join(reasons) + ")" if reasons else "")
+                 + (f"; added from the skill's imports: {', '.join(name for name in imported if SAFE_NAME.fullmatch(name))}"
+                    if imported else "") + ".")
+    lines.append("Task generators, reference solutions and scoring run in the operator's image, without the skill's "
+                 "packages.")
     report = record.get("operator_manifest") or {}
     packages = sorted({str(name).lower() + " " + str(version) for name, version in report.get("distributions") or []
                        if SAFE_NAME.fullmatch(str(name).lower()) and SAFE_VERSION.fullmatch(str(version))})
@@ -663,15 +696,21 @@ def planner_block(record):
     return "\n".join(lines)[:12000]
 
 
+def from_import(requirement):
+    """True for a requirement the reviewed table added for an undeclared import."""
+    return any(str(source).startswith("import ") for source in requirement.get("sources") or [])
+
+
 def report_line(summary):
     """report-card.md's Environment line, in plain text; the caller escapes it."""
     status = summary["status"]
     if status == "built":
         text = (f"Environment: {status}. Subject trials ran in {summary['image_id']}, the plain Python base "
                 f"{summary['base_image']} plus {summary['packages']} wheels from {summary['index']} (lock "
-                f"{summary.get('lock_digest')}), for {summary['requirements']} declared requirements, "
-                f"{summary['rejected']} rejected; the image was removed after the run. Calculations, evaluators "
-                f"and scoring used the operator's image {summary['operator_image']}.")
+                f"{summary.get('lock_digest')}), for {summary['requirements']} requirements, "
+                f"{summary.get('from_imports', 0)} of them added from the skill's imports, and "
+                f"{summary['rejected']} rejected; the image was removed after the run. Task generators, reference "
+                f"solutions and scoring used the operator's image {summary['operator_image']}.")
     else:
         text = (f"Environment: {status}. Subject trials ran in the operator's image {summary['operator_image']}. "
                 f"The skill declared {summary['requirements']} installable requirements and "
@@ -687,6 +726,7 @@ def report_summary(record):
     """The report card's `environment` summary and the setup log's preflight entry."""
     summary = {"status": record["status"], "image_id": record["image_id"], "operator_image": record["operator_image"],
                "base_image": record["base_image"], "index": record["index"], "requirements": len(record["requirements"]),
+               "from_imports": sum(from_import(item) for item in record["requirements"]),
                "rejected": len(record["rejected"]), "packages": len(record.get("lock", {}).get("entries", []))}
     if record.get("lock"):
         summary["lock_digest"] = record["lock"]["digest"]

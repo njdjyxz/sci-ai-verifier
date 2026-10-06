@@ -44,62 +44,48 @@ The examples are common matches rather than automatic assignments. The same clai
 
 ## Cases each grade requires
 
-This section owns the number and kind of cases each execution grade needs. Other documents point here rather than restating it. The reference requirements of each grade are separate and are set by the profile; for the local profile, `local-contract.md` owns them.
+This section owns the number and kind of cases each execution grade needs. Other documents point here rather than restating it. The reference requirements of each grade are separate and are set by the profile; for the local profile, `local-contract.md` owns them. In the local profile a case is a task (`local-tasks.md`): the subject runs the skill on the task's input, and Python checks every output.
 
-**A case must test what its claim asserts — no less, and no more.**
+**A case must test what its claim states — no less, and no more.**
 
-*No less.* A claim about what a function *does* is not tested by a case asking what it is *named*. Naming and spelling cases are legitimate where the claim is itself about an API surface; they are recitation where the claim is about behaviour, meaning or a numeric relationship. A case that describes only an effect and asks which setting produces it is not naming: it tests what the setting does, which is what such a claim asserts. That the setting's name hints at its effect bears on how strong the case is, never on whether it counts. Run 31b67427's critique counted cases that described a partial ring and asked which argument would have prevented it; run 3b3f3c94's planner avoided such cases as recitation, and the same claim fell from B to C for want of an open case.
+*No less.* A claim about what a skill *does* is not tested by a case that only asks what something is *named*. A case that runs the skill on input and checks the result tests what it does.
 
-*No more.* A case must not reach past the claim to a consequence or fact the claim never states. A claim that pIC50 is the negative base-10 logarithm of the molar IC50 is not tested by a case asking which direction of the scale means more potent. That is in neither the claim nor the skill, so a subject faithfully applying the skill has nothing to answer from: it either falls back on the base model's own knowledge, which credits the skill for something the model already knew, or it declines, which fails a correct skill. Either way the case measures something other than the claim. A case framed as "which statement does a reference make" invites exactly this, because a subject running the skill reads "a reference" as its own loaded material.
+*No more.* A case must not reach past the claim to work or a conclusion the claim never gives. A subject faithfully following the skill then has nothing to go on: it falls back on the base model's own knowledge, which credits the skill for something the model already knew, or it declines, which fails a correct skill. Either way the case measures something other than the claim. In run 3b3f3c94 a claim that two settings "prevent partial-ring fragments" was tested with what a sibling setting documents, a subject applying the skill answered otherwise, and the claim was reported as failing.
 
-Test it by answering the case from the claim alone, as a subject who knows nothing else would: if another option, `none of these` included, is as defensible as the key, the case is `beyond_scope`. That is the usual result when the key is a narrower special case of what the claim says, or the documented behaviour of a sibling setting or level the claim never names. In run 3b3f3c94 a claim that two settings "prevent partial-ring fragments" was tested with what the atom-level setting documents, "results cannot include lone ring atoms". A subject applying the skill found no option saying partial rings, answered `none of these`, and the claim was reported as failing.
+*Not given away.* A case whose job, file or column names, or output fields contain its answer, or say which problem was planted, measures reading, not the claim.
 
-Python measures this test rather than asking the critique to imagine it. Before the critique, fresh sessions that see only the claim's statement and expected behaviour answer each case twice, and a case counts only when every answer reaches its key. A case they answer otherwise does not count, whatever the critique says. Readers applying a claim faithfully can split, and a split is itself the sign that the claim does not settle the case.
-
-*Not given away.* A case whose question already contains its answer — the function name in the stem, or an option that repeats the stem's own words — measures reading, not the claim.
-
-**Answer form.** A case is *generated* when the subject must produce the answer itself: any open answer type `qualify_local_candidate` in `tool-contracts.md` lists, or free output scored by a generated evaluator. It is *recognised* when the subject picks the answer from listed options (`choice`). A recognised case can be passed by spotting the conventional-looking option or by matching words between the question and an option, so it is weaker evidence of the same fact. The answer form is a property of each case's comparison method, and Python reads it from the design. A design may mix both forms, so a claim whose natural questions are closed can still reach A with two open cases among its five.
+*Right.* A case's expected value and tolerance must be right and fair: the generator plants what the output expects, the quote supports it, and a correct analysis following the skill passes.
 
 **Case verdicts.** The independent critique gives every case exactly one verdict:
 
 | Verdict | Meaning | Counts? |
 |---|---|---|
-| `counts` | Tests what the claim asserts, no less and no more, without giving the answer away | Yes |
-| `naming` | Only recites what something is called, for a claim about what it does. A case that gives only an effect and asks which setting produces it is not naming | No |
-| `beyond_scope` | Asks a consequence or fact the claim never states, including a key that turns on a finer fact than the claim asserts, so that a subject correctly applying the claim as written could answer otherwise | No |
-| `leaked` | The answer can be read from the question or its options without knowing the claim, as in the common leaks below | No |
-| `duplicate` | Turns on the same fact or rule as an earlier case in the design, so a subject that answers one will answer the other and it adds no independent evidence. This covers near-copies — the same convention asked at another position, the same value from the other side — not only exact repeats. The reason names that case, which keeps its own verdict | No |
+| `counts` | Tests what the claim states, as a user of its sections would meet it, with a right expected value and a fair tolerance, without giving the answer away | Yes |
+| `beyond_scope` | Asks for work or a conclusion the claim's sections never give, so a subject correctly following the skill could answer otherwise | No |
+| `leaked` | The job, a file or column name or the output fields give the answer away, or say which problem was planted | No |
+| `duplicate` | Turns on the same steps and the same kind of input as an earlier case, so a subject that does one does the other and it adds no independent evidence. The reason names that case, which keeps its own verdict | No |
+| `unsound` | An expected value or tolerance is wrong or unfair: the generator does not plant it as stated, its quote does not support it, or a correct analysis following the skill could miss it | No |
 
-Whether a case counts is a fitness judgment rather than a computable property: once quoted from a source, a function name, a scientific value and an unasserted consequence are all the same shape. So the critique judges each case, and Python counts the verdicts and enforces the table below. Neither does the other's job: a critique that finds too few cases counting cannot settle a grade the count does not allow, because Python applies the count itself. One part of the judgment is measured instead: whether a subject knowing only the claim reaches the key, as *No more* describes. A case the claim-only answers miss takes `beyond_scope` from Python, whatever the critique's verdict.
+Whether a case counts is a fitness judgment rather than a computable property, so the critique judges each case, and Python counts the verdicts and enforces the table below. Neither does the other's job: a critique that finds too few cases counting cannot settle a grade the count does not allow, because Python applies the count itself.
 
-A critique's objections and verdicts must agree. A case it objects to because it tests more or less than the claim asserts takes that verdict, never `counts`; an objection about a counting case may question only how strong it is. Cases are judged against the claim's statement and expected behaviour. Its scope line narrows them and never widens them, and the claim's wording is fixed, so a critique judges cases against it as written rather than asking for it to be restated. Three of the fourteen critiques in runs 3dc02567 and 84e90683 counted a case their own objection placed outside the claim, and in 84e90683 that case failed six trials out of six, where a subject correctly applying the claim as written would also have failed. No code can check the agreement: 26 of the 92 objections and required revisions in those runs name a counted case, most of them to question its strength.
+A critique's objections and verdicts must agree. A case it objects to because it tests more or less than the claim states, or because its expected value or tolerance is wrong, takes that verdict, never `counts`; an objection about a counting case may question only how strong it is. Cases are judged against the claim's statement, expected behaviour and the text of its sections, and the claim's wording is fixed, so a critique judges cases against it as written rather than asking for it to be restated. Three of the fourteen critiques in runs 3dc02567 and 84e90683 counted a case their own objection placed outside the claim, and in 84e90683 that case failed six trials out of six, where a subject correctly applying the claim as written would also have failed.
 
-**Requirements.** Only cases with the verdict `counts` that the claim-only answers did not miss enter these numbers:
+**Requirements.** Only cases with the verdict `counts` enter these numbers:
 
-| Grade | Counting cases | Of which generated |
-|---|---|---|
-| A | at least 5 | at least 2 |
-| B | at least 3 | at least 1 |
-| C | at least 3 | any, including none |
-| fewer than 3 counting cases | no execution grade | — |
+| Grade | Counting cases |
+|---|---|
+| A | at least 3 |
+| B | at least 2 |
+| C | at least 2 |
+| fewer than 2 counting cases | no execution grade |
 
-**Tasks.** A task design (`local-tasks.md`) counts tasks: A needs at least 3 counting tasks, B and C at least 2, and fewer than 2 support no execution grade. Every task is generated. Its verdicts are those above without `naming`, plus `unsound`: an expected value or tolerance that is wrong, or that a correct analysis could miss. It has no claim-only answers.
+Each case runs the skill on its input and is checked on every output, so fewer of them carry more evidence than the five single questions grade A needed before task tests.
 
 Before a critique runs, Python assumes every case counts, and that sets the ceiling the planner proposes. After the critique, Python recomputes the ceiling over the counting cases only. The settled grade is the weakest of the proposal, that recomputed ceiling, and the critique's own supported grade. The critique reconsiders the whole design, not only the case count, so its supported grade can be lower still. A rejected case is never a fixed one-step penalty. The grade's limiting reasons are recorded over the counting cases, so a grade lowered by rejections says so.
 
 **A spare case.** When the sources allow it, design one more independent case than the grade needs. Critiques often reject a case, and a design holding exactly the minimum then loses its grade to that single verdict.
 
-**Common leaks.** `leaked` is the verdict critiques give most often: seven of the eleven cases run 3dc02567's critiques rejected. Five shapes recur, and each can be checked before proposing:
-
-- the question states the property under test, so every option but one is ruled out by the question's own wording;
-- the question prints the value and asks for a conversion of it, such as `0.8` asked for as a percentage;
-- only the correct option repeats a word from the question, such as the one option mentioning rings in a question about ring completeness;
-- the question quotes or paraphrases the source's own description of the answer, so the answer follows by naming convention;
-- only the correct option keeps the source's wording while the others are written fresh, so its style marks it: in run 84e90683 the key was the one option without a leading "the", and in 3dc02567 the one lowercase past-tense fragment among capitalised sentences. Write every option in the style of the quoted key.
-
-The critique's rubric carries a copy of these five shapes, so a change here changes both. The fifth once reached only the planner, and run 31b67427's critique counted a key that was again the one option without a leading "the". Replayed on the pinned model, rubric v7 still counted that key, so text alone is not relied on. Qualification rejects the mechanical parts of the third and fifth shapes, by checks `qualify_local_candidate` in `tool-contracts.md` owns.
-
-**Replacement.** Every case that does not count must be named with the verdict, the reason, and a description of a case that would test the claim in its place. The critique describes the replacement; it never writes one, because it has no tools to retrieve the reference that every expected answer must be quoted from, and a case it wrote would never be independently reviewed. The planner builds the replacement as a revised design, and a fresh critique reviews it. That critique is told which cases earlier reviewers did not count, with the verdict, reason and suggested replacement, so it can check that the new cases answer what was wrong with the old ones; it is never told an earlier grade. A claim gets at most **two replacement rounds**. A third critique that still rejects cases settles the grade the counting cases support, without another revision. This budget is separate from the negotiation's overall round limit, which still bounds every other kind of revision.
+**Replacement.** Every case that does not count must be named with the verdict, the reason, and a description of a case that would test the claim in its place. The critique describes the replacement; it never writes one, because it has no tools to build a case's input or fetch its references, and a case it wrote would never be independently reviewed. The planner builds the replacement as a revised design, and a fresh critique reviews it. That critique is told which cases earlier reviewers did not count, with the verdict, reason and suggested replacement, so it can check that the new cases answer what was wrong with the old ones; it is never told an earlier grade. A claim gets at most **two replacement rounds**. A third critique that still rejects cases settles the grade the counting cases support, without another revision. This budget is separate from the negotiation's overall round limit, which still bounds every other kind of revision.
 
 **Execution.** Cases that do not count still execute and are reported with their verdicts, so nothing observed is hidden. They do not enter accuracy, consistency or status. A rejected case measures something other than the claim, so its failure would be a false `fail`, and its pass would be credit the claim did not earn. The status rule's "usable cases" are the counting cases.
 

@@ -12,7 +12,7 @@ from . import local_candidates as catalog
 
 CLAIM_LEGAL = {
     "local_lookup": ["list_local_candidates", "record_local_limitation"],
-    "local_discovery": ["fetch_local_reference", "load_local_resource", "fetch_local_asset", "qualify_local_tasks", "qualify_local_candidate", "qualify_local_evaluator", "select_local_candidate", "assess_local_documentary", "record_local_unverified", "record_local_limitation"],
+    "local_discovery": ["fetch_local_reference", "load_local_resource", "fetch_local_asset", "qualify_local_tasks", "select_local_candidate", "assess_local_documentary", "record_local_unverified", "record_local_limitation"],
     # An audited executable plan is not abandoned by assertion. Every real failure
     # during execution is recorded by Python with the cause it observed.
     "local_ready": ["execute_local_claim"],
@@ -31,8 +31,9 @@ CLAIM_MANIFEST_DESCRIPTION = (
     "no background definitions. An empty list, with every section set aside, is valid. No grading.")
 CLAIM_LIMIT_MESSAGE = ("A local manifest holds at most " + str(MAX_CLAIMS) + " claims (\"Claims\" in "
                        "local-tasks.md). Group sections that serve one purpose into one claim.")
-OPERATIONS = ("list_local_candidates", "fetch_local_reference", "qualify_local_tasks", "qualify_local_candidate",
-              "select_local_candidate", "execute_local_claim", "record_local_limitation", "load_local_resource", "fetch_local_asset", "qualify_local_evaluator", "assess_local_documentary", "record_local_unverified")
+OPERATIONS = ("list_local_candidates", "fetch_local_reference", "qualify_local_tasks", "select_local_candidate",
+              "execute_local_claim", "record_local_limitation", "load_local_resource", "fetch_local_asset",
+              "assess_local_documentary", "record_local_unverified")
 # The planner may end a claim operationally only for one of these named causes. Codes
 # raised by Python for an observed failure are passed internally and are not in this set,
 # so a report can tell an abandoned claim from an execution that actually broke.
@@ -60,32 +61,13 @@ def legal(state):
 
 def schemas(base, obj, string):
     from .local_science import PLANNER_JUSTIFICATION
-    from .local_candidates import INSTALLED_METHODS, MINIMUM_OPTIONS
-    from .answers import MAX_UNIT
+    from .local_tasks import MAX_OUTPUTS, MAX_TASKS, TYPES as TASK_TYPES
 
     def choice(values, maximum=100):
         return {"type": "string", "minLength": 1, "maxLength": maximum, "enum": list(values)}
 
     claim = {**base, "claim_id": string(80)}
-    # `options` belongs to the choice method: present them in `input`, and `expected` is
-    # the 1-based number of one. Optional, so open numeric and token cases are unchanged.
-    fields = {"case_id": string(80), "input": string(8000), "expected": string(4000),
-              "reference_ref": string(64), "source_quote": string(8000), "applicability": string(4000),
-              "options": {"type": "array", "minItems": MINIMUM_OPTIONS, "maxItems": 9, "items": string(4000)},
-              # Only in a `mixed` design, where each case names its own installed method.
-              "method": choice(INSTALLED_METHODS, 20),
-              # Only a numeric case: the unit a reply may write after the number.
-              "unit": string(MAX_UNIT),
-              # A calculated case gives these, and Python supplies its expected answer and quote.
-              "arguments": string(4000), "decimals": {"type": "integer", "minimum": 0, "maximum": 6}}
-    # Python requires the answer and its quote of every case it does not calculate.
-    case = obj(fields, required=["case_id", "input", "applicability"])
-    anchor = obj({"arguments": string(4000), "expected": string(100), "reference_ref": string(64),
-                  "source_quote": string(8000)})
-    calculation = obj({"code": string(32000), "reference_ref": string(64), "formula_quote": string(8000),
-                       "anchors": {"type": "array", "minItems": 1, "maxItems": 8, "items": anchor}})
     # A task design ("Tasks" in local-tasks.md). Each case is a task; an output gives `planted` or `value`.
-    from .local_tasks import MAX_OUTPUTS, MAX_TASKS, TYPES as TASK_TYPES
     output = obj({"field": string(60), "type": choice(TASK_TYPES, 10), "planted": string(60), "value": string(2000),
                   "relative_tolerance": string(20), "absolute_tolerance": string(20),
                   "reference_ref": string(64), "source_quote": string(8000)}, required=["field", "type"])
@@ -102,14 +84,9 @@ def schemas(base, obj, string):
         "load_local_resource":obj({**claim,"resource_name":string(80),"format":string(20)}),
         "fetch_local_asset":obj({**claim,"url":string(4096),"sha256":string(64),"format":string(20),
                                  "version":string(200),"license":string(2000),"units":string(2000)}),
-        "qualify_local_evaluator":obj({**claim,"specification_json":string(200000)}),
         "assess_local_documentary":obj({**claim,"evidence":{"type":"array","minItems":1,"maxItems":8,
                 "items":obj({"reference_ref":string(64),"quote":string(6000)})},"limitations":string(8000)}),
         "record_local_unverified":obj({**claim,"search_account":string(8000),"missing_evidence":string(8000)}),
-        "qualify_local_candidate": obj({**claim, "name": string(200), "scope": string(NOTE_TEXT), "method": string(20),
-            "limitations": string(NOTE_TEXT), "cases": {"type": "array", "minItems": 3, "maxItems": 12, "items": case},
-            "calculation": calculation},
-            required=[*claim, "name", "scope", "method", "limitations", "cases"]),
         "qualify_local_tasks": obj({**claim, "name": string(200), "scope": string(NOTE_TEXT),
             "limitations": string(NOTE_TEXT),
             "generator": obj({"code": string(32000), "reference_ref": string(64), "model_quote": string(8000)}),
@@ -141,10 +118,9 @@ def pin_candidate(store, state, key):
     if key in retired_candidates(store,state):
         raise Fault("candidate_retired","This run's pinned catalog retires the requested candidate; select another method.")
     candidate = store.get_json(key)
-    from . import local_evaluators, local_tasks
-    if candidate.get("status") != "qualified_local" or candidate.get("method_version") not in {
-            catalog.METHOD_VERSION, local_evaluators.METHOD_VERSION, local_tasks.METHOD_VERSION}:
-        raise Fault("candidate_not_qualified", "Select an installed, mechanically qualified local candidate.")
+    from . import local_tasks
+    if candidate.get("status") != "qualified_local" or candidate.get("method_version") != local_tasks.METHOD_VERSION:
+        raise Fault("candidate_not_qualified", "Select a mechanically qualified task design.")
     refs = {}
     for ref in catalog.reference_refs(candidate):
         resource = store.get_json(ref)
@@ -153,26 +129,13 @@ def pin_candidate(store, state, key):
         for item in (ref, resource["raw_ref"]):
             if item not in state["objects"]:
                 state["objects"].append(item)
-    if candidate["method_version"] == local_tasks.METHOD_VERSION:
-        # Every trial gets these exact bytes, so they are pinned with the run like its references.
-        for case in candidate["cases"]:
-            for item in case.get("files") or []:
-                store.get(item["object_ref"])
-                if item["object_ref"] not in state["objects"]:
-                    state["objects"].append(item["object_ref"])
-        check = local_tasks.recheck(candidate, refs, store.get)
-    elif candidate["method_version"]==local_evaluators.METHOD_VERSION:
-        spec=local_evaluators.specification(candidate)
-        local_evaluators.validate_spec(spec,refs)
-        if candidate["specification_ref"]!=digest(canonical(spec)) or not all(item["passed"] for item in candidate["controls_receipts"]):
-            raise Fault("candidate_integrity","Evaluator specification or control receipts changed.",fatal=True)
-        check=candidate
-    else:
-        fields = ("name", "scope", "method", "limitations", "cases", "calculation")
-        check = catalog.qualify({name: candidate[name] for name in fields if name in candidate}, refs,
-                                catalog.recorded(candidate))
-    if check["status"] != "qualified_local":
-        raise Fault("candidate_integrity", "Candidate no longer passes qualification.", fatal=True)
+    # Every trial gets these exact bytes, so they are pinned with the run like its references.
+    for case in candidate["cases"]:
+        for item in case.get("files") or []:
+            store.get(item["object_ref"])
+            if item["object_ref"] not in state["objects"]:
+                state["objects"].append(item["object_ref"])
+    local_tasks.recheck(candidate, refs, store.get)
     if key not in state["objects"]:
         state["objects"].append(key)
     return candidate
@@ -280,9 +243,6 @@ def operate(store, state, name, args, subject):
         key=keep(store,state,reference)
         work["reference_refs"].append(key)
         return {"outcome":"reference_fetched","reference_ref":key,"untrusted_reference":reply_reference(reference)}
-    if name in {"qualify_local_candidate", "qualify_local_evaluator"} and tasks_required(settings_for(store, state)):
-        raise Fault("tasks_required", "A container is configured, so this claim is tested by tasks that run the "
-                    "skill: use qualify_local_tasks (local-tasks.md).")
     if name == "qualify_local_tasks":
         from . import local_tasks
         settings = settings_for(store, state)
@@ -300,43 +260,9 @@ def operate(store, state, name, args, subject):
         work["candidate_refs"].append(key)
         return {"outcome": candidate["status"], "candidate_ref": key,
                 "candidate": local_tasks.reply_view(candidate, store.get)}
-    if name=="qualify_local_evaluator":
-        from .local_evaluators import qualify
-        from .mcp import parse_json
-        try:
-            spec=parse_json(args["specification_json"])
-        except (ValueError,UnicodeError,RecursionError):
-            raise Fault("evaluator_spec_invalid","Supply a valid bounded JSON specification.") from None
-        candidate=qualify(spec,{key:store.get_json(key) for key in work["reference_refs"]},settings_for(store,state),log=getattr(subject,"log",None))
-        key=keep(store,state,candidate)
-        catalog.save_candidate(store,candidate)
-        work["candidate_refs"].append(key)
-        return {"outcome":candidate["status"],"candidate_ref":key,"candidate":candidate}
-    if name == "qualify_local_candidate":
-        proposal = {key: args[key] for key in ("name", "scope", "method", "limitations", "cases", "calculation")
-                    if key in args}
-        refs = {key: store.get_json(key) for key in work["reference_refs"]}
-        settings = settings_for(store, state)
-        calculate = None
-        if settings.get("sandbox_image"):
-            from .local_evaluators import calculate as run_calculation
-
-            def calculate(code, inputs):
-                return run_calculation(code, inputs, settings, log=getattr(subject, "log", None))
-        candidate = catalog.qualify(proposal, refs, calculate)
-        key = keep(store, state, candidate)
-        catalog.save_candidate(store, candidate)
-        work["candidate_refs"].append(key)
-        return {"outcome": candidate["status"], "candidate_ref": key, "candidate": candidate}
     if name == "select_local_candidate":
         return select(store, state, claim_id, work, args, subject)
     return execute(store, state, claim_id, subject)
-
-
-def tasks_required(settings):
-    """True when every claim is tested by running the skill ("Claims" in local-contract.md): whenever a
-    container is configured. Designs of questions and generated evaluators then go unused."""
-    return bool(settings.get("sandbox_image"))
 
 
 def claim_record(store, state, claim_id):
@@ -355,8 +281,8 @@ def prior_objections(history):
     Grades are withheld deliberately. A new reviewer told that the last one said C has
     an easy answer available, which is the anchoring the fresh session exists to avoid.
     The concerns themselves are what a revision has to answer, so those carry forward,
-    including every case an earlier reviewer did not count: without it, the next reviewer
-    cannot tell whether the replacements answer what was wrong with the cases they replaced.
+    including every task an earlier reviewer did not count: without it, the next reviewer
+    cannot tell whether the replacements answer what was wrong with the tasks they replaced.
     They come from Python's stored audits, so the planner cannot restate them.
     """
     from .local_science import rejected_cases
@@ -364,14 +290,12 @@ def prior_objections(history):
     for record in history:
         critique = record.get("critique") or {}
         concerns = list(critique.get("objections", []))
-        concerns += ["An earlier version's case " + item["case_id"] + " was not counted (" + item["verdict"]
+        concerns += ["An earlier version's task " + item["case_id"] + " was not counted (" + item["verdict"]
                      + "): " + item["reason"] + " Suggested replacement: " + item["replacement"]
                      for item in rejected_cases(critique)]
-        # What an earlier review required, and what it found untested, is what the revision has to
-        # answer, so the next reviewer judges each one (rubric.prior_verdicts). Run 3303fd93's second
+        # What an earlier review required is what the revision has to answer. Run 3303fd93's second
         # critique of its fourth claim was never shown the five revisions the first had required.
         concerns += ["An earlier review required: " + item for item in critique.get("required_revisions") or []]
-        concerns += ["An earlier version left a fact untested: " + item for item in critique.get("coverage_gaps") or []]
         for concern in concerns:
             if concern not in found:
                 found.append(concern)
@@ -475,102 +399,13 @@ def search_record(log, claim_id):
                     "still bear on this one."}
 
 
-def looked(record):
-    """How many searches and fetches the record shows for its claim, or None with no record."""
-    if not record.get("recorded"):
-        return None
-    return record["this_claim"]["searches"] + record["this_claim"]["fetches"]
-
-
-def unanswered_concerns(critique, previous):
-    """The earlier concerns a critique judged unanswered ("the concern return" in tool-contracts.md).
-
-    A `searched_no_source` verdict is the critique reading the search record; Python checks it,
-    as it checks an AI reading, and counts the concern unanswered when its record shows no search
-    or fetch for the claim since the previous critique. `previous` is the count recorded then.
-    """
-    now, found = critique.get("search_count"), []
-    for item in critique.get("prior_verdicts") or []:
-        if item["verdict"] == "searched_no_source" and None not in (previous, now) and now <= previous:
-            item = {**item, "verdict": "unanswered",
-                    "python_checked": "Python's search record shows no search or fetch for this claim since "
-                                      "the previous critique."}
-        if item["verdict"] == "unanswered":
-            found.append(item)
-    return found
-
-
-def critique_packet(claim, candidate, references, args, ceiling, limits, trials, objections=(), record=None):
-    """The bounded packet a fresh session sees: the design and its facts, no planning."""
-    from .documentary import CRITIQUE_RUBRIC
-    from .local_science import PLANNER_JUSTIFICATION, answer_form
-
-    def clip(text, size=800):
-        return text if len(text) <= size else text[:size] + " [truncated]"
-
-    sources = {}
-    for item in references.values():
-        sources[item["url"]] = {"url": item["url"], "version": item["version"], "license": item["license"],
-                                "origin": item.get("origin", "unrecorded")}
-    return {"claim": {key: claim[key] for key in ("statement", "scope", "expected_behavior")},
-            "proposed_grade": args["target_grade"], "rubric": CRITIQUE_RUBRIC,
-            "prior_objections": [clip(item, 1000) for item in objections],
-            "evidence": {"method": candidate["method"], "method_version": candidate["method_version"],
-                         "candidate_scope": clip(candidate["scope"], NOTE_TEXT),
-                         "candidate_limitations": clip(candidate["limitations"], NOTE_TEXT),
-                         "case_count": len(candidate["cases"]), "trials_per_case": trials,
-                         "absolute_tolerance": candidate.get("absolute_tolerance"),
-                         "references": [sources[key] for key in sorted(sources)],
-                         # Every case, because each one gets a verdict. Showing the first six
-                         # left cases seven to twelve of a larger design unreviewed.
-                         # Inputs get a wider clip and options travel separately: a choice
-                         # lists its options at the end of its input and its expected value is
-                         # only an index, so a clipped input left the verdict unjudgeable.
-                         "cases": [{"case_id": case["case_id"], "answer_form": answer_form(candidate, case),
-                                    "answer_type": (catalog.case_method(candidate, case)
-                                                    if candidate["method"] != "python" else "python"),
-                                    **({"unit": case["unit"]} if case.get("unit") else {}),
-                                    "input": clip(case["input"], 2000),
-                                    **({"options": [clip(option, 400) for option in case["options"]]}
-                                       if case.get("options") else {}),
-                                    "expected": clip(case["expected"]),
-                                    "source_quote": clip(case["source_quote"]),
-                                    **({"calculated": True, "arguments": clip(case["arguments"]),
-                                        "decimals": case["decimals"]} if "arguments" in case else {}),
-                                    "applicability": clip(case["applicability"])}
-                                   for case in candidate["cases"]],
-                         # The program is shown whole: whether it implements the quoted formula is
-                         # the critique's to judge (rubric.calculated_answers).
-                         **({"calculation": {"code": candidate["calculation"]["code"],
-                                             "formula_quote": clip(candidate["calculation"]["formula_quote"], 2000),
-                                             "formula_url": references[candidate["calculation"]["reference_ref"]]["url"],
-                                             "anchors": [{"arguments": clip(item["arguments"]),
-                                                          "expected": item["expected"], "output": item["output"],
-                                                          "source_quote": clip(item["source_quote"]),
-                                                          "url": references[item["reference_ref"]]["url"]}
-                                                         for item in candidate["calculation_receipts"]["anchors"]]}}
-                            if candidate.get("calculation") else {})},
-            "justification": {key: clip(args[key], JUSTIFICATION_TEXT) for key in PLANNER_JUSTIFICATION},
-            "python_checked": {"evidence_ceiling": ceiling, "evidence_limits": limits,
-                               "search_record": record or search_record(None, None),
-                               "note": "Python already verified that every expected answer is quoted exactly "
-                                       "from the pinned reference bytes, or, for a case marked calculated, that "
-                                       "evidence.calculation's program produced it after reproducing every "
-                                       "quoted anchor. Judge whether that evidence is "
-                                       "fit for this claim at the proposed grade. Python counts cases and "
-                                       "cannot weigh them: a function name, a scientific value and a fact "
-                                       "the claim never states are the same shape once quoted, so whether "
-                                       "each case counts is decided here, in case_verdicts. Python then "
-                                       "recomputes the ceiling over the cases you count, under "
-                                       "rubric.case_requirements, and returns every rejected case with your "
-                                       "described replacement to the planner."}}
-
-
 def select(store, state, claim_id, work, args, subject):
     """Freeze one plan and settle its grade: propose, critique, then fix or ask for a revision."""
+    from .claims import section_texts
     from .local_science import (MAX_ROUNDS, PLANNER_JUSTIFICATION, REPLACEMENT_ROUNDS, audit, case_gap,
                                 counted_cases, environment_digest, evidence_ceiling, fingerprint,
                                 proposal_problem, rejected_cases)
+    from .local_tasks import critique_packet
     key = args["candidate_ref"]
     allowed = {value["candidate_ref"] for value in store.get_json(work["lookup_ref"])["candidates"]}
     if key not in allowed | set(work["candidate_refs"]):
@@ -579,16 +414,15 @@ def select(store, state, claim_id, work, args, subject):
     settings = settings_for(store, state)
     references = {ref: store.get_json(ref) for ref in catalog.reference_refs(candidate)}
     trials = settings["trial_count"]
-    if candidate["method"] == "task":
-        # A design found by lookup was built for another claim's sections ("Tasks" in local-tasks.md).
-        wanted = claim_sections(store, state, claim_id)
-        used = {name for case in candidate["cases"] for name in case["sections"]}
-        unused, outside = [name for name in wanted if name not in used], sorted(used - set(wanted)) if wanted else []
-        if unused or outside:
-            return {"outcome": "local_grade_proposal_refused", "reason": "sections_unused", "candidate_ref": key,
-                    "unused_sections": unused, "sections_outside_claim": outside,
-                    "message": "Every section of this claim must be used by a task of the design, and no task may "
-                               "use another claim's sections. Qualify a task design for this claim's sections."}
+    # A design found by lookup was built for another claim's sections ("Tasks" in local-tasks.md).
+    wanted = claim_sections(store, state, claim_id)
+    used = {name for case in candidate["cases"] for name in case["sections"]}
+    unused, outside = [name for name in wanted if name not in used], sorted(used - set(wanted)) if wanted else []
+    if unused or outside:
+        return {"outcome": "local_grade_proposal_refused", "reason": "sections_unused", "candidate_ref": key,
+                "unused_sections": unused, "sections_outside_claim": outside,
+                "message": "Every section of this claim must be used by a task of the design, and no task may "
+                           "use another claim's sections. Qualify a task design for this claim's sections."}
     ceiling, limits = evidence_ceiling(candidate, references, trials)
     history = [store.get_json(item) for item in work.setdefault("negotiation_refs", [])]
     identity = fingerprint(candidate)
@@ -599,7 +433,7 @@ def select(store, state, claim_id, work, args, subject):
                      if record["candidate_fingerprint"] == identity and record.get("critique")), None)
     settled = previous["critique"] if previous else None
     # The audit's settled ceiling is already the weakest of the proposal, the ceiling over
-    # the cases the critique counted, and its grade, so it is clamped to the ceiling. A
+    # the tasks the critique counted, and its grade, so it is clamped to the ceiling. A
     # critique supporting D or none leaves it `None`: the design supports no *execution*
     # grade, and acceptance reads it that way. Only A, B and C can be proposed, so an
     # accepted "D" left a no-grade design unselectable: the planner of run b43780be could
@@ -628,23 +462,6 @@ def select(store, state, claim_id, work, args, subject):
     # concluded that the design supports no grade: executing it still produces ungraded
     # comparison evidence and the documentary path.
     accepting = bool(settled) and (args["target_grade"] == accepted or accepted is None)
-    # Either return (tool-contracts.md) asked for a search or a better design; accepting this one is
-    # the planner saying no search found a source, so Python's own record must show one since.
-    returns = [store.get_json(work[field]) for field in ("gap_return_ref", "concern_return_ref") if work.get(field)]
-    returned = next((item for item in reversed(returns) if item["candidate_fingerprint"] == identity), None)
-    if accepting and returned:
-        before, now = returned["looked"], looked(search_record(getattr(subject, "log", None), claim_id))
-        if before is not None and now is not None and now <= before:
-            return {"outcome": "local_grade_proposal_refused", "reason": "return_unsearched",
-                    "evidence_ceiling": ceiling, "evidence_limits": limits, "candidate_ref": key,
-                    "coverage_gaps": settled.get("coverage_gaps") or [],
-                    "unanswered_concerns": settled.get("unanswered_concerns") or [],
-                    "acceptable_grades": sorted({item for item in (ceiling, accepted) if item}),
-                    "message": "This design came back for what its critique found missing, and Python's "
-                               "search record shows no search or fetch for this claim since. Search for a "
-                               "source for each gap or concern, then accept " + str(accepted) + ", or "
-                               "answer them in a revised design and propose its ceiling."}
-    record = None
     if accepting:
         critique = settled  # Re-running that judgment on the same evidence buys nothing.
     elif state["subject_config"]["synthetic"]:
@@ -675,48 +492,32 @@ def select(store, state, claim_id, work, args, subject):
                     "message": "The critique never learns what an earlier review decided, and " + field
                                + " mentions one (" + repr(phrase) + "). Describe this design and its "
                                "evidence only: Python already gives the critique the earlier objections "
-                               "and the cases they did not count. A justification field needs only a new "
-                               "proposal; a case's applicability or the design's scope or limitations "
-                               "needs a revised candidate."}
-        # Measured before the critique and never shown to it: what a subject knowing only the
-        # claim answers ("No more" in evidence-rubric.md). A generated evaluator's free output
-        # needs the sandbox to be scored, so only installed methods are asked.
-        probe = None
-        if candidate["method"] not in ("python", "task"):
-            from .documentary import claim_probe
-            # Earlier rounds' answers travel on their critiques, so an unchanged case is not asked again.
-            earlier = {item["case_ref"]: item for record in history
-                       for item in ((record.get("critique") or {}).get("claim_probe") or {}).get("cases", [])
-                       if item["outcome"] != "unmeasured"}
-            probe = claim_probe(subject, claim, candidate, cache=earlier)
+                               "and the tasks they did not count. A justification field needs only a new "
+                               "proposal; a task's applicability or the design's scope or limitations "
+                               "needs a revised design."}
         record = search_record(getattr(subject, "log", None), claim_id)
-        if candidate["method"] == "task":
-            from .claims import section_texts
-            from .local_tasks import critique_packet as task_packet
-            packet = task_packet(claim, section_texts(store, verified_snapshot(store, state), set(claim.get("sections") or [])),
-                                 candidate, references, args, ceiling, limits, trials, prior_objections(history),
-                                 record, store.get)
-        else:
-            packet = critique_packet(claim, candidate, references, args, ceiling, limits, trials,
-                                     prior_objections(history), record)
+        sections = section_texts(store, verified_snapshot(store, state), set(claim.get("sections") or []))
+        packet = critique_packet(claim, sections, candidate, references, args, ceiling, limits, trials,
+                                 prior_objections(history), record, store.get)
+        from .documentary import CRITIC_PACKET_LIMIT, critique_tasks
+        size = len(canonical(packet))
+        if size > CRITIC_PACKET_LIMIT:
+            # Refused before a session or a round is spent; the critique never sees a shortened design.
+            return {"outcome": "local_grade_proposal_refused", "reason": "critique_packet_too_large",
+                    "packet_bytes": size, "limit_bytes": CRITIC_PACKET_LIMIT, "evidence_ceiling": ceiling,
+                    "evidence_limits": limits, "candidate_ref": key,
+                    "acceptable_grades": sorted({item for item in (ceiling, accepted) if item}),
+                    "message": "The critique's packet for this design is " + str(size) + " bytes, over its "
+                               + str(CRITIC_PACKET_LIMIT) + "-byte limit. Shorten the design: fewer or shorter "
+                               "tasks, outputs, quotes, programs or notes."}
         work["critique_packet_ref"] = keep(store, state, packet)
         try:
-            from .documentary import critique as question_critique, critique_tasks
-            run_critique = critique_tasks if candidate["method"] == "task" else question_critique
-            critique = run_critique(subject, packet)
+            critique = critique_tasks(subject, packet)
         except (Fault, OSError, AttributeError) as error:
             detail = " " + str(error) if isinstance(error, Fault) else ""
             return limitation(store, state, claim_id, getattr(error, "code", "critic_unavailable"),
                               "The independent grade critique did not complete." + detail + " This is an "
                               "operational failure, not an absence of scientific evidence.", asserted_by="runtime")
-        if probe is not None:
-            # Python's measurement travels with the critique it settles against, beside its verdicts.
-            critique = {**critique, "claim_probe": probe}
-        # Python's own count of this claim's searches, and its check of each verdict on an earlier
-        # concern against that count, travel with the critique as the probe does.
-        previous = (history[-1].get("critique") or {}).get("search_count") if history else None
-        critique = {**critique, "search_count": looked(record)}
-        critique["unanswered_concerns"] = unanswered_concerns(critique, previous)
         work["critique_ref"] = keep(store, state, critique)
     work["candidate_ref"] = key
     selection = {"candidate_ref": key, "applicability": args["applicability"],
@@ -734,29 +535,12 @@ def select(store, state, claim_id, work, args, subject):
     work["negotiation_refs"].append(work["audit_ref"])
     if not audit_record["mechanically_accepted"]:
         return {"outcome": "local_audit_rejected", "audit": audit_record}
-    # Two revisions may be spent replacing cases the critique did not count. A third
-    # critique that still rejects cases settles the grade the counting cases support.
+    # Two revisions may be spent replacing tasks the critique did not count. A third
+    # critique that still rejects tasks settles the grade the counting tasks support.
     rejected = rejected_cases(critique) if critique and not accepting else []
     replacements_used = sum(1 for record in history if rejected_cases(record.get("critique")))
     replacements_spent = bool(rejected) and replacements_used >= REPLACEMENT_ROUNDS
-    gaps = list(critique.get("coverage_gaps") or []) if critique and not accepting else []
-    concerns = list(critique.get("unanswered_concerns") or []) if critique and not accepting else []
-    # The returns (tool-contracts.md): a critique agreeing with a proposal below A sends the claim
-    # back rather than fixing it, once for coverage gaps and while rounds remain for an earlier
-    # concern left unanswered. In run 3303fd93 three claims built to B's minimum settled with their
-    # critiques' findings unread, and one revision answered two of its five required revisions.
-    agreeing = (bool(critique) and not accepting and args["target_grade"] != "A"
-                and audit_record["settled_ceiling"] == args["target_grade"]
-                and rounds < MAX_ROUNDS and not replacements_spent)
-    gap_return = agreeing and bool(gaps) and not work.get("gap_return_ref")
-    concern_return = agreeing and bool(concerns)
-    for field, kind, made in (("gap_return_ref", "local-gap-return", gap_return),
-                              ("concern_return_ref", "local-concern-return", concern_return)):
-        if made:
-            work[field] = keep(store, state, {"kind": kind, "candidate_fingerprint": identity, "round": rounds,
-                                              "looked": looked(record) if record else None})
-    returning = gap_return or concern_return
-    if (critique and not accepting and (audit_record["settled_ceiling"] != args["target_grade"] or returning)
+    if (critique and not accepting and audit_record["settled_ceiling"] != args["target_grade"]
             and rounds < MAX_ROUNDS and not replacements_spent):
         # Strengthen the evidence and propose the new ceiling, or accept this grade.
         # On the last round the settled grade is fixed instead of offered.
@@ -765,23 +549,11 @@ def select(store, state, claim_id, work, args, subject):
                 "settled_grade": audit_record["settled_ceiling"],
                 "objections": critique["objections"],
                 "required_revisions": critique["required_revisions"],
-                "coverage_gaps": gaps,
-                "unanswered_concerns": concerns,
                 "case_replacements": rejected,
                 "rounds_remaining": MAX_ROUNDS - rounds,
                 "replacement_rounds_remaining": REPLACEMENT_ROUNDS - replacements_used - bool(rejected),
                 "case_gap": case_gap(candidate, counted_cases(critique), args["target_grade"],
-                                     critique["supported_grade"]),
-                **({"message": "The critique agreed with " + args["target_grade"] + " but found "
-                               + " and ".join(part for part, made in (
-                                   ("facts no counting case tests, in coverage_gaps (a return made once per "
-                                    "claim)", gap_return),
-                                   ("earlier review requests this design leaves unanswered, in "
-                                    "unanswered_concerns", concern_return)) if made)
-                               + ". Answer them in a revised design and propose its ceiling, or search for a "
-                               "source for each and then accept " + args["target_grade"] + ": Python accepts it "
-                               "only once its search record shows a search or fetch for this claim made since "
-                               "this return."} if returning else {})}
+                                     critique["supported_grade"])}
     state["claim_states"][claim_id] = "local_ready"
     return {"outcome": "local_plan_fixed", "candidate": candidate,
             "selection_ref": work["selection_ref"], "audit": audit_record}
@@ -796,13 +568,6 @@ def check_reference_host(settings,url):
     from urllib.parse import urlsplit
     if settings["allowed_reference_hosts"] and urlsplit(url).hostname not in settings["allowed_reference_hosts"]:
         raise Fault("resource_not_authorized","Reference host is outside the operator's configured list.")
-
-
-def compare(candidate,case,text,settings,subject,artifacts=None):
-    if candidate["method"]!="python":
-        return catalog.case_compare(candidate,case,text)
-    from .local_evaluators import score
-    return score(candidate,case,text,settings,log=getattr(subject,"log",None),artifacts=artifacts)["status"]
 
 
 def stronger_evidence_available(store,state,claim_id,work):
@@ -911,7 +676,7 @@ def documentary_step(store,state,claim_id,name,args,subject):
     else:
         refs=set(work["reference_refs"])
         if work.get("candidate_ref"):
-            refs.update(case["reference_ref"] for case in store.get_json(work["candidate_ref"])["cases"])
+            refs.update(catalog.reference_refs(store.get_json(work["candidate_ref"])))
         evidence=[]
         for item in args["evidence"]:
             if item["reference_ref"] not in refs:
@@ -968,21 +733,12 @@ def execute(store, state, claim_id, subject, retry=False):
     for entry in snapshot["files"]:
         raw=store.get(entry["digest"])
         source.append({"path":entry["path"],**({"content":raw.decode("utf-8")} if entry["encoding"]=="utf-8" else {"base64":base64.b64encode(raw).decode()})})
+    from .local_tasks import score as score_task, task_input
     receipts, observations, scored_trials = [], [], []
     for index, (case,trial) in enumerate(((case,trial) for case in candidate["cases"] for trial in range(1,trials+1)),1):
-        # The line Python writes from the case's answer type ("Reading a reply", tool-contracts.md).
-        # A generated evaluator reads free output, so its cases carry none. A task gives its job, its
-        # files' paths and its output fields instead ("Tasks" in local-tasks.md).
-        task_files = None
-        if candidate["method"] == "task":
-            from .local_tasks import task_input
-            case_input = task_input(case)
-            task_files = {item["name"]: store.get(item["object_ref"]) for item in case.get("files") or []}
-        else:
-            case_input = {"input": case["input"]}
-        if candidate["method"] not in ("python", "task"):
-            from .answers import instruction
-            case_input["answer_format"] = instruction(catalog.case_method(candidate, case), case.get("unit"))
+        # A task gives its job, its files' paths and its output fields ("Tasks" in local-tasks.md).
+        case_input = task_input(case)
+        task_files = {item["name"]: store.get(item["object_ref"]) for item in case.get("files") or []}
         request = {"kind": "local-subject-request", "snapshot_ref": state["source_ref"],
                    "selection_ref": work["selection_ref"], "case_id": case["case_id"], **case_input,
                    "subject": state["subject_config"], "trial":trial,"created_at": utc_now()}
@@ -993,7 +749,7 @@ def execute(store, state, claim_id, subject, retry=False):
         try:
             response = subject.observe(source=source, case_input=case_input,
                                        config=state["subject_config"], timeout_seconds=settings["subject_timeout_seconds"],
-                                       **({"task_files": task_files} if task_files is not None else {}))
+                                       task_files=task_files)
             catalog.safe_payload(response)
             if (not isinstance(response, dict) or not isinstance(response.get("text"), str) or len(response["text"].encode("utf-8")) > 16384
                     or response.get("invocation_verified") is not True or not response.get("response_id")):
@@ -1009,7 +765,7 @@ def execute(store, state, claim_id, subject, retry=False):
             elif code == "claude_timeout":
                 # The limit is ours. Saying "did not return an observation" hid that run
                 # 84e90683's subject was still working when the verifier's 120 s ran out.
-                reason = ("Trial " + str(trial) + " of case " + case["case_id"] + " reached this verifier's per-trial limit of "
+                reason = ("Trial " + str(trial) + " of task " + case["case_id"] + " reached this verifier's per-trial limit of "
                           + str(settings["subject_timeout_seconds"]) + " s (subject_timeout_seconds) before the subject answered. "
                           "The limit is the verifier's setting, not a property of the skill; a longer limit may let this case finish.")
             else:
@@ -1046,71 +802,37 @@ def execute(store, state, claim_id, subject, retry=False):
                 work[pinned]=keep(store,state,answered)
             elif store.get_json(work[pinned])!=answered:
                 return limitation(store,state,claim_id,"subject_model_changed","Observed model identity changed within the frozen trial set.",receipts)
-        task_score=None
-        try:
-            if candidate["method"]=="task":
-                # Python reads the trial's results file itself ("Reading a trial's results", local-tasks.md).
-                from .local_tasks import score as score_task
-                task_score=score_task(case,{item["path"]:store.get(item["object_ref"]) for item in artifacts})
-                status=task_score["status"]
-            else:
-                evaluation_artifacts=[{"path":item["path"],"base64":base64.b64encode(store.get(item["object_ref"])).decode()} for item in artifacts] if candidate["method"]=="python" else None
-                status=compare(candidate,case,response["text"],settings,subject,evaluation_artifacts)
-        except Fault as error:
-            return limitation(store,state,claim_id,error.code,"The evaluator did not complete. Saved subject observations were not retried.",receipts)
+        # Python reads the trial's results file itself ("Reading a trial's results", local-tasks.md).
         scored_trials.append({"index":index,"case":case,"trial":trial,"request_ref":request_ref,
-                              "response_ref":response_ref,"status":status,"models":models,"text":response["text"],
-                              "task_score":task_score,"run_problems":response.get("run_problems",[])})
-    # Cases the critique did not count ran and stay in the receipts, but a case measuring
-    # something other than the claim cannot pass or fail it. An audit written before case
-    # verdicts existed counted every case.
+                              "response_ref":response_ref,"models":models,"run_problems":response.get("run_problems",[]),
+                              "score":score_task(case,{item["path"]:store.get(item["object_ref"]) for item in artifacts})})
+    # Tasks the critique did not count ran and stay in the receipts, but a task measuring
+    # something other than the claim cannot pass or fail it.
     from .local_science import decide, rejected_cases
-    counted = audit_record.get("counted_cases")
-    counted = set(counted if counted is not None else (case["case_id"] for case in candidate["cases"]))
+    counted = set(audit_record["counted_cases"])
     cases = [case for case in candidate["cases"] if case["case_id"] in counted]
-    # A counted trial Python's reader does not pass is read by the AI reader ("Reading replies",
-    # local-contract.md). A generated evaluator's status is final, and a synthetic run's status is
-    # withheld whatever its trials say, so neither is read.
-    readings = {}
-    if candidate["method"] not in ("python", "task") and not subject.identity["synthetic"]:
-        from .documentary import read_replies
-        unread = [item for item in scored_trials if item["case"]["case_id"] in counted and item["status"] != "pass"]
-        records = read_replies(subject, [{"method": catalog.case_method(candidate, item["case"]), "case": item["case"],
-                                          "reply": item["text"], "python_status": item["status"]} for item in unread])
-        readings = {item["index"]: record for item, record in zip(unread, records)}
     for item in scored_trials:
-        record = readings.get(item["index"])
         scored = {"case_id": item["case"]["case_id"], "trial": item["trial"], "request_ref": item["request_ref"],
-                  "response_ref": item["response_ref"], "python_status": item["status"],
-                  "comparison_status": record["final_status"] if record else item["status"],
-                  "read_by": "ai_reader" if record and record["status"] == "used" else "python",
-                  "model_ids": item["models"]}
-        if item["task_score"] is not None:
-            scored.update(outputs=item["task_score"]["outputs"], results_found=item["task_score"]["results_found"],
-                          run_problems=item["run_problems"],
-                          **({"results_problem": item["task_score"]["results_problem"]}
-                             if "results_problem" in item["task_score"] else {}))
-        if record:
-            reading_ref = keep(store, state, record)
-            receipts.append(reading_ref)
-            atomic_write(directory / f"{item['index']:03}-reading.json", canonical(record))
-            scored.update(reading_ref=reading_ref, reading_status=record["status"], reading=record.get("reading"))
+                  "response_ref": item["response_ref"], "comparison_status": item["score"]["status"],
+                  "model_ids": item["models"], "outputs": item["score"]["outputs"],
+                  "results_found": item["score"]["results_found"], "run_problems": item["run_problems"],
+                  **({"results_problem": item["score"]["results_problem"]} if "results_problem" in item["score"] else {})}
         score_ref = keep(store, state, scored)
         receipts.append(score_ref)
         atomic_write(directory / f"{item['index']:03}-score.json", canonical(scored))
         observations.append(scored)
     scored = [row for row in observations if row["case_id"] in counted]
+    statuses = {row["comparison_status"] for row in scored}
     result = {"kind": "local-comparison", "claim_id": claim_id, "candidate_ref": work["candidate_ref"],
               "selection_ref": work["selection_ref"], "observations": observations, "receipts": receipts,
-              "comparison_status": "no_counted_cases" if not scored
-              else "invalid" if any(row["comparison_status"] == "invalid" for row in scored)
-              else "pass" if all(row["comparison_status"] == "pass" for row in scored) else "fail",
+              # A wrong result decides the claim whatever an unreadable trial said ("Status" in local-contract.md).
+              "comparison_status": "no_counted_cases" if not scored else "fail" if "fail" in statuses
+              else "invalid" if "invalid" in statuses else "pass",
               "uncounted_cases": [{key: item[key] for key in ("case_id", "verdict", "reason")}
                                   for item in rejected_cases(audit_record.get("critique"))],
               "scientific_status": None, "evidence_grade": None, "synthetic": subject.identity["synthetic"],
               "limitations": candidate["qualification_limitations"] + [candidate["limitations"]]}
-    result.update(decide(audit_record,scored,cases,trials,synthetic=subject.identity["synthetic"],
-                         method=candidate["method"]))
+    result.update(decide(audit_record, scored, cases, trials, synthetic=subject.identity["synthetic"]))
     work["result_ref"] = keep(store, state, result)
     needs_documentary=not result["evidence_grade"] and settings["documentary_assessment"]
     state["claim_states"][claim_id] = "local_documentary" if needs_documentary else "terminal_result"
@@ -1124,10 +846,9 @@ RETRY_FAULTS = {"subject_refused", "subject_model_changed", "subject_unavailable
                 "claude_identity_error", "claude_timeout", "claude_output_limit", "claude_unavailable",
                 "sandbox_unavailable", "sandbox_image_unavailable", "sandbox_start_failed",
                 "sandbox_not_started", "sandbox_timeout", "sandbox_source_unavailable"}
-# One minute per trial is three times the slowest mean of run 3dc02567; five more for the report.
-# A task trial runs the skill on its files, so it is given five minutes, half its default limit.
-RETRY_SECONDS_PER_TRIAL = 60
-RETRY_SECONDS_PER_TASK_TRIAL = 300
+# A trial runs the skill on its task's files, so the re-run budgets five minutes for each, half the
+# default per-trial limit, and five more for the report.
+RETRY_SECONDS_PER_TRIAL = 300
 RETRY_REPORT_SECONDS = 300
 # Set by the runner for its planner's tool server; absent when nothing bounds the attempt.
 DEADLINE_ENV = "SCI_VERIFIER_ATTEMPT_DEADLINE"
@@ -1147,16 +868,14 @@ def retry_stopped_claims(store, state, subject):
         first = store.get_json(work["outcome_ref"])
         if first.get("fault") not in RETRY_FAULTS:
             continue
-        candidate = store.get_json(work["candidate_ref"])
-        trials = len(candidate["cases"]) * store.get_json(work["selection_ref"])["trials_per_case"]
-        per_trial = RETRY_SECONDS_PER_TASK_TRIAL if candidate.get("method") == "task" else RETRY_SECONDS_PER_TRIAL
+        trials = len(store.get_json(work["candidate_ref"])["cases"]) * store.get_json(work["selection_ref"])["trials_per_case"]
         record = {"kind": "local-retry", "claim_id": claim_id, "fault": first["fault"], "first_attempt_ref": work["outcome_ref"]}
         skip = None
         if not store.get_json(work["audit_ref"]).get("settled_ceiling") and settings["documentary_assessment"]:
             skip = "Its plan settled no execution grade, and the documentary step after a re-run needs the planner."
         elif state["subject_calls_used"] + trials > settings["max_subject_calls"]:
             skip = "The subject-call budget cannot cover a re-run of " + str(trials) + " trials."
-        elif deadline and float(deadline) - time.time() < trials * per_trial + RETRY_REPORT_SECONDS:
+        elif deadline and float(deadline) - time.time() < trials * RETRY_SECONDS_PER_TRIAL + RETRY_REPORT_SECONDS:
             skip = "Too little time remains before the attempt deadline to re-run " + str(trials) + " trials and write the report."
         if skip:
             work["retry_ref"] = keep(store, state, {**record, "status": "skipped", "reason": skip})
@@ -1170,22 +889,15 @@ def retry_stopped_claims(store, state, subject):
 
 
 def case_quotes(store, candidate_ref, limit=8):
-    """Each distinct reference quote a candidate's cases were keyed to, in case order.
-
-    Qualification already proved every one exact, so a packet built from them needs no planner.
-    """
+    """Each distinct quote a task design rests on: its generator's model and each output's quoted value
+    or rule, in order. Qualification already proved every one exact, so a packet built from them needs
+    no planner."""
     evidence = []
     candidate = store.get_json(candidate_ref)
-    # A calculated case is keyed to its formula's quote; the worked examples it reproduced follow.
-    anchors = (candidate.get("calculation") or {}).get("anchors", [])
-    pairs = [*((case.get("reference_ref"), case.get("source_quote")) for case in candidate["cases"]),
-             *((anchor["reference_ref"], anchor["source_quote"]) for anchor in anchors)]
-    if candidate.get("method") == "task":
-        # A task design rests on its generator's model and each output's quoted value or rule.
-        generator = candidate.get("generator") or {}
-        pairs = [(generator.get("reference_ref"), generator.get("model_quote")),
-                 *((output.get("reference_ref"), output.get("source_quote"))
-                   for case in candidate["cases"] for output in case["outputs"])]
+    generator = candidate.get("generator") or {}
+    pairs = [(generator.get("reference_ref"), generator.get("model_quote")),
+             *((output.get("reference_ref"), output.get("source_quote"))
+               for case in candidate["cases"] for output in case["outputs"])]
     for ref, quote in pairs:
         if not ref or not quote:
             continue
@@ -1225,7 +937,7 @@ def fallback_documentary(store, state, subject):
         if not settings["documentary_assessment"]:
             reason = "Documentary assessment is disabled in the local settings."
         elif not evidence:
-            reason = "The claim has no qualified candidate whose reference quotes could be assessed."
+            reason = "The claim has no qualified task design whose reference quotes could be assessed."
         elif (deadline and float(deadline) - time.time()
               < ASSESSOR_TIMEOUT_SECONDS + RETRY_REPORT_SECONDS):
             reason = "Too little time remains before the attempt deadline for an assessment and the report."
@@ -1290,50 +1002,14 @@ def axis_lines(terminal, cell):
     return lines + [""] if lines else []
 
 
-def reader_cell(test):
-    """Who settled one trial's status, for the report table."""
-    reading = test.get("reading")
-    if not reading:
-        return "Python" if test.get("read_by") else ""
-    if reading["status"] == "used":
-        return "AI reader: " + reading["reading"] + " (Python: " + reading["python_status"] + ")"
-    return "Python; AI reading " + reading["status"] + " (" + (reading.get("refusal") or reading.get("error") or "") + ")"
-
-
-def reading_lines(terminal, tests, cell):
-    """The claim's AI-reader disclosure ("Reading replies", local-contract.md): what it read and
-    changed, the status Python's reader alone gives, and every reading with its reason."""
-    summary = terminal.get("reading_summary")
-    read = [test for test in tests if test.get("reading")]
-    if not summary or not summary.get("read"):
-        return []
-    alone = summary["python_reader"]
-    changes = ", ".join(str(count) + " " + change for change, count in sorted(summary["changes"].items()))
-    status = alone["scientific_status"] or "withheld (" + str(alone["status_withheld_reason"]) + ")"
-    lines = ["AI reader: read " + str(summary["read"]) + " counted trial" + ("" if summary["read"] == 1 else "s")
-             + " Python's reader did not pass, and changed " + str(summary["changed"])
-             + (" (" + changes + ")" if changes else "") + "; " + str(summary["refused"]) + " reading(s) refused, "
-             + str(summary["unavailable"]) + " unavailable. By Python's reader alone the status would be "
-             + cell(status) + ", accuracy " + str(alone["accuracy"]["matched"]) + " of "
-             + str(alone["accuracy"]["evaluated"]) + ".", ""]
-    for test in read:
-        reading = test["reading"]
-        detail = (reading.get("reading", "") + (", answer " + repr(reading["answer"]) if reading.get("answer") else "")
-                  + (": " + reading["reason"] if reading.get("reason") else "")) if reading["status"] != "unavailable" else ""
-        lines.append("- Case " + cell(test["case_id"]) + ", trial " + str(test["trial"]) + ": " + cell(reading["status"])
-                     + (" (" + cell(reading.get("refusal") or reading.get("error")) + ")" if reading["status"] != "used" else "")
-                     + (" -- " + cell(detail) if detail else "") + ".")
-    return lines + [""]
-
-
 def report(store, state):
-    from .documentary import reading_note
-    from .local_science import size_limit
+    from .local_science import rejected_cases, size_limit
 
     def cell(value):
         return escape(str(value)).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
 
-    claims = store.get_json(state["manifest_ref"])["claims"]
+    manifest = store.get_json(state["manifest_ref"])
+    claims = manifest["claims"]
     rows = []
     lines = ["# Local skill verification", "", "SYNTHETIC FIXTURE RUN" if state["subject_config"]["synthetic"]
              else "Personal/local reference comparisons", "",
@@ -1343,23 +1019,19 @@ def report(store, state):
         from .environment import report_line, report_summary
         environment = report_summary(store.get_json(state["local_environment_ref"]))
         lines.extend([cell(report_line(environment)), ""])
-    # Which of the skill's sections the claims hold ("Claims" in local-tasks.md). A manifest from before
-    # claims named their sections is read by where each claim's quote starts.
-    manifest = store.get_json(state["manifest_ref"])
-    coverage = None
-    if claims or "sections" in manifest:
-        from .claims import manifest_coverage, section_coverage
-        snapshot = verified_snapshot(store, state)
-        files = {entry["path"]: normalize(store.get(entry["digest"]).decode("utf-8"))
-                 for entry in snapshot["files"] if entry["encoding"] == "utf-8"}
-        coverage = manifest_coverage(manifest, files) or section_coverage(files, claims)
+    # Which of the skill's sections the claims hold, and why the rest were set aside ("Claims" in
+    # local-tasks.md).
+    from .claims import manifest_coverage
+    snapshot = verified_snapshot(store, state)
+    coverage = manifest_coverage(manifest, {entry["path"]: normalize(store.get(entry["digest"]).decode("utf-8"))
+                                            for entry in snapshot["files"] if entry["encoding"] == "utf-8"})
     covering = {}
     if coverage:
         for section in coverage["sections"]:
             for claim_id in section["claims"]:
-                covering.setdefault(claim_id, []).append(section["heading"] or "(before the first heading)")
+                covering.setdefault(claim_id, []).append(section["heading"])
         covered = sum(bool(section["claims"]) for section in coverage["sections"])
-        aside = coverage.get("set_aside") or []
+        aside = coverage["set_aside"]
         lines.extend([cell("Skill sections: the claims hold " + str(covered) + " of the " + str(len(coverage["sections"]))
                            + " sections of SKILL.md" + ("; no claim holds " + "; ".join(coverage["uncovered"])
                                                         if coverage["uncovered"] else "")
@@ -1383,36 +1055,16 @@ def report(store, state):
             for case,trial in ((case,trial) for case in candidate["cases"] for trial in range(1,trials+1)):
                 observed = answers.get((case["case_id"],trial))
                 score = scores.get((case["case_id"],trial)) or {}
-                status = score.get("comparison_status","not_obtained")
-                if candidate.get("method") == "task":
-                    # A task's row keeps each output's expected value, the value found and its verdict.
-                    tests.append({"case_id": case["case_id"], "trial": trial, "input": case["job"],
-                                  "expected": {output["field"]: output["expected"] for output in case["outputs"]},
-                                  "artifacts": observed.get("artifacts", []) if observed else [],
-                                  "observed": observed["text"] if observed else None,
-                                  "comparison_status": status, "python_status": status,
-                                  "read_by": "python" if score else None, "reading": None,
-                                  "outputs": score.get("outputs"), "results_found": score.get("results_found"),
-                                  "results_problem": score.get("results_problem"),
-                                  "run_problems": score.get("run_problems", []), "sections": case["sections"],
-                                  "files": case.get("files") or [], "applicability": case["applicability"],
-                                  "counted": counted is None or case["case_id"] in counted,
-                                  "session_id": observed.get("session_id") if observed else None,
-                                  "observed_model_ids": observed.get("observed_model_ids", []) if observed else [],
-                                  "refusals": observed.get("refusals", []) if observed else []})
-                    continue
-                tests.append({"case_id": case["case_id"],"trial":trial, "input": case["input"], "expected": case["expected"],
-                              "artifacts":observed.get("artifacts",[]) if observed else [],
+                # Each output's expected value, the value found and its verdict.
+                tests.append({"case_id": case["case_id"], "trial": trial, "input": case["job"],
+                              "expected": {output["field"]: output["expected"] for output in case["outputs"]},
+                              "artifacts": observed.get("artifacts", []) if observed else [],
                               "observed": observed["text"] if observed else None,
-                              "comparison_status": status,
-                              # "Reading replies" in local-contract.md: Python's own verdict, and the AI reading.
-                              "python_status": score.get("python_status",status),
-                              "read_by": score.get("read_by","python") if score else None,
-                              "reading": reading_note(store.get_json(score["reading_ref"])) if score.get("reading_ref") else None,
-                              "reference_ref": case["reference_ref"], "reference_quote": case["source_quote"],
-                              **({"calculated": {"arguments": case["arguments"], "decimals": case["decimals"]}}
-                                 if "arguments" in case else {}),
-                              "applicability": case["applicability"],
+                              "comparison_status": score.get("comparison_status", "not_obtained"),
+                              "outputs": score.get("outputs"), "results_found": score.get("results_found"),
+                              "results_problem": score.get("results_problem"),
+                              "run_problems": score.get("run_problems", []), "sections": case["sections"],
+                              "files": case.get("files") or [], "applicability": case["applicability"],
                               "counted": counted is None or case["case_id"] in counted,
                               "session_id": observed.get("session_id") if observed else None,
                               "observed_model_ids": observed.get("observed_model_ids", []) if observed else [],
@@ -1432,22 +1084,16 @@ def report(store, state):
                      "retry": retry, "fallback": fallback,
                      "required_grade":required_grade,"meets_required_grade":meets_required,
                      "audit":audit_record,
-                     "sections":covering.get(claim["claim_id"],[]) if coverage else None,
+                     "sections":covering.get(claim["claim_id"],[]),
                      "size_limited":size_limit(audit_record,candidate) if audit_record and candidate else None,
                      "documentary_assessment":store.get_json(work["assessment_ref"]) if work.get("assessment_ref") else None,
-                     "candidate_scope": candidate["scope"] if candidate else None,
-                     "calculation": {**candidate["calculation"], "receipts": candidate["calculation_receipts"]}
-                     if candidate and candidate.get("calculation") else None})
+                     "candidate_scope": candidate["scope"] if candidate else None})
         lines.extend(["## " + cell(claim["statement"]), ""])
-        if coverage:
-            lines.extend([("Skill section: " + cell("; ".join(covering[claim["claim_id"]]))
-                           if claim["claim_id"] in covering else "Skill section: none; it quotes a file no section of "
-                           "SKILL.md names."), ""])
+        lines.extend(["Skill sections: " + cell("; ".join(covering.get(claim["claim_id"], [])) or "none"), ""])
         lines.extend([
                       "Outcome: " + terminal.get("comparison_status", terminal.get("documentary_status",terminal.get("code",terminal.get("scientific_status") or "unavailable"))), "",
                       "Scientific status: "+cell(terminal.get("scientific_status") or "unassigned")+"; evidence grade: "+cell(terminal.get("evidence_grade") or "unassigned"),""])
         lines.extend(axis_lines(terminal, cell))
-        lines.extend(reading_lines(terminal, tests, cell))
         if retry:
             first_attempt = "First attempt stopped by " + cell(retry["fault"]) + ": " + cell(retry["first_attempt"].get("reason", "")) + " "
             lines.extend([first_attempt + ("Re-run once at the end of the run, with the same plan, model and inputs: "
@@ -1455,86 +1101,46 @@ def report(store, state):
                                            else "Not re-run: " + cell(retry["reason"])), ""])
         if fallback:
             lines.extend([("Fallback documentary assessment: no execution evidence was obtained, so a fresh AI session "
-                           "judged the claim against the reference quotes its planned cases were keyed to. Its grade D "
-                           "is AI judgment only." if fallback["status"] == "assessed"
+                           "judged the claim against the quotes its task design rests on. Its grade D is AI judgment "
+                           "only." if fallback["status"] == "assessed"
                            else "No fallback documentary assessment: " + cell(fallback["reason"])), ""])
         if required_grade:
             lines.extend(["Required grade: "+required_grade+"; requirement "+("met" if meets_required else "not met"),""])
-        # Every tested case, counted or not; completeness above covers the counted cases only.
-        lines.extend(["Trials run, every tested case: "+"; ".join(key+" "+str(value) for key,value in execution_counts.items())+".",""])
-        if work.get("audit_ref"):
-            # `.get` throughout: a run saved before the grade negotiation existed must stay
-            # readable, and reporting an old record as "unrecorded" beats refusing to report.
-            settled=store.get_json(work["audit_ref"])
-            justification=settled.get("justification",{})
-            lines.extend(["Proposed grade: "+cell(settled.get("proposed_grade") or "unrecorded")+"; evidence ceiling: "
-                          +cell(settled.get("evidence_ceiling") or "none")+"; settled: "+cell(settled.get("settled_ceiling") or "none")
-                          +" after "+str(settled.get("critique_rounds",0))+" critique round(s)"
-                          +("; ceiling over counted cases: "+cell(settled.get("case_ceiling") or "none") if "case_ceiling" in settled else "")
-                          +".",""])
-            # Over the counted cases when a critique judged them, so rejected cases show here.
-            limits=settled.get("case_limits",settled.get("evidence_limits"))
+        # Every task, counted or not; completeness above covers the counted tasks only.
+        lines.extend(["Trials run, every task: "+"; ".join(key+" "+str(value) for key,value in execution_counts.items())+".",""])
+        if audit_record:
+            justification=audit_record.get("justification",{})
+            lines.extend(["Proposed grade: "+cell(audit_record.get("proposed_grade") or "unrecorded")+"; evidence ceiling: "
+                          +cell(audit_record.get("evidence_ceiling") or "none")+"; settled: "+cell(audit_record.get("settled_ceiling") or "none")
+                          +" after "+str(audit_record.get("critique_rounds",0))+" critique round(s)"
+                          +"; ceiling over counted tasks: "+cell(audit_record.get("case_ceiling") or "none")+".",""])
+            # Over the counted tasks when a critique judged them, so rejected tasks show here.
+            limits=audit_record.get("case_limits",audit_record.get("evidence_limits"))
             if limits:
                 lines.extend(["Grade limited by: "+cell(", ".join(limits))+".",""])
             size=rows[-1]["size_limited"]
-            if size and size.get("unit")=="tasks":
+            if size:
                 lines.extend(["Limited by its number of independent tasks, not its source: the source supports "
                               +size["source_supports"]+", but "+str(size["counting"])+" tasks counted, where "
                               +size["source_supports"]+" needs "+str(size["counting_needed"])+".",""])
-            elif size:
-                lines.extend(["Limited by its number of independent cases, not its source: the source supports "
-                              +size["source_supports"]+", but "+str(size["counting"])+" cases counted, "
-                              +str(size["generated"])+" of them generated, where "+size["source_supports"]+" needs "
-                              +str(size["counting_needed"])+" with "+str(size["generated_needed"])+" generated.",""])
             for label,field in (("Coverage","coverage"),("Uncertainty","uncertainty"),
                                 ("Oracle independence","oracle_independence")):
                 lines.extend([label+": "+cell(justification.get(field,"unrecorded")),""])
-            if candidate and candidate.get("calculation"):
-                calculation=candidate["calculation"]
-                lines.extend(["Calculated answers: "+str(sum("arguments" in case for case in candidate["cases"]))
-                              +" expected answers were calculated in the sandbox by the planner's program (SHA256 "
-                              +candidate["calculation_receipts"]["code_sha256"]+") from the formula quoted from "
-                              +cell(sources[calculation["reference_ref"]]["url"])+": "+cell(calculation["formula_quote"])
-                              +". Before any case was keyed it reproduced "
-                              +"; ".join(cell(item["expected"])+" (it gave "+cell(item["output"])+") from "
-                                         +cell(sources[item["reference_ref"]]["url"])
-                                         for item in candidate["calculation_receipts"]["anchors"])+".",""])
-            if settled.get("critique"):
-                lines.extend(["Independent critique supported grade "
-                              +cell(settled["critique"]["supported_grade"] or "none")+":",""])
-                lines.extend("- "+cell(finding) for finding in settled["critique"]["findings"])
-                lines.extend("- Objection: "+cell(item) for item in settled["critique"]["objections"])
-                lines.extend("- Coverage gap: "+cell(item) for item in settled["critique"].get("coverage_gaps") or [])
-                lines.extend("- Earlier concern left unanswered: "+cell(item["concern"])+" ("+cell(item["reason"])+")"
-                             for item in settled["critique"].get("unanswered_concerns") or [])
-                for field, what in (("gap_return_ref", "Returned once for coverage gaps: a critique in round {} agreed "
-                                     "with the proposed grade but named facts no case tested"),
-                                    ("concern_return_ref", "Returned for unanswered concerns: a critique in round {} "
-                                     "agreed with the proposed grade but found an earlier review's request unanswered")):
-                    if work.get(field):
-                        lines.append("- "+what.format(store.get_json(work[field])["round"])
-                                     +", so the planner had to answer it or search before that grade could be accepted.")
-                from .local_science import rejected_cases
-                # In case order: the critique's rejections, and Python's, marked, for cases the
-                # claim-only answers missed.
-                lines.extend("- Case "+cell(item["case_id"])+" not counted ("+cell(item["verdict"])
-                             +(", from the claim-only answers" if item.get("source")=="claim_probe" else "")+"): "
+            if candidate and candidate.get("generator"):
+                lines.extend(["Generated input: Python ran the planner's generator (SHA256 "
+                              +str(candidate["task_receipts"]["generator_sha256"])+") on each task's arguments; it "
+                              "implements the model quoted from "
+                              +cell(sources[candidate["generator"]["reference_ref"]]["url"])+": "
+                              +cell(candidate["generator"]["model_quote"])+". The reference solution (SHA256 "
+                              +str(candidate["task_receipts"]["solver_sha256"])+") passed every output before any trial.",""])
+            if audit_record.get("critique"):
+                critique=audit_record["critique"]
+                lines.extend(["Independent critique supported grade "+cell(critique["supported_grade"] or "none")+":",""])
+                lines.extend("- "+cell(finding) for finding in critique["findings"])
+                lines.extend("- Objection: "+cell(item) for item in critique["objections"])
+                lines.extend("- Task "+cell(item["case_id"])+" not counted ("+cell(item["verdict"])+"): "
                              +cell(item["reason"])+" Suggested replacement: "+cell(item["replacement"])
-                             for item in rejected_cases(settled["critique"]))
-                probe=settled["critique"].get("claim_probe")
-                if probe:
-                    outcomes=[item["outcome"] for item in probe["cases"]]
-                    lines.append("- Claim-only answers: "+str(outcomes.count("reached"))+" of "+str(len(outcomes))
-                                 +" cases reached their key from the claim alone"
-                                 +"".join("; "+str(outcomes.count(name))+" "+name for name in ("missed","unmeasured")
-                                          if outcomes.count(name))+".")
-                    # Claim-only answers the AI reader read, as trials are ("Reading replies", local-contract.md).
-                    read=[sample for item in probe["cases"] for sample in item.get("samples",[]) if sample.get("reading")]
-                    if read:
-                        changed=sum(sample["reading"].get("final_status")!=sample["reading"].get("python_status")
-                                    for sample in read)
-                        lines.append("- The AI reader read "+str(len(read))+" claim-only answer"+("" if len(read)==1 else "s")
-                                     +" Python's reader did not pass, and changed "+str(changed)+".")
+                             for item in rejected_cases(critique))
                 lines.append("")
             else:
                 lines.extend(["No independent critique ran for this plan; no grade is assigned.",""])
@@ -1543,34 +1149,26 @@ def report(store, state):
         if tests:
             if terminal.get("fault") and terminal.get("asserted_by") != "planner":
                 lines.extend(["A runner fault stopped this claim, so no trial below enters accuracy, status or grade.", ""])
-            if candidate and candidate.get("method") == "task":
-                # One row per trial: the task, its status, and every output that did not pass.
-                lines.extend(["| Task | Trial | Status | Outputs not passing (expected; found) | Run problems | Counted |",
-                              "| --- | --- | --- | --- | --- | --- |"])
-                for case in tests:
-                    misses = "; ".join(row["field"] + " " + row["status"] + " ("
-                                       + (row["expected"] if row["type"] == "number" else json.dumps(row["expected"]))
-                                       + "; " + (json.dumps(row["found"]) if row["present"] else "missing") + ")"
-                                       for row in case["outputs"] or [] if row["status"] != "pass")
-                    lines.append("| " + cell(case["case_id"]) + " | " + cell(case["trial"]) + " | "
-                                 + cell(case["comparison_status"]) + " | "
-                                 + cell(misses or case.get("results_problem") or "none") + " | "
-                                 + cell("; ".join(case["run_problems"]) or "none") + " | "
-                                 + ("yes" if case["counted"] else "no") + " |")
-            else:
-                lines.extend(["| Input | Expected | Observed | Comparison | Read by | Case | Trial | Counted |",
-                              "| --- | --- | --- | --- | --- | --- | --- | --- |"])
-                for case in tests:
-                    lines.append("| " + " | ".join(cell(case[key]) for key in ("input", "expected", "observed", "comparison_status"))
-                                 + " | " + cell(reader_cell(case)) + " | " + cell(case["case_id"]) + " | " + cell(case["trial"])
-                                 + " | " + ("yes" if case["counted"] else "no") + " |")
+            # One row per trial: the task, its status, and every output that did not pass.
+            lines.extend(["| Task | Trial | Status | Outputs not passing (expected; found) | Run problems | Counted |",
+                          "| --- | --- | --- | --- | --- | --- |"])
+            for case in tests:
+                misses = "; ".join(row["field"] + " " + row["status"] + " ("
+                                   + (row["expected"] if row["type"] == "number" else json.dumps(row["expected"]))
+                                   + "; " + (json.dumps(row["found"]) if row["present"] else "missing") + ")"
+                                   for row in case["outputs"] or [] if row["status"] != "pass")
+                lines.append("| " + cell(case["case_id"]) + " | " + cell(case["trial"]) + " | "
+                             + cell(case["comparison_status"]) + " | "
+                             + cell(misses or case.get("results_problem") or "none") + " | "
+                             + cell("; ".join(case["run_problems"]) or "none") + " | "
+                             + ("yes" if case["counted"] else "no") + " |")
             if any(case["artifacts"] for case in tests):
                 from urllib.parse import quote
                 from pathlib import Path
                 lines.extend(["","Generated files:",""])
                 for case in tests:
                     for artifact in case["artifacts"]:
-                        lines.append("- Case "+cell(case["case_id"])+", trial "+str(case["trial"])+": ["+cell(artifact["path"]).replace("[","&#91;").replace("]","&#93;")+"]("+quote(Path(artifact["saved_path"]).as_posix(),safe="/:")+"); SHA256 "+artifact["object_ref"])
+                        lines.append("- Task "+cell(case["case_id"])+", trial "+str(case["trial"])+": ["+cell(artifact["path"]).replace("[","&#91;").replace("]","&#93;")+"]("+quote(Path(artifact["saved_path"]).as_posix(),safe="/:")+"); SHA256 "+artifact["object_ref"])
             lines.extend(["", "Reference provenance:", ""])
             for source in sources.values():
                 lines.append("- " + cell(source["url"]) + "; version: " + cell(source["version"]) + "; license: " + cell(source["license"]))

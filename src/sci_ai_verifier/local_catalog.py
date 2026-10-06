@@ -1,10 +1,10 @@
-"""Portable candidate bundles: exact pins, offline reuse and explicit exports."""
+"""Portable bundles of task designs: exact pins, offline reuse and explicit exports."""
 
 import base64
 
 from .common import Fault,canonical,digest,utc_now
 from .ingest import SECRET_BYTES
-from .local_candidates import fetch_bytes,qualify,reference_refs,save_candidate,METHOD_VERSION
+from .local_candidates import fetch_bytes,reference_refs,save_candidate
 from .storage import atomic_write,no_links
 from .mcp import parse_json
 
@@ -26,11 +26,15 @@ def export_bundle(store,candidate_refs,*,redistribution):
         candidate=store.get_json(key)
         if candidate.get("status")!="qualified_local":
             raise Fault("candidate_not_qualified","Only mechanically qualified candidates can be proposed.")
-        if candidate.get("method")=="task":
-            # Its generated files and programs have no requalification path on another machine yet
-            # (qualify_local_tasks in tool-contracts.md).
-            raise Fault("candidate_not_exportable","A task design cannot yet be exported to a catalog.")
+        from .local_tasks import METHOD_VERSION
+        if candidate.get("method_version")!=METHOD_VERSION:
+            raise Fault("candidate_not_exportable","Only task designs can be proposed; designs of questions were "
+                        "retired on 2026-10-05.")
         objects[key]=base64.b64encode(store.get(key)).decode()
+        # Every task's input files travel with the design, so an importer gives its trials the same bytes.
+        for case in candidate["cases"]:
+            for item in case.get("files") or []:
+                objects[item["object_ref"]]=base64.b64encode(store.get(item["object_ref"])).decode()
         for ref in reference_refs(candidate):
             resource=store.get_json(ref)
             # Imports never export an operator filesystem path or observed subject evidence.
@@ -89,20 +93,8 @@ def import_bundle(store,raw,settings,*,log=None):
                     if resource["text"] not in {original,original[:128000],"\n".join(parser.parts)}:
                         raise ValueError()
                 refs[ref]=resource
-            if candidate["method_version"]==METHOD_VERSION:
-                # A calculation is run again here: outputs recorded on another machine are not evidence.
-                from .local_evaluators import calculate as run_calculation
-                fields=("name","scope","method","limitations","cases","calculation")
-                check=qualify({field:candidate[field] for field in fields if field in candidate},refs,
-                              (lambda code,inputs:run_calculation(code,inputs,settings,log=log))
-                              if settings.get("sandbox_image") else None)
-            else:
-                from .local_evaluators import qualify as qualify_python,specification,METHOD_VERSION as PYTHON_VERSION
-                if candidate["method_version"]!=PYTHON_VERSION:
-                    raise ValueError()
-                check=qualify_python(specification(candidate),refs,settings,log=log)
-                if candidate["specification_ref"]!=check["specification_ref"]:
-                    raise ValueError()
+            check=requalify(candidate,refs,objects,settings,log=log)
+            used.update(item["object_ref"] for case in candidate["cases"] for item in case.get("files") or [])
             if check["status"]!="qualified_local" or candidate["status"]!="qualified_local":
                 raise ValueError()
             # Recompute mechanics; never install scientific approval from a downloaded assertion.
@@ -123,6 +115,23 @@ def import_bundle(store,raw,settings,*,log=None):
     if log:
         log.emit("catalog_imported",**receipt)
     return receipt
+
+
+def requalify(candidate,refs,objects,settings,*,log=None):
+    """A bundled task design qualified again on this machine: outputs recorded on another one are not
+    evidence here. The generator must rebuild the bundled files and planted values exactly, and the
+    reference solution must pass every output on them again, in this machine's container."""
+    from .local_tasks import METHOD_VERSION,SandboxRunner,proposal_of,qualify
+    if candidate.get("method_version")!=METHOD_VERSION:
+        raise ValueError()
+    sections=sorted({name for case in candidate["cases"] for name in case["sections"]})
+    check,made=qualify(proposal_of(candidate),refs,sections,SandboxRunner(settings,log=log),objects.__getitem__)
+    rebuilt={case["case_id"]:case for case in check["cases"]}
+    for case in candidate["cases"]:
+        again=rebuilt.get(case["case_id"]) or {}
+        if again.get("files")!=case.get("files") or again.get("planted")!=case.get("planted"):
+            raise ValueError()
+    return check
 
 
 def sync_catalogs(store,settings,*,log=None):

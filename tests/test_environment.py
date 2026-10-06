@@ -19,8 +19,9 @@ from sci_ai_verifier import __version__
 from sci_ai_verifier.agent import INLINE_BUDGET, Runtime
 from sci_ai_verifier.claude_runner import ClaudeCode
 from sci_ai_verifier.common import Fault, canonical, utc_now
-from sci_ai_verifier.environment import (INSTALL, KEY_LABEL, MAX_REQUIREMENTS, RECORD_LABEL, RESOLVE, Declarations,
-                                         imported_modules, planner_block, prepare_environment, remove_environment)
+from sci_ai_verifier.environment import (IMPORT_DISTRIBUTIONS, INSTALL, KEY_LABEL, MAX_REQUIREMENTS, RECORD_LABEL,
+                                         RESOLVE, Declarations, imported_modules, planner_block, prepare_environment,
+                                         remove_environment)
 from sci_ai_verifier.ingest import snapshot
 from sci_ai_verifier.local_config import load_configuration, source_limits
 from sci_ai_verifier.local_science import environment_digest
@@ -153,6 +154,12 @@ class DeclarationTests(unittest.TestCase):
         self.assertEqual(imported_modules(files), ["numpy", "pandas", "rdkit", "sksurv"])
         self.assertEqual(Declarations(files).record()["requirements"], [])
 
+    def test_the_import_table_is_the_one_resource_policy_md_owns(self):
+        text = (ROOT / "skills/scientific-verifier/references/resource-policy.md").read_text(encoding="utf-8")
+        section = text.split("## Packages a skill declares or imports", 1)[1].split("\n## ", 1)[0]
+        rows = dict(re.findall(r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|", section))
+        self.assertEqual(rows, IMPORT_DISTRIBUTIONS)
+
 
 def built_record(source, snapshot_digest):
     return {"policy": "skill-environment-v1", "status": "built", "source_path": source, "snapshot_digest": snapshot_digest,
@@ -192,6 +199,8 @@ class FakeDocker:
         self.commands, self.endpoint, self.wheels = [], "npipe:////./pipe/docker_engine", list(WHEELS)
         self.resolver_error, self.install_code, self.distributions, self.raise_on = None, 0, None, None
         self.base_entrypoint, self.manifest_fails = None, False
+        # Modules the image's own report says it lacks.
+        self.lacking = {"missing_module"}
 
     def __call__(self, command, **kwargs):
         args = command[3:] if command[1:2] == ["--host"] else command[1:]
@@ -215,7 +224,7 @@ class FakeDocker:
             asked = json.loads(args[-1])
             installed = self.distributions if self.distributions is not None else [["numpy", "2.4.6"], ["scikit-survival", "0.28.0"]]
             return 0, canonical({"python": "3.12.14", "distributions": installed,
-                                 "imports_unavailable": [name for name in asked if name == "missing_module"]}), b""
+                                 "imports_unavailable": [name for name in asked if name in self.lacking]}), b""
         if args[0] == "commit":
             return 0, (BUILT + "\n").encode(), b""
         return 0, b"", b""
@@ -303,6 +312,53 @@ class BuildTests(unittest.TestCase):
                 self.assertNotIn("bridge", self.networks())
                 self.assertEqual(self.operations("volume", "create"), [])
                 self.assertEqual(self.operations("commit"), [])
+
+    def dose_response(self, declared=""):
+        """A skill whose script imports numpy and scipy, as tooluniverse-dose-response's does, declaring neither."""
+        (self.skill / "SKILL.md").write_text("# Dose response\n" + declared, encoding="utf-8")
+        (self.skill / "scripts").mkdir(exist_ok=True)
+        (self.skill / "scripts/fit.py").write_text("import numpy as np\nfrom scipy.optimize import curve_fit\n"
+                                                    "import pytest\nfrom sksurv.util import Surv\n", encoding="utf-8")
+        self.docker.wheels = [WHEELS[0], {"file": "scipy-1.17.1-cp312-cp312-manylinux_2_27_x86_64.whl",
+                                          "sha256": "4" * 64, "bytes": 3000}]
+        self.docker.distributions = [["numpy", "2.4.6"], ["scipy", "1.17.1"]]
+
+    def test_undeclared_imports_the_operator_image_lacks_are_built_from_the_table(self):
+        """Run 90c60cbe's skill imports scipy without declaring it, so its own script could not run."""
+        self.dose_response()
+        self.docker.lacking = {"scipy", "pytest", "sksurv"}
+        record = self.prepare()
+        self.assertEqual((record["status"], record["image_id"]), ("built", BUILT))
+        # Every listed import, since the plain base holds none; pytest is not in the table, so it is never guessed.
+        self.assertEqual([(item["requirement"], item["sources"]) for item in record["requirements"]],
+                         [("numpy", ["import numpy"]), ("scipy", ["import scipy"]),
+                          ("scikit-survival", ["import sksurv"])])
+        resolver = next(args for args in self.runs() if "bridge" in args)
+        self.assertEqual(resolver[-3:], ["numpy", "scipy", "scikit-survival"])
+        self.assertIn("added from the skill's imports: numpy, scipy, scikit-survival", planner_block(record))
+
+    def test_imports_the_operator_image_already_has_need_no_build(self):
+        self.dose_response()
+        self.docker.lacking = {"pytest"}  # not in the table, so it cannot cause a build
+        record = self.prepare()
+        self.assertEqual((record["status"], record["image_id"], record["requirements"]), ("not_needed", IMAGE, []))
+        self.assertNotIn("bridge", self.networks())
+        self.assertEqual(record["manifest"]["imports_unavailable"], ["pytest"])
+
+    def test_declared_requirements_gain_only_the_imports_they_do_not_name(self):
+        self.dose_response(declared="\n```bash\npip install \"scikit-survival==0.28.0\" \"numpy==2.4.6\"\n```\n")
+        record = self.prepare()
+        self.assertEqual([(item["requirement"], item["sources"][0]) for item in record["requirements"]],
+                         [("numpy==2.4.6", "SKILL.md:4"), ("scikit-survival==0.28.0", "SKILL.md:4"),
+                          ("scipy", "import scipy")])
+
+    def test_needed_imports_without_an_index_are_disabled_not_installed(self):
+        self.dose_response()
+        self.docker.lacking = {"scipy"}
+        record = self.prepare(package_index=None)
+        self.assertEqual((record["status"], record["image_id"]), ("disabled", IMAGE))
+        self.assertEqual([item["requirement"] for item in record["requirements"]], ["numpy", "scipy", "scikit-survival"])
+        self.assertNotIn("bridge", self.networks())
 
     def test_a_resolution_failure_stops_setup_and_cleans_up(self):
         self.docker.resolver_error = "ERROR: No matching distribution found for scikit-survival==0.28.0"
@@ -437,6 +493,9 @@ class RunTests(unittest.TestCase):
                                                          "limits": DEFAULT_LIMITS, "run_id": None, "updated_at": utc_now(),
                                                          "implementation_version": __version__})
         self.environment = built_record(str(self.source), taken["digest"])
+        runner = patch("sci_ai_verifier.local_tasks.SandboxRunner", test_local.TableRunner)
+        runner.start()
+        self.addCleanup(runner.stop)
         self.subject = Subject()
         self.runtime = Runtime(self.base / "data", self.source, ROOT / "skills/scientific-verifier", profile="local",
                                subject_adapter=self.subject, environment=self.environment)

@@ -17,6 +17,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
 from sci_ai_verifier.claude_runner import run_process
 from sci_ai_verifier.common import Fault,canonical
 from sci_ai_verifier.execution_control import CURRENT,Control
+from sci_ai_verifier.local_config import load_configuration
 from sci_ai_verifier.local_entry import PublicRuntime
 from sci_ai_verifier.mcp import serve
 from sci_ai_verifier.runlog import WorkflowLog
@@ -102,29 +103,35 @@ class TransportTests(unittest.TestCase):
             finally:
                 CURRENT.reset(token)
 
-    def test_private_file_reader_works_through_real_stdio_subprocess(self):
+    def test_subject_tool_server_works_through_real_stdio_subprocess(self):
+        """The trial's tool server as Claude Code starts it: a child process on stdio, bound to one
+        container. Listing its tools and refusing an unknown one need no container."""
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
             source=root/"submission"
             source.mkdir()
-            (source/"note.md").write_text("Pinned supporting text.")
-            binding=root/"private.json"
-            binding.write_bytes(canonical({"kind":"text","source":str(source)}))
+            binding=root/"binding.json"
+            bound={"source":str(source),"settings":{**load_configuration(),"sandbox_image":"sha256:"+"a"*64},
+                   "name":"sci-verifier-"+"0"*32,"docker":"docker","endpoint":"npipe:////./pipe/docker_engine",
+                   "deadline":time.monotonic()+60,"log":None}
+            binding.write_bytes(canonical(bound))
             requests=Input()
             requests.put("initialize",1,{"protocolVersion":"2025-06-18"})
             requests.put("notifications/initialized")
             requests.put("tools/list",2)
             requests.put("tools/call",3,{"name":"read_submitted_file","arguments":{"path":"note.md"}})
-            requests.put("tools/call",4,{"name":"read_submitted_file","arguments":{"path":"../private.json"}})
             raw=b"".join(list(requests.queue.queue))
             entry=Path(__file__).resolve().parents[1]/"src/sci_ai_verifier/subject_server.py"
             result=subprocess.run([sys.executable,str(entry),"--binding",str(binding)],input=raw,capture_output=True,timeout=10)
             self.assertEqual(result.returncode,0,result.stderr)
             rows=[json.loads(line) for line in result.stdout.splitlines()]
-            self.assertEqual([tool["name"] for tool in rows[1]["result"]["tools"]],["read_submitted_file"])
-            self.assertIn("Pinned supporting text",rows[2]["result"]["content"][0]["text"])
-            self.assertTrue(rows[3]["result"]["isError"])
-
+            self.assertEqual([tool["name"] for tool in rows[1]["result"]["tools"]],["run_command"])
+            self.assertTrue(rows[2]["result"]["isError"])
+            # A binding naming a container the runner did not create is refused before anything is served.
+            binding.write_bytes(canonical({**bound,"name":"another-container"}))
+            refused=subprocess.run([sys.executable,str(entry),"--binding",str(binding)],input=raw,capture_output=True,timeout=10)
+            self.assertNotEqual(refused.returncode,0)
+            self.assertEqual(refused.stdout,b"")
 
 if __name__=="__main__":
     unittest.main()

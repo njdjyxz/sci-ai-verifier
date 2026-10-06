@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import test_local as fixture
+from independent_double import critic_reply
 from sci_ai_verifier.agent import Runtime
 from sci_ai_verifier.common import Fault, canonical, digest
 from sci_ai_verifier.local_config import load_configuration
@@ -283,18 +284,6 @@ class TaskSubject:
                 "run_problems": ["missing Python module scipy"] if self.mode == "wrong" else []}
 
 
-def critique_reply(packet, supported="A", verdicts=None):
-    """A task critique as Python receives it, after its schema was checked."""
-    ids = [case["case_id"] for case in packet["evidence"]["tasks"]]
-    verdicts = verdicts or {}
-    return {"supported_grade": supported, "findings": ["Finding."] * 5, "objections": [], "required_revisions": [],
-            "case_verdicts": [{"case_id": case_id, "verdict": verdicts.get(case_id, "counts"),
-                               "reason": "Fixture.", "replacement": "" if verdicts.get(case_id, "counts") == "counts"
-                               else "A fixture replacement."} for case_id in ids],
-            "session_id": "critic", "observed_model_ids": ["fixture-model"], "packet_ref": "packet",
-            "rubric_ref": "rubric", "usage": None, "total_cost_usd": 0.0, "independence": "fixture", "ai_judgment": True}
-
-
 class FlowTests(unittest.TestCase):
     """A task design through the planner's tools: qualify, select, execute and report."""
 
@@ -332,25 +321,13 @@ class FlowTests(unittest.TestCase):
     def critic(self, supported="A", verdicts=None):
         def run(adapter, packet):
             self.packets.append(packet)
-            return critique_reply(packet, supported, verdicts)
+            return critic_reply(packet, supported, rejected=verdicts)
         return patch("sci_ai_verifier.documentary.critique_tasks", side_effect=run)
 
     def select(self, key, grade):
         h = self.h
         return h.select(key, target_grade=grade,
                         coverage="Three tasks, each using its sections.", stronger_grade_considered="None stronger.")
-
-    def test_a_question_design_is_refused_while_tasks_are_required(self):
-        h = self.h
-        ref = self.start(TaskSubject())
-        h.reference_ref = ref
-        refused = h.runtime.call("qualify_local_candidate", {
-            "run_id": h.data["run_id"], "state_token": h.data["state_token"], "claim_id": h.claim_id,
-            "name": "Questions", "scope": "x", "method": "numeric", "limitations": "x",
-            "cases": [{"case_id": name, "input": name, "expected": "1.0", "reference_ref": ref,
-                       "source_quote": PAGE, "applicability": "x"} for name in ("a", "b", "c")]})
-        self.assertEqual(refused["error"]["code"], "tasks_required")
-        self.assertIn("qualify_local_tasks", refused["error"]["message"])
 
     def test_three_fair_tasks_settle_at_a_and_pass_when_the_skill_works(self):
         h = self.h
@@ -457,13 +434,42 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(h.data["case_gap"]["tasks_needed"], 1)
         self.assertEqual(h.data["case_replacements"][0]["case_id"], "t3")
 
-    def test_a_task_design_cannot_yet_be_exported(self):
-        from sci_ai_verifier.local_catalog import export_bundle
+    def test_a_task_design_travels_in_a_catalog_and_is_qualified_again_on_import(self):
+        """Outputs recorded on another machine are not evidence here, so an import runs the design again."""
+        from sci_ai_verifier.local_catalog import export_bundle, import_bundle
+        from sci_ai_verifier.storage import Store
         ref = self.start(TaskSubject())
         key = self.qualify(ref, [task("t1", ["S1"]), task("t2", ["S2"], slope=4)])["candidate_ref"]
-        with self.assertRaises(Fault) as caught:
-            export_bundle(self.h.runtime.store, [key], redistribution="Synthetic fixture page; test-only, never shared.")
-        self.assertEqual(caught.exception.code, "candidate_not_exportable")
+        raw = export_bundle(self.h.runtime.store, [key], redistribution="Synthetic fixture page; test-only, never shared.")
+        settings = {**load_configuration(), "sandbox_image": IMAGE}
+        store = Store(self.h.base / "importer")
+        self.assertEqual(import_bundle(store, raw, settings)["candidate_refs"], [key])
+        imported = store.get_json(key)
+        self.assertEqual(store.get(imported["cases"][0]["files"][0]["object_ref"]), b"dose,response\n1,2\n2,4\n3,6\n")
+
+        class Drifted(FakeRunner):
+            """A generator that no longer builds the bundled files."""
+
+            def generate(self, code, arguments):
+                made = super().generate(code, arguments)
+                return {**made, "files": {name: data + b"9,18\n" for name, data in made["files"].items()}}
+        with patch("sci_ai_verifier.local_tasks.SandboxRunner", Drifted), self.assertRaises(Fault) as caught:
+            import_bundle(Store(self.h.base / "drifted"), raw, settings)
+        self.assertEqual(caught.exception.code, "catalog_invalid")
+
+    def test_a_design_whose_critique_packet_is_too_large_is_refused_before_any_session(self):
+        """The critique is never shown a shortened design, so the planner shortens it instead."""
+        h = self.h
+        ref = self.start(TaskSubject(), graded=True)
+        key = self.qualify(ref, [task("t1", ["S1"]), task("t2", ["S2"], slope=4)])["candidate_ref"]
+        with self.critic("B"), patch("sci_ai_verifier.documentary.CRITIC_PACKET_LIMIT", 1000):
+            self.select(key, "B")
+        self.assertEqual((h.data["outcome"], h.data["reason"]), ("local_grade_proposal_refused", "critique_packet_too_large"))
+        self.assertGreater(h.data["packet_bytes"], h.data["limit_bytes"])
+        self.assertEqual(self.packets, [])
+        with self.critic("B"):
+            self.select(key, "B")
+        self.assertEqual(h.data["outcome"], "local_plan_fixed")
 
     def test_a_design_for_another_claim_s_sections_is_refused_at_selection(self):
         h = self.h

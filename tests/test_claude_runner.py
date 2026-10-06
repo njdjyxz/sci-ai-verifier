@@ -17,9 +17,31 @@ from sci_ai_verifier.claude_runner import (ClaudeCode, SUBJECT_SKILL, isolated_e
     parse_events, prepare_workspace, refusal_category, run_process, session_directory, stage_skill,
     sweep_stale_directories)
 from sci_ai_verifier.common import Fault, canonical
+from sci_ai_verifier.local_config import load_configuration
 
 
 NEWLINE = bytes([10])
+IMAGE = "sha256:" + "a" * 64
+
+
+class FakeSandbox:
+    """Stands in for a trial's container: keeps what it was given and collects nothing."""
+    opened = []
+
+    def __init__(self, source, settings, *, timeout=None, log=None, inputs=None):
+        self.source, self.settings, self.inputs = Path(source), settings, inputs
+        self.name, self.docker, self.endpoint = "sci-verifier-" + "0" * 32, "docker", "npipe:////./pipe/docker_engine"
+        self.deadline = time.time() + 60
+        FakeSandbox.opened.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *error):
+        return False
+
+    def collect(self):
+        return []
 
 
 def stream(session, *, skill=SUBJECT_SKILL, failed=False, output="42", tool="Skill"):
@@ -56,7 +78,7 @@ class RunnerTests(unittest.TestCase):
             directory = Path(kwargs["cwd"])
             directories.append(directory)
             self.assertEqual(command[command.index("--tools")+1], "Skill")
-            self.assertIn("mcp__subject__read_submitted_file",command[command.index("--allowedTools")+1])
+            self.assertIn("mcp__subject__run_command",command[command.index("--allowedTools")+1])
             self.assertIn("--restricted", command)
             self.assertIn("--strict-mcp-config", command)
             self.assertIn(SUBJECT_SKILL, kwargs["prompt"])
@@ -71,15 +93,28 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("context: fork", skill)
             session = command[command.index("--session-id")+1]
             return 0, stream(session), b""
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "fake-api-for-boundary-test", "CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+        settings = {**load_configuration(), "sandbox_image": IMAGE}
+        given = {"task": "Return the supplied number as value.", "results_file": "/work/results.json"}
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "fake-api-for-boundary-test", "CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}), \
+                patch("sci_ai_verifier.sandbox.DockerSandbox", FakeSandbox):
             for auth in ("api", "subscription"):
-                subject = ClaudeCode(auth=auth, process=fake)
-                observation = subject.observe(source=source, case_input={"input": "42"}, config=subject.identity, timeout_seconds=2)
+                subject = ClaudeCode(auth=auth, process=fake, settings=settings)
+                observation = subject.observe(source=source, case_input=given, config=subject.identity, timeout_seconds=2,
+                                              task_files={"numbers.csv": b"n\n42\n"})
+                # The task's files reach the trial's container, which runs the staged skill.
+                self.assertEqual(FakeSandbox.opened[-1].inputs, {"numbers.csv": b"n\n42\n"})
+                self.assertEqual(FakeSandbox.opened[-1].settings["sandbox_image"], IMAGE)
                 self.assertTrue(observation["invocation_verified"])
                 self.assertEqual(observation["observed_model_ids"], ["claude-fixture-observed"])
                 self.assertNotIn("fake-api", canonical(observation).decode())
                 self.assertEqual(len(observation["source_pins"]), 2)
         self.assertTrue(all(not path.exists() for path in directories))
+        # With no container image there is nowhere to run a task, so no session starts.
+        with self.assertRaises(Fault) as caught:
+            ClaudeCode(process=fake, settings=load_configuration()).observe(
+                source=source, case_input=given, config={}, timeout_seconds=2)
+        self.assertEqual(caught.exception.code, "sandbox_configuration_required")
+        self.assertEqual(len(directories), 2)
 
     def test_bare_is_api_only_and_controller_has_no_file_tools(self):
         for auth in ("subscription", "api"):
@@ -98,12 +133,18 @@ class RunnerTests(unittest.TestCase):
         events=stream("session").splitlines()
         events.insert(2,canonical({"type":"assistant","message":{"content":[
             {"type":"tool_use","id":"end","name":"EndConversation","input":{}}]}}))
-        result=parse_events(b"\n".join(events),expected_session="session",subject=True,extra_tools=("mcp__subject__read_submitted_file",))
+        result=parse_events(b"\n".join(events),expected_session="session",subject=True,extra_tools=("mcp__subject__run_command",))
         self.assertTrue(result["invocation_verified"])
 
-    def test_dynamic_shell_and_code_are_rejected_before_launch(self):
+    def test_dynamic_shell_and_configuration_are_rejected_but_scripts_are_staged(self):
+        # A trial runs the skill's own scripts in its container, so a script is staged as a file.
+        with tempfile.TemporaryDirectory() as temporary:
+            plugin, pins = stage_skill(Path(temporary), [{"path": "SKILL.md", "content": "Plain skill"},
+                                                         {"path": "scripts/fit.py", "content": "print('fit')"}])
+            self.assertEqual((plugin / "skills/submitted/scripts/fit.py").read_text(), "print('fit')")
+            self.assertEqual([pin["path"] for pin in pins], ["SKILL.md", "scripts/fit.py"])
         for filename, content in (("SKILL.md", "!`echo evil`"), ("SKILL.md", "```!\necho evil\n```"),
-                                  ("script.py", "print('evil')"), (".claude/settings.json", "{}")):
+                                  ("notes.md", "!`echo evil`"), (".claude/settings.json", "{}")):
             with tempfile.TemporaryDirectory() as temporary, self.assertRaises(Fault):
                 source = [{"path": "SKILL.md", "content": "Plain skill"}]
                 if filename == "SKILL.md":

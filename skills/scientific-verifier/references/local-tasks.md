@@ -1,15 +1,16 @@
 # Local profile: claims and task tests
 
 This document owns how the local profile splits a skill into claims and tests each claim
-by running the skill. It applies whenever the operator has configured a container
-(`sandbox_image`), which on the operator's machine is every run. `local-contract.md` owns
-the rest of the profile: the reference requirements of each grade, the subject boundary,
-status and the documentary path. "Cases each grade requires" in `evidence-rubric.md` owns
-how many tasks each grade needs.
+by running the skill. Tasks run in the operator's container (`sandbox_image`); without
+one nothing can run, and a claim ends on the documentary path or a recorded limitation.
+`local-contract.md` owns the rest of the profile: the reference requirements of each
+grade, the subject boundary, status and the documentary path. "Cases each grade
+requires" in `evidence-rubric.md` owns how many tasks each grade needs.
 
 The aim is to test whether the whole skill works, not to debug it: give the test AI an
-input, let it follow the skill, and check what comes out. Before task tests, a claim was one
-behaviour from one section, tested by questions about facts the skill states. Claims
+input, let it follow the skill, and check what comes out. Before task tests, retired with
+the question tests on 2026-10-05, a claim was one behaviour from one section, tested by
+questions about facts the skill states. Claims
 covered 13% of the Western-blot skill's words, 31% of scikit-survival's and 73% of
 dose-response's, and in run `90c60cbe` 10 of 78 tries used the container at all, none of
 them to run the skill's own fitting script.
@@ -97,8 +98,8 @@ quoted. **Reference files** give a task a fetched dataset as input: each of
 whose exact bytes it receives, for a published dataset whose quoted results are the
 expected values.
 
-Every quote is checked against the pinned reference bytes, as `qualify_local_candidate`
-in `tool-contracts.md` describes for quoted cases.
+Every quote must occur exactly in the pinned reference text Python retrieved: all of it,
+even past the 40 KiB a reply carries (`fetch_local_reference` in `tool-contracts.md`).
 
 ## The reference solution
 
@@ -140,10 +141,8 @@ shipped is a finding about the skill, and says nothing about whether its advice 
 `select_local_candidate` takes a task design as it takes any other: the planner proposes
 the ceiling Python computes, and a fresh critique session judges it. Its `coverage`
 justification says which tasks use each of the claim's sections and what their outputs
-check. A task design has no
-claim-only answers, no fact-by-fact coverage list, and no coverage-gap or concern return;
-the critique's required revisions and the cases it does not count carry forward to the
-next round, without grades, as for any design.
+check. The critique's objections, required revisions and the tasks it does not count
+carry forward to the next round, without grades.
 
 The critique sees the claim with the text of its sections, the design's generator and
 solver code, each task's job, sections, arguments, files (names, sizes, the start of each

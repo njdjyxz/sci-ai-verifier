@@ -101,7 +101,7 @@ class SandboxTests(unittest.TestCase):
         source=[{"path":"SKILL.md","content":"Run scripts/calc.py on input.bin."},
                 {"path":"scripts/calc.py","content":"print(42)"},
                 {"path":"input.bin","base64":base64.b64encode(b"\x00\xff").decode()}]
-        plugin,pins=stage_skill(self.directory,source,computational=True)
+        plugin,pins=stage_skill(self.directory,source)
         self.assertEqual((plugin/"skills/submitted/input.bin").read_bytes(),b"\x00\xff")
         self.assertEqual(len(pins),3)
         events=stream("session").splitlines()

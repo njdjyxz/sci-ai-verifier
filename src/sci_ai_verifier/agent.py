@@ -236,7 +236,7 @@ class Runtime:
                 state["objects"].extend(key for key in item["requalification_refs"] if key not in state["objects"])
             state["agent"].update(host="claude_code", identity_source="controller_receipt_when_available")
             state["host_limitations"] = ["managed_host_configuration_is_trusted",
-                                        "local_container_execution" if settings["sandbox_image"] else "text_session_not_an_os_sandbox",
+                                        "local_container_execution" if settings["sandbox_image"] else "container_image_not_configured",
                                         "evidence_grade_is_an_evidence_strength_indicator_not_an_endorsement", "live_cli_acceptance_required",
                                         "external_app_adapters_are_operator_trusted"]
             if self.environment:
@@ -288,11 +288,10 @@ class Runtime:
         contexts = (stage3_context() if self.profile != "stage2" else PINNED_CONTEXT)
         if self.profile == "local":
             contexts = (("references/local-contract.md", None),
-                        # Owns claims and task tests, which every run with a container uses.
+                        # Owns claims and task tests.
                         ("references/local-tasks.md", None),
-                        ("references/local-evaluator-spec.md",None),
                         ("references/workflow.md", ("Local profile",)),
-                        ("references/tool-contracts.md", ("Local profile tools","Additional local resource and evaluator tools")),
+                        ("references/tool-contracts.md", ("Local profile tools","Additional local resource tools")),
                         ("references/artifact-contracts.md", ("Local profile artifacts",)),
                         # The planner cannot read files, so the case rules it must design to are
                         # delivered here. Without them it met criterion 6 only through refusals.

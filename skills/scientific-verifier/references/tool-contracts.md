@@ -553,8 +553,8 @@ numbered `S1`, `S2`, ..., each with its heading, level, first line and word coun
 `sections` and a `set_aside` list giving a `reason` for each section no claim holds; a
 section left out, held twice or unknown is refused as `sections_incomplete`, naming them.
 
-- `list_local_candidates`: in local_lookup, return immutable local candidate
-  summaries for semantic matching, then enter local_discovery. Empty is normal.
+- `list_local_candidates`: in local_lookup, return the summaries of the qualified task
+  designs saved locally, for semantic matching, then enter local_discovery. Empty is normal.
 - `fetch_local_reference`: in local_discovery, retrieve a bounded public HTTPS
   reference, pin bytes, and return text, digest, version and license notes.
   Redirects, private addresses, credentials and secret content are rejected.
@@ -567,141 +567,6 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   page's text, with `text_truncated` and `text_bytes_total` when it is cut: the
   largest page text in run b0955d2f, 40,582 bytes in a 49,510-byte reply, reached its
   planner intact. The whole page is pinned, and quotes are checked against all of it.
-- `qualify_local_candidate`: in local_discovery, propose a name, scope, method,
-  limitations and at least three source-backed cases. While a container is configured it
-  is refused as `tasks_required`, and the claim is tested by `qualify_local_tasks` below;
-  the rest of this entry is the design of questions used without one. Python checks provenance,
-  answer form, controls and fixed comparison rules. Save qualified_local or
-  rejected evidence. An expected answer must have exactly one correct answer under
-  its comparison, or the case scores a paraphrase of a right answer as a wrong one
-  and measures wording rather than the claim. Seven installed methods, one per
-  answer type, provide that:
-  - `numeric`: an open number within the installed tolerance. A case may give a
-    `unit`, which a reply may write after the number;
-  - `exact`: an open token compared character for character, whose own casing is
-    fixed by a case change, digit or underscore: an identifier, a symbol, a code;
-  - `term`: an open word or phrase of at most eight words, made of letters, digits,
-    hyphens and apostrophes, compared regardless of case, punctuation, hyphens,
-    spacing, a leading article and plural endings, so `Molar` answers `molar` and
-    `any-atom query` answers `any-atom queries`. A lone letter, or a word with a
-    capital after its first letter (`nM`, `pKa`), carries meaning in its case and is
-    `exact`;
-  - `expression`: an open one-line Python expression or statement, compared by
-    syntax tree, so spacing, quote style and redundant parentheses do not matter;
-  - `list` and `set`: two to twenty open items separated by commas in `expected`,
-    compared in order or in any order. Each item is compared as `numeric` when it is
-    a number, `exact` when its form is forced, and `term` otherwise;
-  - `choice`: the case lists `options`, its `input` presents every one of them
-    verbatim, and `expected` is the 1-based number of one.
-
-  Only `choice` takes `options`, and only `numeric` takes `unit`. A design's `method`
-  is one of those seven, applied to every case, or `mixed`, in which every case names
-  its own `method` and is qualified and scored by it. Outside a `mixed` design no case
-  names a method, so each case's method has one source. An answer a subject can state
-  belongs in an open type; `choice` is for a question that is genuinely about
-  recognising one of several alternatives, and the case requirements count each
-  case's answer form. A `term`, and a `term` item, is found in its quote as the same
-  words whatever their case, plural or hyphenation; every other expected value
-  appears in its quote verbatim.
-
-  A `choice` needs at least four alternatives plus a reserved final
-  `none of these`, which can never be the answer. It is scored wrong like any other
-  rejected option, so it cannot be gamed, but a case whose trials all select it is
-  far more likely to be a broken case than a wrong subject, and should be read that
-  way: either its options omit the right answer, or it asks about something the claim
-  never asserts, so a subject applying the skill has nothing to choose from. Because the index is the planner's own ordering and appears in no
-  reference, the option it selects carries the quotation requirement instead: the
-  same provenance anchor, one level down. Options may not differ only in case, since
-  a reply naming an option by its text is read regardless of case, and no option's
-  text may read as another option's number, such as `3` at position 1, since a reply
-  of it would name two options. Whether a
-  distractor is genuinely wrong or merely implausible remains a
-  planner assertion, like the rest of case applicability; a subject that recognises
-  the conventional-looking option can pass a `choice` without knowing. Across a
-  design's `choice` cases the correct answers may not all sit at the same option
-  position, or a subject that always picks that position passes every one of them:
-  all eleven `choice` cases of run 0a243b7e answered option 1. A design with a single
-  `choice` case has nothing to vary. Nor may the correct option alone start
-  differently: when every other option begins with the same word, or every other
-  option is capitalised the same way, and the correct one is not, its style marks it
-  as the answer. Runs 84e90683 and 31b67427 had three keys that were the only option
-  without a leading "the", and critiques counted all three. Nor may the correct
-  option alone repeat a word from the question: a content word of four letters or more
-  that the question uses, outside its options and reply instructions, and no other
-  option uses. Singular and plural count as one word, and `CompleteRingsOnly` or
-  `application-side` count as their parts. In the saved choice cases of runs 84e90683,
-  31b67427 and 3b3f3c94 this flags nine keys, and critiques had counted six of them,
-  among them "lone ring atoms" after `CompleteRingsOnly` and "application point of view"
-  after "application-side". Using the word in another option, or keeping it out of the
-  question, clears the check. These are the mechanical parts of the third and fifth
-  shapes under "Common leaks" in `evidence-rubric.md`; the rest stays the critique's to
-  judge.
-
-  **Reading a reply.** Python finds a reply's answer line and compares it by type. The
-  answer line is the first non-empty line. When that line opens a code fence, it is
-  the first non-empty line inside the fence; when it is only a label such as
-  `Answer:`, it is the next one; and a label that starts it (`Answer: 7.6`,
-  `**Final answer:** 7.6`) is removed. Anything below the answer line is ignored, so
-  an explanation never fails a right answer. The line is read whole, then again with
-  one layer of presentation taken off both ends at a time: emphasis (`**`, `__`, `*`,
-  `_`), inline code, quotation marks or a final full stop. The comparison passes when
-  any of those readings matches, so `**R1**` answers `R1` while `rgroup_label` and
-  `__init__` keep their underscores. Nothing is ever searched for inside the line:
-  `The answer is 1` is not read as `1`, because extracting an answer from prose is how
-  a wrong reply becomes a false pass. A `choice` also reads `Option 2`, `(2)`, `2)`,
-  its option's own text, or the number followed by that option's text; the number
-  followed by another option's text is `invalid`. A `list` or `set` reads its items
-  from the answer line, or from consecutive bullet or numbered lines, ignoring a
-  final `and`. An empty reply, a `numeric` reply with no number or in another unit,
-  a `choice` reply that names no option, and an `expression` that does not parse are
-  `invalid`; a number past the last option names a wrong one. A reply Python's reader does not pass goes on to the AI reader of
-  "Reading replies" in `local-contract.md`. Five reply forms turned correct answers
-  into false verdicts: a plural in e13f50ee, `Molar` in fb64115f, `**1**` in 7efbdd8c,
-  an explanation below the answer in 0a243b7e and a code fence in 0aeca4c6. Replaying
-  all 945 saved replies of seventeen runs, kept in
-  `tests/recorded/subject-replies.json`, every right answer now passes, among them the
-  19 trials those forms misread, and no wrong answer does.
-
-  Python adds one line to each case's subject input, written from its answer type,
-  for example `Write only the answer on the first line of your reply: the number of
-  the correct option.` A claim-only session receives the same line, so a case's
-  `input` states its question and needs no reply instructions of its own.
-
-  Controls probe every case with its answer in the forms above, which must pass, and
-  with near misses, which must not: for every type the answer inside a sentence, with
-  a suffix and truncated; the answer's case changed for an `exact`; another order for
-  a `list`; every other option number, an out-of-range number and a non-numeric reply
-  for a `choice`; and the tolerance boundaries for a `numeric`.
-
-  A `numeric` case may take a **calculated** answer instead of a quoted one, for a claim
-  whose answer is mathematically exact, such as a unit conversion or a logarithm. The
-  design then carries `calculation`: `code`, a Python program; `reference_ref` and
-  `formula_quote`, the formula the program implements, quoted exactly from a fetched
-  reference; and one to eight `anchors`, worked examples quoted from fetched references,
-  each with its `reference_ref`, `source_quote`, the `expected` value that quote prints as
-  a complete token, and the `arguments` that reproduce it. A calculated case gives
-  `arguments` and `decimals` (0 to 6), and Python supplies its `expected`, `reference_ref`
-  and `source_quote`: the program's value rounded half away from zero to `decimals`
-  places, and the formula's reference and quote. A proposal omits those three fields or
-  repeats Python's values exactly. Python runs the program in one new container of the
-  operator's pinned image, once for each distinct `arguments`, which the program receives
-  as text on standard input; it must print one bounded decimal number and exit 0. Before
-  any case is keyed, every anchor's value, rounded to the decimal places its quote prints,
-  must equal that printed value, so a wrong formula (a natural logarithm, a dropped sign,
-  a nanomolar number logged bare) is refused here. The formula must be quoted rather than
-  taken from the claim, because a key calculated from the claim cannot refute it: had a
-  skill written pIC50 = -ln(IC50), a claim-derived key for 1 nM would be 20.7, and a
-  subject following the skill would pass. The candidate records the program's digest, the
-  image and every output, so selection re-checks a saved candidate against that record
-  without running it again; a catalog import runs it again, because outputs recorded on
-  another machine are not evidence here. A slip in one case's `arguments`, such as micromolar entered as
-  nanomolar, is left to the claim-only answers under `select_local_candidate`, which miss a
-  key their own reading of the question does not reach. The comparison uses the installed
-  tolerance, so the question states the rounding, and `decimals` stays where a reader
-  working by hand gets the same digits: the claim-only sessions have no calculator, and two
-  places is the usual choice. Without a pinned image a calculation is refused. The critique
-  sees the program, the formula, each anchor with its output and each case's arguments;
-  its rubric's `calculated_answers` says what it judges.
 - `qualify_local_tasks`: in local_discovery, propose a task design for the claim:
   `name`, `scope`, `limitations`, an optional `generator` (`code`, `reference_ref`,
   `model_quote`), a `solver` (`code`) and one to six `cases`, each a task with `case_id`,
@@ -716,144 +581,80 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   resolved expected values, the solver's results and the verdict of each output on them,
   and the programs' digests and image; the reply shows the start of each text file.
   Without a container the tool is refused as `sandbox_configuration_required`. Selection
-  re-checks a saved design against these records without running anything again. A task
-  design cannot yet be exported to a catalog.
-- `select_local_candidate`: in local_discovery, bind an exact qualified candidate
-  and its resources to this claim, propose `target_grade` A, B or C, and justify it
-  with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
-  `stronger_grade_considered`. `coverage` goes through the claim's facts ("Claims" in
-  `local-contract.md`): the cases that test each, and for each fact no case tests, what
-  was searched for its source and what was found, which the critique checks against
-  Python's search record. It says which cases test what the claim
-  asserts rather than what it is named. The number and kind of cases each grade
-  needs are owned by "Cases each grade requires" in `evidence-rubric.md`. Python
-  computes the strongest grade its own recorded facts support for that design,
-  counting every case. Exactly two proposals are legal: that ceiling, or the grade
-  the last critique of that same design settled at. `local_grade_proposal_refused`
-  names which rule was broken — `above_evidence_ceiling`, `below_evidence_ceiling`,
-  `no_supported_execution_grade`, `prior_review_in_packet` when a note the critique
-  would read mentions an earlier review (step 3 of "Negotiating the grade" in
-  `evidence-rubric.md`), with the `field` and `phrase` found, or `return_unsearched` (the
-  returns below) — and spends no session.
-  A task design (`local-tasks.md`) is proposed the same way. It has no claim-only
-  answers and no returns; its tasks must use every section of this claim, or the
-  proposal is refused as `sections_unused`, which matters for a design found by lookup;
-  and its critique uses the task rubric that "Selecting and critiquing a task design"
-  there describes.
-  Only a proposal that would start a critique is checked. A case's applicability and
-  the design's scope and limitations are fixed at qualification, so a note there needs
-  a revised candidate. A permitted proposal first measures what a subject knowing only
-  the claim answers, for a design scored by installed methods. Each case goes twice to
-  a fresh no-tool session on the pinned model that sees only the claim's statement and
-  expected behaviour and the case input, four sessions at a time, two minutes each, and
-  each answer is scored by the case's own method. An answer that method does not pass
-  is read by the AI reader like a trial ("Reading replies" in `local-contract.md`),
-  unless it is `UNDETERMINED` or the reserved `none of these`, which say what they
-  mean. A case every answer reaches is
-  `reached`; a case any answer misses is `missed`; a case with no miss whose sessions did
-  not all complete is `unmeasured`, and the critique's verdict stands for it. A case
-  unchanged since an earlier round of the same claim, meaning the same input, key and
-  answer form under any ID, reuses its answers, recorded under its current ID. In run
-  d416f79d a case renamed between rounds kept its old ID on its reused answers; had they
-  missed, counting, which matches misses by ID, would still have counted it. The result is
-  recorded on the audit's critique as `claim_probe`. The critique judging that design
-  never sees it; a later round's critique receives a missed case among the cases not
-  counted, like any other. The report lists missed cases as not counted, marked as the
-  claim-only answers' verdict. A design scored by a generated evaluator is not probed,
-  because free output needs the sandbox to be scored. The proposal then starts a
-  fresh independent critique session, which sees every case with its `case_id` and
-  answer form, receives earlier reviewers' objections, required revisions and coverage
-  gaps and the cases they did not count (verdict, reason, suggested replacement) but
-  never their grades, gives each of those concerns a verdict in `prior_verdicts`, and may
-  only lower the grade. A `missed` case does not count whatever the critique says: unless the
-  critique already rejected it, Python returns it as `beyond_scope`, with the claim-only
-  answers as the reason. Python then recomputes the ceiling over the cases the critique
-  counted and the claim-only answers did not miss; the audit records `counted_cases`,
-  that `case_ceiling`, and a settled
-  ceiling that is the weakest of the proposal, the case ceiling and the critique's grade.
-  `local_plan_fixed` freezes the plan, its settled ceiling and that critique, and
-  enters local_ready; accepting the grade an unchanged design already settled at
-  settles there directly without a new session, including when it settled at no
-  grade. `local_grade_revision_required` keeps the claim in local_discovery with the
-  critique's supported grade, the settled grade, objections, required revisions,
-  `case_replacements` (each rejected case with its verdict, reason and described
-  replacement), remaining rounds, `replacement_rounds_remaining`, and `case_gap`: the
-  proposal's case requirement against the cases the critique counted, as the counting
-  and generated cases required, counted and still needed, with a `summary` sentence.
-  The summary also names the critique's own grade whenever it is below the proposal;
-  when the counted cases already meet the requirement, that grade is the only limit.
-  Run 31b67427's planner accepted B one counting case short of A, believing it lacked
-  an open case it already had. Both outcomes carry the critique's `coverage_gaps` and
-  any `unanswered_concerns`.
-  **The returns.** Two more critiques return `local_grade_revision_required` instead of
-  fixing the plan, when the settled grade equals a proposal below A. *The coverage-gap
-  return* comes once per claim, when the critique names `coverage_gaps`: facts the claim
-  states that no counting case tests and that a listed reference bears on or no recorded
-  search sought (`rubric.coverage`). A revised design is critiqued as usual and never
-  returned for gaps again. Run 3303fd93's planner built three cases for a twelve-fact
-  claim and proposed B; its critique agreed, named a fetched page that could key two more
-  facts, and the plan was fixed with nothing asked of the planner. *The concern return*
-  comes while rounds remain, when the critique judges an earlier concern `unanswered`
-  (`rubric.prior_verdicts`). A `searched_no_source` verdict stands only when Python's
-  search record shows a search or fetch for the claim since the previous critique;
-  otherwise Python counts the concern unanswered. Run 3303fd93's fourth claim answered
-  two of the five revisions its first critique required, and its second critique, never
-  shown those revisions, agreed with B. After either return the planner revises, or
-  searches and accepts. Accepting the returned design's grade is refused as
-  `return_unsearched` until Python's search record shows a search or fetch for this claim
-  made since the return; with no workflow log there is no record to check, and
-  acceptance stands.
-  `local_design_unchanged` refuses a repeated proposal on a design already critiqued,
-  spending neither a session nor a round, so only real revisions consume the budget.
-  `local_grade_rounds_exhausted` reports a spent budget. On the last permitted round,
-  or when a critique rejects cases after both replacement rounds are spent, the
-  settled grade is fixed rather than offered. An unavailable critique is an
-  operational limitation, never a grade.
+  re-checks a saved design against these records without running anything again.
+- `select_local_candidate`: in local_discovery, bind an exact qualified task design and its
+  resources to this claim, propose `target_grade` A, B or C, and justify it with
+  `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
+  `stronger_grade_considered`. `coverage` says which tasks use each of the claim's sections
+  and what their outputs check. How many counting tasks each grade needs is owned by
+  "Cases each grade requires" in `evidence-rubric.md`. Python computes the strongest grade
+  its own recorded facts support for that design, counting every task. Exactly two
+  proposals are legal: that ceiling, or the grade the last critique of that same design
+  settled at. `local_grade_proposal_refused` names which rule was broken —
+  `above_evidence_ceiling`, `below_evidence_ceiling`, `no_supported_execution_grade`,
+  `sections_unused` when the design's tasks leave one of this claim's sections unused or
+  use another claim's, which matters for a design found by lookup, or
+  `prior_review_in_packet` when a note the critique would read mentions an earlier review
+  (step 3 of "Negotiating the grade" in `evidence-rubric.md`), with the `field` and
+  `phrase` found, or `critique_packet_too_large` when the critique's packet would exceed
+  its byte limit, with `packet_bytes` and `limit_bytes` — and spends no session. Only a
+  proposal that would start a critique is checked for an earlier review or its packet's
+  size, and the critique is never given a shortened design. A task's applicability and the design's scope and
+  limitations are fixed at qualification, so a note there needs a revised design.
+  A permitted proposal starts a fresh independent critique session, which receives what
+  "Selecting and critiquing a task design" in `local-tasks.md` lists, with the objections,
+  required revisions and uncounted tasks (verdict, reason, suggested replacement) of
+  earlier reviews but never their grades, and may only lower the grade. Python then
+  recomputes the ceiling over the tasks the critique counted; the audit records
+  `counted_cases`, that `case_ceiling`, and a settled ceiling that is the weakest of the
+  proposal, the case ceiling and the critique's grade. `local_plan_fixed` freezes the
+  plan, its settled ceiling and that critique, and enters local_ready; accepting the
+  grade an unchanged design already settled at settles there directly without a new
+  session, including when it settled at no grade. `local_grade_revision_required` keeps
+  the claim in local_discovery with the critique's supported grade, the settled grade,
+  objections, required revisions, `case_replacements` (each task not counted, with its
+  verdict, reason and described replacement), remaining rounds,
+  `replacement_rounds_remaining`, and `case_gap`: the proposal's task requirement against
+  the tasks the critique counted, with a `summary` sentence that also names the
+  critique's own grade whenever it is below the proposal. `local_design_unchanged`
+  refuses a repeated proposal on a design already critiqued, spending neither a session
+  nor a round, so only real revisions consume the budget. `local_grade_rounds_exhausted`
+  reports a spent budget. On the last permitted round, or when a critique rejects tasks
+  after both replacement rounds are spent, the settled grade is fixed rather than
+  offered. An unavailable critique is an operational limitation, never a grade.
 
-  The critique, the documentary assessment, each claim-only answer and each reading of
-  a reply are model replies,
-  so Python hands each session its reply's shape as a JSON Schema (`--json-schema`)
-  instead of describing it in prose and parsing text. Claude Code adds one
-  `StructuredOutput` tool to the otherwise tool-free session, checks the reply against the
-  schema, and hands a reply that breaks it back to the session with the reason, so the
-  session corrects its own shape within its turn limit. Any other tool call is a boundary
-  violation. A session that ends without a reply in shape is `critic_response_invalid` or
-  `assessor_response_invalid`, an operational failure, never a grade and never a
-  scientific finding; for a claim-only answer it leaves the case unmeasured, and for a
-  reading it keeps Python's verdict. A critique
-  holds `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string
-  per rubric criterion, in order), `objections`, `required_revisions` and, for a design of
-  questions only, `coverage_gaps`
-  (each at most eight strings, empty when there are none), `prior_verdicts` (one entry for
-  each concern under `prior_objections`, in order, for questions only, each holding a `verdict`, `answered`,
-  `searched_no_source`, `unanswered` or `no_longer_applies`, and a `reason`), and `case_verdicts`: one entry for every case
-  ID in the packet and no other, each holding a `verdict` (one of those defined in
+  The critique and the documentary assessment are model replies, so Python hands each
+  session its reply's shape as a JSON Schema (`--json-schema`) instead of describing it in
+  prose and parsing text. Claude Code adds one `StructuredOutput` tool to the otherwise
+  tool-free session, checks the reply against the schema, and hands a reply that breaks it
+  back to the session with the reason, so the session corrects its own shape within its
+  turn limit. Any other tool call is a boundary violation. A session that ends without a
+  reply in shape is `critic_response_invalid` or `assessor_response_invalid`, an
+  operational failure, never a grade and never a scientific finding. A critique holds
+  `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string per
+  rubric criterion, in order), `objections` and `required_revisions` (each at most eight
+  strings, empty when there are none), and `case_verdicts`: one entry for every task ID in
+  the packet and no other, each holding a `verdict` (one of those defined in
   `evidence-rubric.md`), a `reason`, and a `replacement` that is empty for `counts` and
-  otherwise describes a case that would test the claim instead. An assessment holds
+  otherwise describes a task that would test the claim instead. An assessment holds
   `status`, `findings` (one string per documentary criterion), one to eight `citations`
-  naming packet references, and `limitations`, a single string. A claim-only answer holds
-  `answer`, in the form its question asks for, and a short `reason`. A reading holds
-  `reading` (`matches`, `differs` or `no_single_answer`), `answer`, copied exactly from
-  the reply and empty for `no_single_answer`, and a short `reason`. No string may be
-  blank and no object may carry a key its schema does not name. Python checks the reply
-  against the same shape again before using it, and checks what a schema cannot: that
-  every citation quotes the packet exactly, a judgement that is never retried
+  naming packet references, and `limitations`, a single string. No string may be blank
+  and no object may carry a key its schema does not name. Python checks the reply against
+  the same shape again before using it, and checks what a schema cannot: that every
+  citation quotes the packet exactly, a judgement that is never retried
   (`assessor_citation_invalid`). Before schemas, Python parsed free text and learned its
   tolerances one lost reply at a time: a Markdown code fence and a list-shaped field
   discarded three critiques in run a392ea65, a sixth finding cost run e035eef6 a grade A,
   and an empty extra key in a case verdict lost a claim in run 0a243b7e.
-- `execute_local_claim`: in local_ready, run every fixed case for its audited trial count in fresh
-  answer-blind subject session, save requests before invocation, and score returned
-  observations. Python's reader scores each trial, and a counted trial it does not
-  pass is then read by the AI reader, whose accepted reading decides that trial;
-  "Reading replies" in `local-contract.md` owns that rule and what the result records
-  about it. Accuracy, consistency, comparison status and scientific status are
+- `execute_local_claim`: in local_ready, run every task of the fixed design for its audited
+  trial count, each trial a fresh answer-blind subject session given the task's files and
+  job, save each request before invocation, and read each trial's `/work/results.json` as
+  "Reading a trial's results" in `local-tasks.md` says. A score receipt holds each output's
+  expected value, the value found and that output's verdict, and the trial's
+  `run_problems`. Accuracy, consistency, comparison status and scientific status are
   computed over the audit's `counted_cases`; the result lists the others under
-  `uncounted_cases` with their verdicts, and their observations stay in the receipts. No uncertain trial retries. Produce a result or operational record.
-  A task trial receives its task's files and job, and Python reads its
-  `/work/results.json` as "Reading a trial's results" in `local-tasks.md` says; no AI
-  reader reads it. Its score receipt holds each output's expected value, the value found
-  and that output's verdict, and the trial's `run_problems`.
+  `uncounted_cases` with their verdicts, and their observations stay in the receipts. No
+  uncertain trial retries. Produce a result or operational record.
   A provider safety refusal is recorded as `subject_refused`, naming the refusal
   category and, when Claude Code let another model answer, that model, whose answer is
   never used ("Subject boundary" in `local-contract.md` owns the one-model rule).
@@ -862,7 +663,7 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   Opus 5 answered a case it had refused moments earlier. A refusal reports that the
   provider would not answer, never that the claim failed, and the trials it costs stay
   missing rather than being replaced —
-  substituting fresh cases for refused ones after execution has begun would reshape
+  substituting fresh tasks for refused ones after execution has begun would reshape
   coverage around whatever the provider happens to allow. Recovering that coverage
   requires a new plan, proposed and critiqued like any other.
 - `record_local_limitation`: in local_lookup, local_discovery or local_documentary,
@@ -881,10 +682,9 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   claim the fallback covered carries `fallback`, saying whether it was assessed or why
   not; an assessed one's record is grade D with `fallback_for` naming the fault. The
   report lists the sections set aside in the manifest, with their reasons.
-## Additional local resource and evaluator tools
+## Additional local resource tools
 
-Resource tools are legal in local_discovery/local_documentary; evaluator
-qualification is legal only in local_discovery. They preserve the common run
+Resource tools are legal in local_discovery/local_documentary. They preserve the common run
 token and claim binding. The workflow matrix is authoritative.
 
 - `load_local_resource`: import by operator-configured name and declared format
@@ -897,13 +697,6 @@ token and claim binding. The workflow matrix is authoritative.
   Both tools keep a text preview of up to 128,000 characters with the resource, but
   their reply carries only as much of it as `fetch_local_reference` allows, flagged
   `text_truncated` with `text_bytes_total` when cut.
-- `qualify_local_evaluator`: refused as `tasks_required` while a container is
-  configured, as `qualify_local_candidate` is, and generated evaluators need one, so task
-  tests replace them. Otherwise: accept a bounded JSON evaluator specification with
-  Python scoring code, source-backed cases and positive/negative/boundary/held-out
-  controls. Run each control in a disposable pinned container. Store its inputs,
-  outputs and code/image digests. Mechanical success does not grant scientific
-  approval. Generated evaluators cannot run on the host.
 
 `assess_local_documentary` is legal in local_discovery/local_documentary. It
 accepts bounded quote/reference pairs and limitations, pins a packet containing
@@ -921,8 +714,8 @@ comparison evidence and records U/inconclusive; failures must use
 record_local_limitation.
 
 Both require the claim's catalog lookup, at least one reference Python retrieved
-or one recorded qualification attempt for this claim, and no candidate qualified
-*for this claim* left unexecuted. A catalog candidate from lookup may belong to
+or one recorded qualification attempt for this claim, and no task design qualified
+*for this claim* left unexecuted. A design from lookup may belong to
 another scope, so whether it applies here stays a planner judgment. The search
 account is the planner's explanation of evidence Python saw it gather, not a
 substitute for gathering it.

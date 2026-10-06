@@ -1,4 +1,4 @@
-# Local configuration and reusable evaluators
+# Local configuration and reusable task designs
 
 Use [LOCAL-INSTALL.md](LOCAL-INSTALL.md) for ordinary setup and manual testing.
 This reference is for adding your datasets, scientific dependencies, app adapters
@@ -16,7 +16,7 @@ Unknown settings are rejected so spelling mistakes cannot silently change access
 | --- | --- |
 | `sandbox_image` | Exact installed `sha256:…` image ID; null means text-only sessions |
 | `docker_executable` | Native Docker executable; only a local Linux engine is accepted |
-| `trial_count` | 3 fresh subject sessions per case |
+| `trial_count` | 3 fresh subject sessions per task |
 | `max_subject_calls` | 128 per verification |
 | `subject_timeout_seconds` | 600 per subject session: a task runs the skill on its files, which 120 s, the default before task tests, did not allow for |
 | `memory_mib`, `cpus`, `pids_limit` | 512 MiB, 1 CPU, 64 processes per container |
@@ -40,14 +40,17 @@ saves its immutable image ID. Include only the required scientific tools; do not
 bake account credentials into an image. Trials never run host `pip` or install
 dependencies. Images must provide Python 3, `/bin/sh` and `cp`.
 
-### Packages a skill declares
+### Packages a skill declares or imports
 
 With `package_index` set, a verification of a computational skill first installs the
 packages the skill itself declares (its `pip install` commands in code blocks, its
 `requirements*.txt` or its `pyproject.toml`) into a copy of `environment_base_image`.
-Only that skill's subject trials use the copy, and the verification never downloads
-packages at any other time. "Skill environment" in the local contract and "Packages a
-skill declares" in the resource policy describe the rules and the trust decision.
+A package its code imports without declaring, such as `scipy`, is added too when the
+resource policy's reviewed table lists the module; anything else is reported, never
+guessed. Only that skill's subject trials use the copy, and the verification never
+downloads packages at any other time. "Skill environment" in the local contract and
+"Packages a skill declares or imports" in the resource policy describe the rules and
+the trust decision.
 
 The base must:
 - be a plain Python image with no entrypoint;
@@ -62,13 +65,14 @@ again, which took about 30 seconds for scikit-survival, and removes its image,
 left behind once it is a day old.
 
 [`images/rdkit/`](images/rdkit/Dockerfile) is one such image, for skills that use RDKit
-and pandas, such as `examples/sar-analysis`. It holds the pinned `python:3.12-slim` base,
-exact Debian libraries for RDKit's drawing module and hash-pinned wheels. Build it and
-read its ID:
+and pandas, such as `examples/sar-analysis`, and for the task generators and reference
+solutions every run executes, which can use SciPy to fit models. It holds the pinned
+`python:3.12-slim` base, exact Debian libraries for RDKit's drawing module and hash-pinned
+wheels. Build it and read its ID:
 
 ```powershell
-docker build -t sci-verifier-rdkit:2026.3.6 "D:\Su Lab\sci-ai-verifier\images\rdkit"
-docker image inspect --format "{{.Id}}" sci-verifier-rdkit:2026.3.6
+docker build -t sci-verifier-rdkit:2026.3.6-scipy1.18.1 "D:\Su Lab\sci-ai-verifier\images\rdkit"
+docker image inspect --format "{{.Id}}" sci-verifier-rdkit:2026.3.6-scipy1.18.1
 ```
 
 Pin that ID through the helper as above, or set `sandbox_image` to it in the settings
@@ -144,16 +148,15 @@ under "Negotiated evidence grade". The number and kind of cases each grade needs
 "Cases each grade requires". D means no execution: an independent session assessed
 cited sources. U means no acceptable evidence was found at all.
 
-A generated Python evaluator cannot reach A, because direct validation excludes AI
-judgment from scoring. One trial against a model subject cannot reach A or B,
+One trial against a model subject cannot reach A or B,
 because one sample cannot separate a skill that is right from one that is sometimes
 right. Set `trial_count` to at least 3 if you want those grades to be reachable.
 
 The runner then starts a fresh Claude session that never saw the planning, gives it
-only the claim, the evidence design, the source provenance and a fixed critique rubric,
-and asks what grade the evidence actually supports, and whether each case counts.
+only the claim, the task design, the source provenance and a fixed critique rubric,
+and asks what grade the evidence actually supports, and whether each task counts.
 That session can only lower the grade, and the runner re-derives the ceiling from the
-cases it counted.
+tasks it counted.
 
 If it supports less, the verifier improves the evidence, answering every revision the
 critique requires, and proposes the new ceiling, which costs a round. It accepts the
@@ -168,9 +171,11 @@ one said C" would just agree. The plan audit in the report shows every round: th
 proposal, the runner's ceiling with its limiting reasons, each critique's findings and
 objections, and the settled grade.
 
-The installed policy also requires complete scored trials, zero invalid observations
-and unanimous scored-status agreement within each case. A failed claim can have
-strong evidence: a unanimous fail is graded exactly like a unanimous pass. No
+How scored trials decide a claim's status, including that one failed trial outweighs
+an unreadable one, is set out under "Negotiated evidence grade" in
+[`local-contract.md`](skills/scientific-verifier/references/local-contract.md). A
+failed claim can have strong evidence: a unanimous fail is graded exactly like a
+unanimous pass. No
 eligible grade triggers the documentary path, not an invented scientific pass.
 
 Inspect the exact installed policy and documentary rubric with their digests:
@@ -194,8 +199,9 @@ python scripts/local_catalog.py list --workspace "D:\Su Lab\sci-ai-verifier"
 
 To reuse a bundle or reviewed catalog release, add `{ "location": "absolute file path or public HTTPS URL",
 "sha256": "exact reviewed digest" }` under `catalogs`. First use verifies and
-requalifies it; subsequent uses can read its cached bytes offline. Python
-candidates still require their local container for controls and scoring. A grade
+requalifies it; subsequent uses can read its cached bytes offline. Requalifying a
+task design runs its generator and reference solution again, so it needs your
+container image. A grade
 is never imported from someone else's asserted status; your own run settles it.
 Choose an updated release deliberately by its new digest; existing runs retain
 their original pins. Historical registry releases remain supported by
@@ -217,7 +223,7 @@ python scripts/local_catalog.py export --workspace "D:\Su Lab\sci-ai-verifier" -
 That statement is the preparer's assessment for a reviewer to check, not a legal
 authorization. The command creates a local file and prints its SHA256; it uploads
 nothing. The bundle excludes subject observations, logs and settings; reference
-content and case inputs are included, so inspect them before sharing.
+content and every task's input files are included, so inspect them before sharing.
 
 Open the draft PR with your own signed-in [GitHub CLI](https://cli.github.com/):
 
@@ -261,7 +267,8 @@ python scripts/local_catalog.py release --file ".verifier\candidate-proposal.jso
 
 This writes a new local file and prints its exact hash. It uploads nothing and
 does not overwrite an existing release. The default supported runtime range is
-0.7.0 inclusive to 0.8.0 exclusive; maintainers may supply a tested range using
+0.8.0 inclusive to 0.9.0 exclusive, since 0.8.0 is the first runtime whose catalogs hold
+task designs; maintainers may supply a tested range using
 `--minimum-runtime` and `--maximum-runtime-exclusive`.
 
 For an update, add `--previous` and `--previous-sha256` for the exact preceding

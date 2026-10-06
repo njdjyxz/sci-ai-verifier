@@ -26,11 +26,12 @@ log distinguishes implemented behavior from pending live and scientific acceptan
 Do not redefine completion as a text-only, chemical-only or demonstration release.
 A hosted multiuser/API product is a separate future deployment project.
 
-Version 0.7.0 implements the local workflow. One live run has completed it end to end
-(glycoengineering, 2026-09-16, four claims at evidence grade A). That is partial acceptance
-on the A-grade branch only; more skills must run before the design is treated as working.
-Task tests (`local-tasks.md`), built on 2026-10-05, replace question tests whenever a
-container is configured; no live verifier run has used them yet.
+Version 0.8.0 implements the local workflow, testing each claim by tasks (`local-tasks.md`):
+the skill runs on input Python built, and Python checks every output. Question tests were
+retired on 2026-10-05, and no live verifier run has used task tests yet. Under 0.7.0 one
+live run completed the earlier question workflow end to end (glycoengineering, 2026-09-16,
+four claims at evidence grade A). That is partial acceptance on the A-grade branch only;
+more skills must run before the design is treated as working.
 Its enforceable behavior is
 documented in `skills/scientific-verifier/references/local-contract.md`.
 `verify` and `serve-local` provide one public action; Claude Code owns the planner

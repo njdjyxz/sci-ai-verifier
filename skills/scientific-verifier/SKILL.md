@@ -11,7 +11,7 @@ You are the semantic planner inside a constrained scientific-verification system
 
 ## Start every run
 
-**Version 0.7.0 uses the personal/local entry point.** When the `verify_skill` MCP tool is available, call it once with the local path explicitly supplied by the user and return its completed report or operational limitation. The tool starts a separate Claude Code planner and fresh subject sessions; do not substitute same-chat outputs. See [the local contract](references/local-contract.md). The CLI equivalent is `python scripts/verify.py verify <path>` from the checkout. No routine per-claim approval or manually seeded catalog is required.
+**Version 0.8.0 uses the personal/local entry point.** When the `verify_skill` MCP tool is available, call it once with the local path explicitly supplied by the user and return its completed report or operational limitation. The tool starts a separate Claude Code planner and fresh subject sessions; do not substitute same-chat outputs. See [the local contract](references/local-contract.md). The CLI equivalent is `python scripts/verify.py verify <path>` from the checkout. No routine per-claim approval or manually seeded catalog is required.
 
 If an explicitly configured historical Desktop profile is returned, follow that profile's pinned contracts. `demo` remains an opt-in same-chat demonstration with no independent grade. A local-only caller must not use the historical low-level tools as substitutes for `verify_skill`.
 
@@ -52,7 +52,7 @@ Never invent or simulate a successful tool result, registry entry, dataset, eval
 - Use the applicable [`references/artifact-contracts.md`](references/artifact-contracts.md) section before proposing an artifact write or revision.
 - Use [`references/evidence-rubric.md`](references/evidence-rubric.md) for planning, audit, grade, and scientific-conclusion decisions.
 - Use [`references/resource-policy.md`](references/resource-policy.md) for source snapshots, resource discovery, storage, reuse, promotion, retention, and cleanup.
-- In the local profile the runner pins [`references/local-contract.md`](references/local-contract.md) and [`references/local-evaluator-spec.md`](references/local-evaluator-spec.md) in full. They are authoritative for that profile, not summaries of it.
+- In the local profile the runner pins [`references/local-contract.md`](references/local-contract.md) and [`references/local-tasks.md`](references/local-tasks.md) in full. They are authoritative for that profile, not summaries of it.
 - [`references/runtime-contract.md`](references/runtime-contract.md) binds the host process, not you. You never need it to choose a transition.
 
 The runner controls when stage-specific references enter the session. Do not assume unrestricted access to the repository or raw managed payloads.

@@ -18,36 +18,6 @@ from sci_ai_verifier.storage import no_links
 from sci_ai_verifier.tools import obj, string
 
 
-class TextRuntime:
-    instructions="Read supporting files only from the pinned submitted skill. Paths are relative to its root."
-    definitions=[{"name":"read_submitted_file","description":"Read a UTF-8 supporting file from the copied submitted skill by relative path.",
-                  "inputSchema":obj({"path":string(200)})}]
-
-    def __init__(self,source,log=None):
-        self.source,self.log=no_links(source),log
-
-    def call(self,name,arguments,call_id=None):
-        try:
-            from sci_ai_verifier.ingest import valid_relative,SECRET_BYTES
-            if name!="read_submitted_file":
-                raise Fault("unknown_tool","Only the bounded submitted-file reader is available.")
-            validate(arguments,self.definitions[0]["inputSchema"])
-            if not valid_relative(arguments["path"]):
-                raise Fault("subject_path_invalid","Choose a relative path within the submitted skill.")
-            path=no_links(self.source/arguments["path"])
-            if not path.is_relative_to(self.source) or path.stat().st_size>131072:
-                raise Fault("subject_file_limit","Supporting file is outside the source or exceeds its read limit.")
-            raw=path.read_bytes()
-            if SECRET_BYTES.search(raw):
-                raise Fault("secret_material","Credential-like content cannot be read through the subject tool.")
-            result={"path":arguments["path"],"text":raw.decode("utf-8"),"sha256":digest(raw)}
-            if self.log:
-                self.log.emit("subject_file_read",**result)
-            return {"status":"ok","data":result}
-        except (Fault,OSError,UnicodeError) as error:
-            return {"status":"unavailable","error":{"code":getattr(error,"code","subject_file_unavailable"),"message":"The bounded submitted-file read failed."}}
-
-
 class SubjectRuntime:
     instructions = "Run submitted scripts inside /work. Commands cannot access the host or network."
     # Run 84e90683's subjects ran `pip install rdkit` despite the instructions above; the tool
@@ -121,9 +91,6 @@ def main():
     if binding.get("log"):
         from sci_ai_verifier.runlog import WorkflowLog
         log=WorkflowLog(binding["log"]["workspace"],attempt_id=binding["log"]["attempt_id"])
-    if binding.get("kind")=="text":
-        serve(TextRuntime(binding["source"],log),sys.stdin.buffer,sys.stdout.buffer)
-        return
     if not re.fullmatch(r"sci-verifier-[0-9a-f]{32}",binding["name"]):
         raise ValueError("Invalid container identity")
     if not local_endpoint(binding["endpoint"]):

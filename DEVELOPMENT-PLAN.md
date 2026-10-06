@@ -19,9 +19,10 @@
 
 ## Current state
 
-Version 0.7.0 implements the local workflow. `verify` and `serve-local` provide one public
-action; Claude Code owns the planner loop and fresh subject sessions; Python owns
-deterministic tools, bounded processes and saved evidence.
+Version 0.8.0 implements the local workflow, testing each claim by tasks. `verify` and
+`serve-local` provide one public action; Claude Code owns the planner loop and fresh subject
+sessions; Python owns deterministic tools, bounded processes and saved evidence. Every run in
+the table below used 0.7.0 or earlier, and tested claims with questions.
 
 **Live acceptance is partial.** These runs have completed end to end:
 
@@ -117,13 +118,15 @@ the planner, never told its deadline, gave its last claim no test with an hour l
 2026-10-01 entry addresses that. In `90c60cbe`, told, it tested all four. The 2026-10-02 entry
 sets a bar for changes, so that rules drawn from one run do not overfit.
 
-**Task tests are built and not yet run live** (the 2026-10-05 entry, section 5, on branch
-`whole-skill-tests`). With a container configured, which is every run on this machine, a skill is
-split into claims that are groups of its whole sections, and each claim is tested by tasks that run
-the skill on input Python built: questions, calculated answers and generated evaluators are no longer
-used. One live test session and one live task critique worked; no live verifier run has used them.
+**Task tests are built and not yet run live** (the 2026-10-05 entry, sections 5 and 6, on branch
+`whole-skill-tests`). A skill is split into claims that are groups of its whole sections, and each
+claim is tested by tasks that run the skill on input Python built. Questions, calculated answers,
+generated evaluators, the claim-only check and the AI reader were removed on 2026-10-05, as version
+0.8.0; what they did is recorded above and in the archive. One live test session and one live task
+critique worked; no live verifier run has used task tests.
 
-Automated suite: **469 tests, 467 passing and 2 skipped, none failing**. The one that used to
+Automated suite: **378 tests, 376 passing and 2 skipped, none failing**, after the question tests
+were removed. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -1598,12 +1601,12 @@ either return fires; how many lowered grades are accepted at once; the time left
 ends each claim; grades, statuses and the trials the AI reader decided; run time against 7,200 s
 and subject calls against 128. It is finished when each has a recorded answer.
 
-## Claude: 2026-10-05 (an HTML page after every run; the final reviewer planned; whole-skill task tests built)
+## Claude: 2026-10-05 (an HTML page after every run; the final reviewer planned; whole-skill task tests built; question tests removed, 0.8.0)
 
 ### Current stage and status
 
-Version 0.7.0, local workflow. `skill-environments` was merged into `main` and deleted, and the work
-since is on the new branch `whole-skill-tests`, which is the operator's to merge. Every completed run
+Version 0.8.0, local workflow, bumped in section 6. `skill-environments` was merged into `main` and
+deleted, and the work since is on the new branch `whole-skill-tests`, which is the operator's to merge. Every completed run
 gets one web page, made from its records, for the operator and the lab, unless the user asks for
 none (section 3); the agent that asked for the verification writes its plain-language summaries. A
 final reviewer is planned, not built (section 2).
@@ -1612,10 +1615,11 @@ The whole-skill test design (section 4) is **built** (section 5). A skill is spl
 are groups of whole sections, nothing left out, and each claim is tested by tasks: the test AI gets
 the whole skill, input files and a job, and writes `results.json`, which Python checks against values
 it built into the files from a referenced model, or quoted from a reference. Python proves each task
-fair first by running the planner's own reference solution. With a container configured, question
-designs are refused. Checked by 19 new tests, by the container steps run live, and by one live test
-session and one live task critique, which both worked. **No live verifier run has used task tests.**
-Starting one needs the operator's go-ahead, a new Code session, and a look at the open questions.
+fair first by running the planner's own reference solution. Question tests are removed, a wrong result
+now outweighs an unreadable one, and the operator's image has scipy (section 6). Checked by the suite,
+by the container steps run live, and by one live test session and one live task critique, which both
+worked. **No live verifier run has used task tests.** Starting one needs the operator's go-ahead and a
+new Code session.
 
 ### What has been done
 
@@ -1909,7 +1913,69 @@ discussed about."
   aside (`run.stale-20261005`, `run.stale2-20261005`, `docker-secrets-engine.stale-20261005`; nothing
   deleted) and it started.
 - **Not done:** no live verifier run; the final reviewer; catalog export of task designs; a version
-  bump. `src/` changed, so a run needs a Code session started after this commit.
+  bump. `src/` changed, so a run needs a Code session started after this commit. Export and the
+  version bump were done in section 6.
+
+**6. Question tests removed, version 0.8.0.** The operator answered open questions 8 to 11: "I think
+we already give the verifier power for installing pre-request packages. If not, give the verifier the
+power and add scipy", "Yes" to removing the question tests, "yes" to a wrong result winning, "yes" to
+0.8.0, and "Also do the clean up for me".
+- **Packages a skill imports.** The verifier installed only packages a skill declares, and
+  dose-response imports numpy and scipy without declaring them. Now an undeclared import listed in a
+  reviewed table of 26 modules (`IMPORT_DISTRIBUTIONS` in [`environment.py`](src/sci_ai_verifier/environment.py),
+  owned by "Packages a skill declares or imports" in
+  [`resource-policy.md`](skills/scientific-verifier/references/resource-policy.md)) is installed too,
+  and anything else is reported, never guessed. A skill that declares nothing gets a build only when
+  the operator image lacks a listed import. The planner's block and the report name what was added
+  from imports. Contracts first: `local-contract.md` ("Skill environment"), the policy table,
+  `LOCAL-CONFIG.md`. 5 new tests.
+- **scipy in the operator's image.** `images/rdkit/requirements.txt` gains `scipy==1.18.1`, hash-pinned.
+  Built as `sci-verifier-rdkit:2026.3.6-scipy1.18.1`, ID `sha256:6876c07f…79da6d`: numpy 2.5.3,
+  pandas 3.0.6, RDKit 2026.3.6, Pillow, scipy 1.18.1. The operator's `.verifier/local-settings.json`
+  pins it; the previous file is in scratchpad `c7991202…`. The build reused cached apt layers, so a
+  fresh machine may need new Debian pins. Dose-response's script can now run; its `tu` command is
+  still absent and is still reported.
+- **Question tests removed.** Gone: `qualify_local_candidate` and `qualify_local_evaluator` (the
+  Desktop manifest lists 33 tools, was 35), `local_evaluators.py` and `local-evaluator-spec.md`,
+  calculated answers, the claim-only check, the AI reader, the question critique (rubric v13) with its
+  coverage-gap and concern returns, and the text-only subject (`TextRuntime`). The code is in Git
+  history. Old runs' records still render, and saved question designs stay on disk, unlisted.
+- **Status.** A failed trial fails the claim whatever the others say; with none failed, an invalid
+  trial leaves it inconclusive (`local-contract.md`).
+- **Found while porting the tests, and fixed:**
+  - the documentary step read a question field from a task design and would have crashed;
+  - the task critique had lost v13's rule that a described search is judged by Python's search
+    record; restored in criterion 4, as rubric `local-task-critique-v2`;
+  - a task design's critique packet has no size guarantee: about 2.3 MB at every schema maximum,
+    against a 512 KB limit, where real ones are 17 to 23 KB. Selection now refuses an oversized
+    packet as `critique_packet_too_large` before any session, instead of ending the claim
+    (`tool-contracts.md`);
+  - task designs now export with their input files, and an import qualifies them again in the
+    importer's container, which must rebuild the same files and planted values (`local-contract.md`).
+    Release ranges default to 0.8.0 up to 0.9.0;
+  - `validate_task_critique` was split out, so the tests' critique double goes through the real
+    validator again.
+- **Version 0.8.0** in `__init__.py`, `pyproject.toml`, the Desktop manifest, `SKILL.md`, `README.md`,
+  `LOCAL-INSTALL.md` and `CLAUDE.md`; saved records from 0.8.0 are accepted. `README.md`,
+  `LOCAL-INSTALL.md` and `LOCAL-CONFIG.md` no longer describe generated evaluators, the AI reader or
+  question replies, and the `subject_refused` row now says the claim is re-run once.
+- **Cleanup of `.verifier/`**, moved and not deleted, into scratchpad `c7991202…`: run `90c60cbe`
+  with its attempt, subject runs and 10 candidates (`cleaned-90c60cbe/`), the live task checks and two
+  synthetic fixture workspaces. Kept: runs `76ce4af1` and `32e60bd6` (untouched), the store, the
+  reports and 13 candidates.
+- **Verification.**
+  - Suite 469 → 378 tests, 376 passing and 2 skipped. The question tests went. The rest were
+    rewritten for tasks, with new tests for the import table, the status rule, the packet refusal, a
+    catalog round trip that rebuilds the files, and the task critique's schema.
+  - `tests/recorded/` keeps the assessor, refusal and session-limit streams, plus two retired
+    sessions that show Claude Code's schema-correction loop.
+  - The synthetic end-to-end fixture completes, and the operator's settings load.
+  - Sizes: the verification bootstrap is 196,388 of 200,000 bytes. The stage 2 bootstrap is 119,604
+    of 120,000, only 396 bytes spare. The largest pinned local document is `local-contract.md`, at
+    34,540 of 40,960.
+- **Not verified live:** a verifier run with tasks; the import table on a live skill. No real reply
+  to the task critique's schema is recorded, so `test_recorded_replies.py` checks that schema with a
+  hand-written one.
 
 ### Decisions taken 2026-10-05
 
@@ -1952,6 +2018,15 @@ discussed about."
 - **Superseded today:** "one claim per section, at most five" and "tested fact by fact" (entries of
   2026-09-29 to 2026-10-01) are retired; claim-only answers (2026-09-24) and the coverage-gap and
   concern returns (2026-10-01) now apply to question designs only, which no longer run here.
+- **Operator, after section 5 (section 6):** give the verifier the power to install a skill's
+  packages and add scipy; remove the question tests; a wrong result outweighs an unreadable one;
+  version 0.8.0; clean up `.verifier/`.
+- **Proposed here and built (section 6):** the import table, with nothing guessed outside it; refusing
+  an oversized critique packet; exporting task designs with their files, and qualifying them again on
+  import.
+- **Superseded in section 6:** section 5's "the question rubric, v13, is untouched", "question designs
+  … are refused as `tasks_required`; their code and contracts stay", "a task design cannot yet be
+  exported", the image without scipy, and open question 8's recommendation to wait for a live run.
 
 ### Open questions for the operator
 
@@ -1961,30 +2036,24 @@ discussed about."
 3. Should the final reviewer, once built, write into the same notes, beside the calling agent's
    summaries?
 4. to 7. Answered by the operator (section 5).
-8. **scipy in the operator's image.** Generators and solvers run there, and so do the test sessions of a
-   skill that declares nothing, such as dose-response. Without scipy that skill's own script cannot run,
-   which the run now records as a finding, and the live test AI fitted with numpy instead. Add scipy
-   (and other common scientific packages) to `images/rdkit/`? Recommended: not before the first live
-   task run, so the finding is seen as designed.
-9. **Retire the question path?** Questions, calculated answers and generated evaluators no longer run
-   with a container. Remove their code and contracts once task runs have worked live?
-10. **Status when a trial is invalid.** Under unanimity one wrong result already decides `fail`, but
-   the existing rule makes any invalid trial `inconclusive` first. Let a wrong result win, for both
-   designs? Recommended: yes, but it changes the status rule for questions too.
-11. **Version.** Bump to 0.8.0 when the task design is accepted?
+8. to 11. Answered by the operator (section 6).
+12. **A recorded task critique.** No real reply to the task critique's schema is recorded. Replay one
+   real packet through the pinned model, about $0.40, and keep its stream in `tests/recorded/`?
+   Recommended: yes, before or with the first live task run.
+13. **The stage 2 bootstrap has 396 bytes spare.** The next edit to a document it pins fails its budget
+   test. Trim a pinned document, or raise the budget, which bounds what the stage 2 app receives?
 
 ### Urgent next steps, if any
 
 None for the code: committed and pushed on `whole-skill-tests` with this entry. Before the first
 live run with tasks, a prerequisite: start a **new** Code session, so that its `serve-local` runs this
-branch's code with the three-hour registration; a session started earlier keeps old code and 7,200 s.
+branch's 0.8.0 code with the three-hour registration; a session started earlier keeps old code.
 
 ### Suggested next move
 
 Run the verifier live on task tests, on a skill already run with questions, so the two designs can
-be compared: tooluniverse-dose-response first (8 sections, 5 earlier runs). Then decide open questions
-8 to 11, and merge `whole-skill-tests` once a run has worked. The final reviewer comes after, on the
-new tests.
+be compared: tooluniverse-dose-response first (8 sections, 5 earlier runs). Merge `whole-skill-tests`
+once a run has worked. The final reviewer comes after, on the new tests.
 
 ### Recommended next action
 
@@ -1996,7 +2065,7 @@ window:
    - a manifest holding every section, with Related skills set aside with a reason;
    - each claim tested by a qualified task design whose reference solution passed;
    - the critique's verdicts per task, and whether it pushed for tighter tolerances;
-   - each trial's `results.json` read by Python, and `missing Python module scipy` among the run
-     problems;
+   - each trial's `results.json` read by Python; with scipy in the image, the skill's script runs,
+     and `missing command tu` should appear among the run problems;
    - time and cost per claim, against the 4 claims and $30 of run `90c60cbe`.
 3. Record it in a new entry, with what to change before the next skill.

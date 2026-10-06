@@ -3,8 +3,7 @@
 These are **not synthetic fixtures**. Each `.jsonl` file is the verbatim
 Claude Code stream-json event sequence that a real session emitted, captured
 either by the workflow log of a local run or by a live replay of a real run's
-packet through the code that reads it. `subject-replies.json` holds the verbatim
-reply text of real subject sessions, taken from the report cards that scored them.
+packet through the code that reads it.
 
 They exist because every other test in this suite writes the model's reply by
 hand, in a shape that already satisfies the validator. That is how
@@ -15,20 +14,18 @@ code, so it is the only test data here that can actually falsify the parser.
 
 | File | Role | Source | What it captures |
 | --- | --- | --- | --- |
-| `critic-structured.jsonl` | critic | live replay, 2026-10-01 | Run `d416f79d`'s pIC50 critique packet as today's code builds it, under rubric v13: its limitations whole (990 characters, taken from the stored candidate, where v10 showed 800) and, with no workflow log attached, a search record saying none was recorded. Supported grade B, all three cases counted, as under v8 to v12, with no `coverage_gaps`, every fact the claim states being tested, and no `prior_verdicts`, the packet carrying no earlier concern. Its first reply added a stray `StructuredOutput` key; refused and resent. The v8 to v12 recordings are in Git history |
+| `critic-structured.jsonl` | critic | live replay, 2026-10-01 | Run `d416f79d`'s pIC50 critique under the question rubric v13, retired with question tests on 2026-10-05. Kept only as live evidence of Claude Code's correction loop: its first reply added a stray `StructuredOutput` key, which the schema refused, and the session resent it. Its packet and the earlier recordings are in Git history |
 | `assessor-structured.jsonl` | assessor | live replay, 2026-09-28 | Run `a392ea65`'s documentary packet answered through the reply schema: `inconclusive` with six exact packet citations, accepted first time |
-| `claim-probe-structured.jsonl` | claim-only | live replay, 2026-09-28 | Run `d416f79d`'s `pic50-one-nanomolar` case with its claim: answer `9`. Its first reply added a stray `a` key; refused and resent |
+| `claim-probe-structured.jsonl` | claim-only | live replay, 2026-09-28 | Run `d416f79d`'s `pic50-one-nanomolar` case answered from its claim alone, a check retired with question tests. Kept, like the critique, for the correction loop: its first reply added a stray `a` key; refused and resent |
 | `subject-safety-refusal.jsonl` | subject | `e035eef6` | Provider safety refusal, category `bio`, with a fallback model that also refused |
 | `planner-session-limit.jsonl` | planner | `7f88fbef` | The planner's last two events: the CLI's `rate_limit` message and a `result` with `terminal_reason` `api_error`, HTTP 429, "You've hit your session limit" |
 | `subject-refusal-fallback.jsonl` | subject | `3dc02567` | Opus 5 refused an R-group question after the skill loaded; a `model_refusal_fallback` event, then `claude-opus-4-8` wrote the answer `R1` and the session succeeded |
 | `subject-refusal-recovered.jsonl` | subject | `3dc02567` | The same case: `model_refusal_no_fallback`, a `<synthetic>` refusal notice, then `claude-opus-5` answered `R1` itself |
-| `reader-matches.jsonl` | reader | live reading, 2026-09-29 | Run `1bb3f07a`'s reply `MolOps::adjustQueryProperties` to a question whose key is `adjustQueryProperties` and which asked for no namespace prefix: `matches`, called "a formatting difference" |
-| `reader-differs.jsonl` | reader | live reading, 2026-09-29 | Run `1bb3f07a`'s paraphrase of a documented sentence the question asked for verbatim: `differs` |
-| `subject-replies.json` | subject | 17 runs, `76ce4af1` to `0aeca4c6` | Every scored subject reply in those runs' report cards, 945 trials as 496 distinct replies, each with its case's key, options and the verdict it received, labelled right, wrong or paraphrase. `test_answers.py` replays them through today's reader: every right answer passes, including 19 trials misread when they ran, and no wrong one does |
 
-`critic-structured-packet.json`, `assessor-packet.json`, `claim-probe-packet.json` and
-`reader-packets.json` are the exact packets those sessions were given, so each reply can be
-checked against the bytes it actually saw.
+`assessor-packet.json` is the exact packet the assessor was given, so its reply can be
+checked against the bytes it actually saw. No live session has answered the task critique's
+schema through this code yet, so `test_recorded_replies.py` checks that schema with a
+hand-written reply until one is recorded.
 
 Each recording is here because the code got it wrong, or to prove the fix. Until
 2026-09-28 the verifier's own sessions answered in free text, and Python learned
@@ -52,7 +49,9 @@ model's answer, which was scored as the pinned model's.
   non-conforming, the test asserting its rejection is the point.
 - A structured reply is checked against the live schema. If a later schema
   refuses a recording, record a new one from a real session rather than editing
-  it or keeping an old reader to accept it.
+  it or keeping an old reader to accept it. The two recordings kept only for the
+  correction loop are the exception: their schemas were retired, so nothing
+  checks their replies.
 - Add new recordings from real sessions only, a run or a live replay of a real
   run's packet, with the source noted above.
 - Recordings are scanned for credential-like bytes by

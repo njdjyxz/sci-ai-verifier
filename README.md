@@ -1,9 +1,9 @@
 # Scientific Skill Verifier
 
-Version **0.7.0** is the local implementation under acceptance on `main`. Its public action
+Version **0.8.0** is the local implementation under acceptance. Its public action
 is **verify this skill**. Claude Code plans the verification; fresh Claude Code
 sessions execute the submitted skill. Python preserves source snapshots,
-validates workflow steps, qualifies reference comparisons and writes reports.
+validates workflow steps, qualifies task designs and writes reports.
 
 You can use the **Code tab in the Claude desktop app** for everyday verification.
 The standalone Claude Code command-line program is also required: this version
@@ -19,9 +19,9 @@ are written to verifier artifacts. This uses Claude's hosted models; local means
 local orchestration, execution boundaries and evidence storage.
 
 An empty local catalog triggers agent-driven discovery. Public reference bytes,
-exact quotes, versions, license notes, test inputs and comparison controls are
-pinned before subject execution. Qualified local configurations can be reused
-offline. Reports distinguish reference comparison outcomes from scientific grades.
+exact quotes, versions, license notes and every task's input files are pinned
+before subject execution. Qualified task designs can be reused offline. Reports
+distinguish comparison outcomes from scientific grades.
 
 The evidence grade is an indicator of how gold-standard the evidence is, not an
 endorsement: A means the skill was compared against answers Python itself retrieved
@@ -31,9 +31,11 @@ grade it supports, and a fresh session that never saw the planning critiques tha
 proposal and can only lower it. No human sign-off assigns a grade, and **no grade is
 invented**.
 
-The build supports container-based scripts, binary inputs and generated artifacts;
-bounded resources and configured read-only app adapters; generated Python
-evaluators with controls; audited repeated trials; negotiated A/B/C grading and
+The build tests each claim by tasks: the skill runs in a container on input files
+Python built, and Python checks every output against a value it planted or quoted
+([`local-tasks.md`](skills/scientific-verifier/references/local-tasks.md)). It
+supports binary inputs and generated artifacts; bounded resources and configured
+read-only app adapters; audited repeated trials; negotiated A/B/C grading and
 separate documentary assessment; observable workflow logs; and pinned candidate
 import/export, prepared releases and retirement, with opt-in GitHub draft
 proposals the agent can revise after review. The public connection supports

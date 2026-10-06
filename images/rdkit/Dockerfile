@@ -1,6 +1,6 @@
-# Sandbox image for chemistry skills that use RDKit, such as examples/sar-analysis. It adds
-# hash-pinned RDKit and pandas wheels to the verifier's pinned base image; trials still install
-# nothing. Build it, then pin the image ID it produces in the local settings (LOCAL-CONFIG.md).
+# Sandbox image for chemistry skills that use RDKit, such as examples/sar-analysis, and for the
+# task generators and reference solutions every run executes. It adds hash-pinned RDKit, pandas
+# and SciPy wheels to the verifier's pinned base image; trials still install nothing. Build it, then pin the image ID it produces in the local settings (LOCAL-CONFIG.md).
 # Run 84e90683's subjects had no RDKit, so every trial of its ring-option claim tried to install
 # it and then worked the MCS out by hand: two timed out, and six answered wrongly.
 FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea

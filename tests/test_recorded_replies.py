@@ -1,14 +1,15 @@
 """The independent-session boundary, driven by replies a real session actually sent.
 
-Every other test in this suite hands `validate_critique` and `validate_assessment` a
-dict written by the test author, so those tests cannot observe a disagreement between
-what the code demands and what a fresh Claude session emits. That disagreement is
-exactly what discarded three completed critiques in local run a392ea65. The recordings
-under `tests/recorded/` are real CLI output and are never edited to suit the code.
+Every other test in this suite hands the reply validators a dict written by the test author,
+so those tests cannot observe a disagreement between what the code demands and what a fresh
+Claude session emits. That disagreement is exactly what discarded three completed critiques
+in local run a392ea65. The recordings under `tests/recorded/` are real CLI output and are
+never edited to suit the code.
 """
 
 import json
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -17,24 +18,26 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import NO_SUBSTITUTION, ClaudeCode, parse_events, refusal_category
-from sci_ai_verifier.common import Fault, canonical, digest, validate
-from sci_ai_verifier.documentary import (CLAIM_PROBE_SCHEMA, CRITIC_TIMEOUT_SECONDS, CRITIQUE_REF, CRITIQUE_RUBRIC,
-    READER_SCHEMA, READER_TIMEOUT_SECONDS, REPLY_TOOL, critique, critique_schema, read_reply, validate_assessment,
-    validate_critique)
-from sci_ai_verifier.local_candidates import SECRET_BYTES, compare
+from sci_ai_verifier.common import Fault, canonical, validate
+from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, REPLY_TOOL, TASK_CRITIQUE_REF, TASK_CRITIQUE_RUBRIC,
+                                         critique_tasks, task_critique_schema, validate_assessment)
+from sci_ai_verifier.local_candidates import SECRET_BYTES
 from sci_ai_verifier.local_config import load_configuration
+from test_claude_runner import IMAGE, FakeSandbox
 
-RECORDED = Path(__file__).resolve().parent / "recorded"
+ROOT = Path(__file__).resolve().parents[1]
+RECORDED = ROOT / "tests/recorded"
 # The verifier's own sessions answering through their reply schemas, captured live through the
-# code that reads them: the assessor and the claim-only answer on 2026-09-28, the critique under
-# rubric v9 and the two readings on 2026-09-29. Where the first reply broke the schema and the
-# session corrected it, the recording maps to the key its refused reply added.
-STRUCTURED_RECORDINGS = {"critic-structured.jsonl": "StructuredOutput", "assessor-structured.jsonl": None,
-                         "claim-probe-structured.jsonl": "a", "reader-matches.jsonl": None,
-                         "reader-differs.jsonl": None}
+# code that reads them. Where the first reply broke the schema and the session corrected it, the
+# recording maps to the key its refused reply added. The critique and the claim-only answer were
+# given schemas retired with question tests on 2026-10-05; they stay as the live evidence of
+# Claude Code's correction loop, which every structured session relies on.
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-structured.jsonl": "StructuredOutput",
+                         "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
                     "subject-refusal-fallback.jsonl", "subject-refusal-recovered.jsonl"]
+TASK = {"task": "Return the supplied text.", "results_file": "/work/results.json"}
 
 
 def recorded(name):
@@ -52,6 +55,19 @@ def probe_stream(command, model="claude-opus-5", text="OK"):
               {"type": "assistant", "session_id": session,
                "message": {"model": model, "role": "assistant", "content": [{"type": "text", "text": text}]}},
               {"type": "result", "subtype": "success", "is_error": False, "session_id": session, "result": text}]
+    return b"".join(canonical(event) + b"\n" for event in events)
+
+
+def structured_stream(command, value, model="claude-opus-5"):
+    """A minimal accepted structured reply. Hand-written: no live session has answered the task
+    critique's schema through this code yet."""
+    session = command[command.index("--session-id") + 1]
+    events = [{"type": "assistant", "session_id": session, "message": {"model": model, "role": "assistant", "content": [
+                  {"type": "tool_use", "id": "reply-1", "name": REPLY_TOOL, "input": value}]}},
+              {"type": "user", "session_id": session, "message": {"content": [
+                  {"type": "tool_result", "tool_use_id": "reply-1", "content": "Structured output provided successfully"}]}},
+              {"type": "result", "subtype": "success", "is_error": False, "session_id": session, "result": "",
+               "structured_output": value, "total_cost_usd": 0.0, "usage": {}}]
     return b"".join(canonical(event) + b"\n" for event in events)
 
 
@@ -76,7 +92,17 @@ def reply_attempts(raw):
     return [(call["name"], call["input"], results[call["id"]]) for call in calls]
 
 
+def subject(process):
+    """A subject whose trial container is faked, so a recorded stream replays through `observe`."""
+    return ClaudeCode(auth="subscription", process=process, settings={**load_configuration(), "sandbox_image": IMAGE})
+
+
 class RecordedReplyTests(unittest.TestCase):
+    def setUp(self):
+        sandbox = patch("sci_ai_verifier.sandbox.DockerSandbox", FakeSandbox)
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
+
     def test_recordings_are_present_and_carry_no_credential_bytes(self):
         names = sorted(path.name for path in RECORDED.glob("*.jsonl"))
         self.assertEqual(names, sorted([*STRUCTURED_RECORDINGS, *OTHER_RECORDINGS]))
@@ -97,11 +123,10 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_a_reply_the_schema_refused_was_corrected_in_the_same_session(self):
         """The slips a free-text reader met one lost claim at a time. Run 0a243b7e lost a claim to an
-        empty extra key; here a claim-only answer added a stray `a`, and the critique recorded under
-        rubric v13 a stray `StructuredOutput`, as earlier ones added `evidence_limits` (v12),
-        `StructuredOutput` (v11) and `evidence_ceiling` (v10) and wrapped their reply in
-        `$PARAMETER_NAME` (v8); Git history keeps them. Claude Code refused each and the session
-        resent it."""
+        empty extra key; here a claim-only answer added a stray `a`, and a critique a stray
+        `StructuredOutput`, as earlier ones added `evidence_limits`, `evidence_ceiling` and wrapped
+        their reply in `$PARAMETER_NAME`; Git history keeps them. Claude Code refused each and the
+        session resent it."""
         for name, stray in STRUCTURED_RECORDINGS.items():
             with self.subTest(recording=name):
                 attempts = reply_attempts(recorded(name))
@@ -116,79 +141,6 @@ class RecordedReplyTests(unittest.TestCase):
                 self.assertNotIn(stray, accepted)
                 self.assertFalse(final.get("is_error"))
 
-    def test_the_recorded_critique_is_a_complete_answer_to_its_real_packet(self):
-        """Run d416f79d's pIC50 packet, answered under the live rubric: B, all three cases counted,
-        as that run's critique had judged them."""
-        raw, sent = recorded("critic-structured.jsonl"), packet("critic-structured-packet.json")
-        self.assertEqual(digest(canonical(sent["rubric"])), CRITIQUE_REF)
-        case_ids = [case["case_id"] for case in sent["evidence"]["cases"]]
-        value = validate_critique(parse_events(raw, expected_session=session_of(raw))["structured_output"], case_ids)
-        self.assertEqual(value["supported_grade"], "B")
-        self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
-        self.assertEqual({item["verdict"] for item in value["case_verdicts"]}, {"counts"})
-        self.assertEqual(len(value["findings"]), len(CRITIQUE_RUBRIC["criteria"]))
-
-    def test_critique_end_to_end_over_a_replayed_recording(self):
-        """The whole public entry point, with only the child process replaced by a recording."""
-        raw, sent = recorded("critic-structured.jsonl"), packet("critic-structured-packet.json")
-        seen = {}
-
-        def replay(command, **kwargs):
-            # The critique's own deadline reaches the process, not the assessor's two minutes.
-            self.assertEqual(kwargs["timeout"], CRITIC_TIMEOUT_SECONDS)
-            seen["command"] = command
-            # Rewrite the recorded session id to the one this call generated, so the identity
-            # check in parse_events is exercised rather than bypassed.
-            return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
-
-        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
-            value = critique(ClaudeCode(auth="subscription", process=replay), sent)
-        self.assertEqual(value["supported_grade"], "B")
-        self.assertEqual(value["rubric_ref"], CRITIQUE_REF)
-        self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
-        self.assertTrue(value["ai_judgment"])
-        command = seen["command"]
-        case_ids = [case["case_id"] for case in sent["evidence"]["cases"]]
-        self.assertEqual(json.loads(command[command.index("--json-schema") + 1]),
-                         critique_schema(case_ids, len(sent["prior_objections"])))
-
-    def test_the_recorded_readings_answer_their_real_packets(self):
-        """Two real replies from run 1bb3f07a, read live on 2026-09-29 ("Reading replies" in
-        local-contract.md): a namespace-qualified function name the reader took for the expected
-        function, and a paraphrase of a documented sentence it took for another answer."""
-        packets = packet("reader-packets.json")
-        for name, item, reading in (("reader-matches.jsonl", packets[0], "matches"),
-                                    ("reader-differs.jsonl", packets[1], "differs")):
-            with self.subTest(recording=name):
-                raw = recorded(name)
-                value = parse_events(raw, expected_session=session_of(raw))["structured_output"]
-                validate(value, READER_SCHEMA)
-                self.assertEqual(value["reading"], reading)
-                self.assertIn(value["answer"], item["packet"]["reply"])
-
-    def test_a_reading_end_to_end_over_a_replayed_recording(self):
-        """read_reply with only the child process replaced: the recorded packet is exactly what
-        today's code sends, and the reading decides the trial."""
-        for name, item, final in (("reader-matches.jsonl", packet("reader-packets.json")[0], "pass"),
-                                  ("reader-differs.jsonl", packet("reader-packets.json")[1], "fail")):
-            raw, seen = recorded(name), {}
-
-            def replay(command, **kwargs):
-                self.assertEqual(kwargs["timeout"], READER_TIMEOUT_SECONDS)
-                seen["command"], seen["prompt"] = command, kwargs["prompt"]
-                return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
-
-            sent = item["packet"]
-            case = {"case_id": item["case"], "input": sent["question"], "expected": sent["expected_answer"]}
-            with self.subTest(recording=name), \
-                 patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
-                record = read_reply(ClaudeCode(auth="subscription", model="claude-opus-5", process=replay),
-                                    sent["answer_type"], case, sent["reply"], item["python_status"])
-                self.assertEqual(json.loads(seen["prompt"]), sent)
-                command = seen["command"]
-                self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), READER_SCHEMA)
-                self.assertEqual((record["status"], record["final_status"]), ("used", final))
-
     def test_the_recorded_assessment_cites_its_own_real_packet(self):
         raw, sent = recorded("assessor-structured.jsonl"), packet("assessor-packet.json")
         value = validate_assessment(parse_events(raw, expected_session=session_of(raw))["structured_output"], sent)
@@ -197,52 +149,6 @@ class RecordedReplyTests(unittest.TestCase):
         for citation in value["citations"]:
             self.assertTrue(any(citation["reference_ref"] == item["reference_ref"]
                                 and citation["quote"] in item["quote"] for item in sent["evidence"]))
-
-    def test_the_recorded_claim_only_answer_reaches_its_key(self):
-        raw = recorded("claim-probe-structured.jsonl")
-        reply = parse_events(raw, expected_session=session_of(raw))["structured_output"]
-        validate(reply, CLAIM_PROBE_SCHEMA)
-        self.assertEqual(compare("numeric", reply["answer"], "9"), "pass")
-        self.assertIn("1 nM", packet("claim-probe-packet.json")["question"])
-
-    def test_the_live_rubric_gives_the_critique_what_earlier_reviewers_lacked(self):
-        """v7 is the first rubric a critique can use to reject a style tell among options, a
-        narrower key a subject applying the claim could meet with "none of these", and an
-        effect-to-setting case mistaken for naming; v8 says how to judge a calculated answer; v9
-        says what each answer type compares, so the comparison rule can be judged against the claim;
-        v10 lists the claim's facts against the cases, and turns a gap a listed reference or an
-        unrecorded search leaves open into a required revision; v11 judges a search by the record
-        Python reads from the planner's stream, not by the planner's description; v12 lists those
-        gaps in coverage_gaps whatever the grade, for the coverage-gap return; v13 gives each earlier
-        concern, required revisions among them, a verdict, for the concern return. Each rule is the
-        mirror of a contract passage, which owns it."""
-        from sci_ai_verifier.answers import TYPES
-        from sci_ai_verifier.documentary import PRIOR_VERDICTS
-        self.assertEqual(CRITIQUE_RUBRIC["id"], "local-evidence-critique-v13")
-        self.assertEqual(set(CRITIQUE_RUBRIC["prior_verdicts"]) - {"instruction"}, set(PRIOR_VERDICTS))
-        self.assertIn("rubric.prior_verdicts", CRITIQUE_RUBRIC["criteria"][4])
-        self.assertIn("revisions they required", CRITIQUE_RUBRIC["prior_objections"])
-        self.assertIn("coverage_gaps", CRITIQUE_RUBRIC["coverage"])
-        self.assertIn("Whatever your grade", CRITIQUE_RUBRIC["coverage"])
-        self.assertIn("rubric.coverage", CRITIQUE_RUBRIC["criteria"][1])
-        self.assertIn("evidence.references", CRITIQUE_RUBRIC["coverage"])
-        self.assertIn("python_checked.search_record", CRITIQUE_RUBRIC["coverage"])
-        self.assertIn("was not made", CRITIQUE_RUBRIC["coverage"])
-        self.assertIn("required revision", CRITIQUE_RUBRIC["coverage"])
-        self.assertEqual(set(CRITIQUE_RUBRIC["answer_types"]), set(TYPES))
-        self.assertIn("reading which answer a reply gives", CRITIQUE_RUBRIC["grades"]["A"])
-        shapes = CRITIQUE_RUBRIC["leak_shapes"]
-        self.assertEqual(len(shapes), 5)
-        self.assertIn("leading word or article", shapes[-1])
-        self.assertIn("leak_shapes", CRITIQUE_RUBRIC["case_verdicts"]["leaked"])
-        self.assertIn("beyond_scope", CRITIQUE_RUBRIC["claim_only_answer"])
-        self.assertIn("none of these", CRITIQUE_RUBRIC["claim_only_answer"])
-        self.assertIn("sibling setting", CRITIQUE_RUBRIC["claim_only_answer"])
-        self.assertIn("is not naming", CRITIQUE_RUBRIC["case_verdicts"]["naming"])
-        self.assertIn("quoted formula", CRITIQUE_RUBRIC["calculated_answers"])
-        # Every case verdict is still one of the five the schema allows.
-        self.assertEqual(set(CRITIQUE_RUBRIC["case_verdicts"]),
-                         {"counts", "naming", "beyond_scope", "leaked", "duplicate"})
 
     def test_a_recorded_safety_refusal_is_named_and_not_a_crash(self):
         """A provider refusal is its own operational outcome, never a scientific result."""
@@ -260,16 +166,11 @@ class RecordedReplyTests(unittest.TestCase):
         which one happened.
         """
         raw = recorded("subject-safety-refusal.jsonl")
-        settings = {**load_configuration(), "sandbox_image": None}
-
-        def replay(command, **kwargs):
-            return 1, raw, b""
-
-        subject = ClaudeCode(auth="subscription", process=replay, settings=settings)
+        trial = subject(lambda command, **kwargs: (1, raw, b""))
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
             with self.assertRaises(Fault) as caught:
-                subject.observe(source=[{"path": "SKILL.md", "content": "Return the supplied text."}],
-                                case_input={"input": "case"}, config=subject.identity, timeout_seconds=2)
+                trial.observe(source=[{"path": "SKILL.md", "content": "Return the supplied text."}],
+                              case_input=TASK, config=trial.identity, timeout_seconds=2)
         self.assertEqual(caught.exception.code, "subject_refused")
         self.assertIn("bio", str(caught.exception))
         # It no longer claims the refusal would recur: run 3dc02567's Opus 5 answered a case
@@ -284,10 +185,10 @@ class RecordedReplyTests(unittest.TestCase):
             seen["env"] = kwargs["env"]
             return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
 
-        subject = ClaudeCode(auth="subscription", process=replay, settings={**load_configuration(), "sandbox_image": None})
+        trial = subject(replay)
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
-            observation = subject.observe(source=[{"path": "SKILL.md", "content": "Return the supplied text."}],
-                                          case_input={"input": "case"}, config=subject.identity, timeout_seconds=2)
+            observation = trial.observe(source=[{"path": "SKILL.md", "content": "Return the supplied text."}],
+                                        case_input=TASK, config=trial.identity, timeout_seconds=2)
         return observation, seen
 
     def test_an_answer_another_model_wrote_after_a_refusal_is_a_refusal(self):
@@ -340,21 +241,16 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_a_non_zero_exit_without_a_refusal_stays_incomplete(self):
         """Only a real refusal gets the refusal name; an ordinary crash must not."""
-        settings = {**load_configuration(), "sandbox_image": None}
-
-        def replay(command, **kwargs):
-            return 1, b"", b""
-
-        subject = ClaudeCode(auth="subscription", process=replay, settings=settings)
+        trial = subject(lambda command, **kwargs: (1, b"", b""))
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
             with self.assertRaises(Fault) as caught:
-                subject.observe(source=[{"path": "SKILL.md", "content": "Return the supplied text."}],
-                                case_input={"input": "case"}, config=subject.identity, timeout_seconds=2)
+                trial.observe(source=[{"path": "SKILL.md", "content": "Return the supplied text."}],
+                              case_input=TASK, config=trial.identity, timeout_seconds=2)
         self.assertEqual(caught.exception.code, "claude_incomplete")
 
     def test_a_recording_from_the_wrong_session_is_an_operational_failure(self):
         """The recording proves the happy path; identity checking must still reject a mismatch."""
-        raw = recorded("critic-structured.jsonl")
+        raw = recorded("assessor-structured.jsonl")
         with self.assertRaises(Fault) as caught:
             parse_events(raw, expected_session="00000000-0000-0000-0000-000000000000")
         self.assertEqual(caught.exception.code, "claude_identity_error")
@@ -395,9 +291,8 @@ class RecordedReplyTests(unittest.TestCase):
                 return {"executable": self.executable, "version": "2.1.268", "auth": self.auth,
                         "model_requested": self.model, "live_execution_tested": False}
 
-        root = Path(__file__).resolve().parents[1]
-        (root / ".verifier/test-work").mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="recovery-", dir=root / ".verifier/test-work",
+        (ROOT / ".verifier/test-work").mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="recovery-", dir=ROOT / ".verifier/test-work",
                                          ignore_cleanup_errors=True) as temporary:
             source, workspace = Path(temporary) / "source", Path(temporary) / "workspace"
             source.mkdir()
@@ -407,7 +302,7 @@ class RecordedReplyTests(unittest.TestCase):
                     patch.object(local_entry, "sweep_stale_directories", lambda log: None), \
                     patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
                 result = local_entry.verify(source, workspace=workspace, model="claude-opus-5", timeout=120,
-                                            instructions=root / "skills/scientific-verifier")
+                                            instructions=ROOT / "skills/scientific-verifier")
             self.assertEqual(result["status"], "incomplete", result)
             self.assertEqual(result["error"]["code"], "planner_incomplete")
             self.assertIn("HTTP 429", result["error"]["reason"])
@@ -419,62 +314,57 @@ class RecordedReplyTests(unittest.TestCase):
             self.assertIn("Reason: ", (run_directory / "partial-report.md").read_text(encoding="utf-8"))
 
 
-class SchemaShapeTests(unittest.TestCase):
-    """Python checks a structured reply against the schema Claude Code enforced, and refuses
-    every shape that schema refuses, including each one the free-text reader used to accept."""
+class TaskCritiqueShapeTests(unittest.TestCase):
+    """Python checks a task critique against the schema Claude Code enforced, and refuses every
+    shape that schema refuses, including each one the free-text reader used to accept."""
 
     def base(self, **changes):
-        return {"supported_grade": "B", "findings": ["f"] * len(CRITIQUE_RUBRIC["criteria"]),
-                "objections": [], "required_revisions": [], "coverage_gaps": [], "prior_verdicts": [],
-                "case_verdicts": {"c1": self.verdict(), "c2": self.verdict("leaked", "Ask it without naming the key.")},
+        return {"supported_grade": "B", "findings": ["f"] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
+                "objections": [], "required_revisions": [],
+                "case_verdicts": {"t1": self.verdict(), "t2": self.verdict("leaked", "Name the columns plainly.")},
                 **changes}
 
     def verdict(self, verdict="counts", replacement=""):
         return {"verdict": verdict, "reason": "because", "replacement": replacement}
 
-    def refused(self, value, case_ids=("c1", "c2")):
-        with self.assertRaises(Fault) as caught:
-            validate_critique(value, list(case_ids))
-        self.assertEqual(caught.exception.code, "critic_response_invalid")
+    def refused(self, value, case_ids=("t1", "t2")):
+        with self.assertRaises(Fault):
+            validate(value, task_critique_schema(list(case_ids)), "critique")
 
-    def test_verdicts_come_back_keyed_and_leave_in_packet_order(self):
-        value = validate_critique(self.base(), ["c2", "c1"])
+    def test_verdicts_leave_in_packet_order_and_none_is_no_grade(self):
+        packet = {"evidence": {"tasks": [{"case_id": "t2"}, {"case_id": "t1"}]}, "rubric": TASK_CRITIQUE_RUBRIC}
+        seen = {}
+
+        def process(command, **kwargs):
+            seen.update(command=command, timeout=kwargs["timeout"])
+            return 0, structured_stream(command, self.base(supported_grade="none")), b""
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+            value = critique_tasks(ClaudeCode(auth="subscription", process=process), packet)
+        self.assertIsNone(value["supported_grade"])
         self.assertEqual([(item["case_id"], item["verdict"]) for item in value["case_verdicts"]],
-                         [("c2", "leaked"), ("c1", "counts")])
-        self.assertEqual(validate_critique(self.base(required_revisions=["one", "two"]), ["c1", "c2"])
-                         ["required_revisions"], ["one", "two"])
-
-    def test_none_becomes_an_absent_grade_not_the_string_none(self):
-        self.assertIsNone(validate_critique(self.base(supported_grade="none"), ["c1", "c2"])["supported_grade"])
-
-    def test_every_earlier_concern_gets_exactly_one_verdict(self):
-        """The concern return acts on these verdicts, so a missing, extra or unknown one is refused."""
-        judged = {"verdict": "unanswered", "reason": "The design still keys no case to it."}
-        value = validate_critique(self.base(prior_verdicts=[judged]), ["c1", "c2"], 1)
-        self.assertEqual(value["prior_verdicts"], [judged])
-        for label, verdicts in (("none for one concern", []), ("two for one concern", [judged, judged]),
-                                ("an unknown verdict", [{**judged, "verdict": "partly"}]),
-                                ("no reason", [{"verdict": "answered"}])):
-            with self.subTest(label), self.assertRaises(Fault) as caught:
-                validate_critique(self.base(prior_verdicts=verdicts), ["c1", "c2"], 1)
-            self.assertEqual(caught.exception.code, "critic_response_invalid")
+                         [("t2", "leaked"), ("t1", "counts")])
+        self.assertEqual((value["rubric_ref"], seen["timeout"]), (TASK_CRITIQUE_REF, CRITIC_TIMEOUT_SECONDS))
+        command = seen["command"]
+        self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), task_critique_schema(["t2", "t1"]))
+        self.assertEqual(command[command.index("--tools") + 1], "")
 
     def test_the_shapes_a_free_text_reader_once_tolerated_are_refused(self):
-        """A lone string for a one-item list, a sixth finding, a `null` replacement and an extra key
+        """A lone string for a one-item list, an extra finding, a `null` replacement and an extra key
         in a verdict each cost a live reply before the schema; now the session corrects them."""
         verdicts = self.base()["case_verdicts"]
         for label, broken in (
                 ("lone string", self.base(required_revisions="one")),
-                ("extra finding", self.base(findings=["f"] * (len(CRITIQUE_RUBRIC["criteria"]) + 1))),
-                ("null replacement", self.base(case_verdicts={**verdicts, "c1": {**self.verdict(), "replacement": None}})),
-                ("extra key in a verdict", self.base(case_verdicts={**verdicts, "c1": {**self.verdict(), "verdict_note": ""}}))):
+                ("extra finding", self.base(findings=["f"] * (len(TASK_CRITIQUE_RUBRIC["criteria"]) + 1))),
+                ("null replacement", self.base(case_verdicts={**verdicts, "t1": {**self.verdict(), "replacement": None}})),
+                ("extra key in a verdict", self.base(case_verdicts={**verdicts, "t1": {**self.verdict(), "verdict_note": ""}}))):
             with self.subTest(label):
                 self.refused(broken)
 
     def test_shapes_that_are_not_a_rubric_answer_are_refused(self):
         for broken in (self.base(supported_grade="A+"), self.base(supported_grade=None),
                        self.base(findings=["only one"]), self.base(findings="not a list"),
-                       self.base(findings=["f"] * (len(CRITIQUE_RUBRIC["criteria"]) - 1)),
+                       self.base(findings=["f"] * (len(TASK_CRITIQUE_RUBRIC["criteria"]) - 1)),
                        self.base(objections="not a list"), self.base(objections=[""]), self.base(objections=["  "]),
                        self.base(required_revisions=[""]), self.base(required_revisions=[1]),
                        self.base(required_revisions={"a": "b"}), self.base(required_revisions=["x"] * 9),
@@ -486,18 +376,30 @@ class SchemaShapeTests(unittest.TestCase):
 
     def test_case_verdicts_that_do_not_match_the_packet_are_refused(self):
         rejected = self.verdict("beyond_scope", "Ask what the claim states.")
-        for label, given in (("missing case", {"c1": self.verdict()}),
-                             ("unknown case", {"c1": self.verdict(), "c2": rejected, "c9": self.verdict()}),
-                             ("unknown verdict", {"c1": self.verdict(), "c2": self.verdict("fine")}),
-                             ("rejected without replacement", {"c1": self.verdict(), "c2": self.verdict("naming")}),
-                             ("counted with replacement", {"c1": self.verdict(replacement="x"), "c2": rejected}),
-                             ("blank reason", {"c1": {**self.verdict(), "reason": " "}, "c2": rejected}),
-                             ("missing reason", {"c1": {"verdict": "counts", "replacement": ""}, "c2": rejected}),
-                             ("a list, as before the schema", [{"case_id": "c1", **self.verdict()},
-                                                               {"case_id": "c2", **rejected}]),
+        for label, given in (("missing task", {"t1": self.verdict()}),
+                             ("unknown task", {"t1": self.verdict(), "t2": rejected, "t9": self.verdict()}),
+                             ("unknown verdict", {"t1": self.verdict(), "t2": self.verdict("fine")}),
+                             ("a retired verdict", {"t1": self.verdict(), "t2": self.verdict("naming", "x")}),
+                             ("rejected without replacement", {"t1": self.verdict(), "t2": self.verdict("unsound")}),
+                             ("counted with replacement", {"t1": self.verdict(replacement="x"), "t2": rejected}),
+                             ("blank reason", {"t1": {**self.verdict(), "reason": " "}, "t2": rejected}),
+                             ("missing reason", {"t1": {"verdict": "counts", "replacement": ""}, "t2": rejected}),
+                             ("a list, as before the schema", [{"case_id": "t1", **self.verdict()},
+                                                               {"case_id": "t2", **rejected}]),
                              ("not an object", "all count")):
             with self.subTest(label):
                 self.refused(self.base(case_verdicts=given))
+
+    def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
+        """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
+        from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v2")
+        # A described search is judged by what Python recorded the planner running ("Critique" in local-contract.md).
+        self.assertIn("python_checked.search_record", TASK_CRITIQUE_RUBRIC["criteria"][3])
+        owner = (ROOT / "skills/scientific-verifier/references/evidence-rubric.md").read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"^\| `(\w+)` \|", owner, re.MULTILINE), list(TASK_CRITIQUE_RUBRIC["case_verdicts"]))
+        for grade, count in (("A", TASK_DIRECT), ("B", TASK_MINIMUM), ("C", TASK_MINIMUM)):
+            self.assertIn("| " + grade + " | at least " + str(count) + " |", owner)
 
 
 if __name__ == "__main__":

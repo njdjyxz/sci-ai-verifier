@@ -27,7 +27,7 @@ class ReleaseTests(unittest.TestCase):
         self.raw=export_bundle(self.h.runtime.store,[self.key],redistribution=REDISTRIBUTION)
         self.settings=load_configuration()
         self.store=Store(self.h.base/"release-consumer")
-        self.metadata={"catalog_id":"synthetic-fixture","version":"1.0.0","minimum_runtime":"0.7.0","maximum_runtime_exclusive":"0.8.0"}
+        self.metadata={"catalog_id":"synthetic-fixture","version":"1.0.0","minimum_runtime":"0.8.0","maximum_runtime_exclusive":"0.9.0"}
         self.assessment={"candidate_ref":self.key,"proposal":"propose_for_catalog","prepared_by":"verifier_agent",
                          "prepared_at":"2026-09-15","provenance":"Unit test only; confers no authority.",
                          "scope":"Fixture scope","coverage":"Fixture cases","uncertainty":"Not real evidence",
@@ -54,8 +54,8 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(Fault):
             validate(canonical(release))
         release=json.loads(self.release())
-        release["minimum_runtime"]="0.8.0"
-        release["maximum_runtime_exclusive"]="0.9.0"
+        release["minimum_runtime"]="0.9.0"
+        release["maximum_runtime_exclusive"]="1.0.0"
         with self.assertRaises(Fault) as caught:
             install(self.store,canonical(release),self.settings)
         self.assertEqual(caught.exception.code,"catalog_incompatible")

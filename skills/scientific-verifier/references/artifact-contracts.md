@@ -388,13 +388,10 @@ Do not manufacture an overall grade from claim grades. The summary may count cla
 
 The local profile uses the existing content-addressed journal and snapshot/claim
 records. `local_work` binds each claim to fetched reference objects, candidate and
-selection digests, and a terminal result or limitation. Candidate records include
-method version, scope, fixed cases, exact reference objects, positive/negative
-controls, qualification limitations and license metadata. A candidate with calculated
-answers also holds its `calculation` and `calculation_receipts`: the program's digest,
-the image, every output and whether each anchor was reproduced. A calculated case keeps
-its `arguments` and `decimals`, and so does its report row. Subject request and
-response receipts are published before advancing to another trial. Reports expose
+selection digests, and a terminal result or limitation. A candidate is a task design;
+its record includes method version, scope, fixed tasks, exact reference objects,
+qualification limitations and license metadata. Subject request and response receipts
+are published before advancing to another trial. Reports expose
 synthetic/live provenance, actual observed model/session identities when supplied
 by the CLI, and distinguish local comparison status from scientific grades.
 
@@ -434,27 +431,18 @@ report-card.md opens with an Environment line. It also carries `coverage`: each 
 for a section set aside, its reason, and the sections no claim holds, which report-card.md
 lists near the top. A manifest from before sections were named gets the claims whose quote
 starts in each section instead. Each claim row carries the `sections` it holds and, when only its
-number of independent cases held it below its source's grade, `size_limited`: the grade the
-source supports and the counting and generated cases it had and needed. A run whose subject image was built lists
+number of independent tasks held it below its source's grade, `size_limited`: the grade the
+source supports and the counting tasks it had and needed. A run whose subject image was built lists
 `skill_packages_from_configured_index` among its host limitations. A plan audit records the proposed grade, the evidence
 ceiling Python computed with its limiting reasons, the independent critique with its
 per-case verdicts, the `counted_cases` and the `case_ceiling` recomputed over them, the
 round number and the settled ceiling; `negotiation_refs` retains every round's audit,
 so the negotiation is readable after the fact. Each trial has request, response and
 score receipts; new or changed files are immutable objects with readable copies in
-that trial's artifact directory. A request carries the case's `answer_format` line. A
-score receipt holds `python_status`, the verdict of Python's reader, and
-`comparison_status`, the trial's status once "Reading replies" in `local-contract.md`
-has applied, with `read_by` (`python` or `ai_reader`) and, for a trial the AI reader
-read, `reading_ref`. That reading record holds its packet, the session's `reading`,
-copied `answer` and `reason`, the session and model identities, and `status`: `used`,
-`refused` with the check it failed, or `unavailable` with the fault. A comparison
-result carries `reading_summary`: the counted trials the AI reader read and changed,
-its readings by outcome, the refused and unavailable ones, and the status and accuracy
-of Python's reader alone. Report rows carry `python_status`, `read_by` and the
-reading, and report-card.md marks each AI-read trial. A claim-only answer the AI
-reader read keeps its reading inline, with `python_status`. Reports include attempted/obtained/evaluated/
-invalid/missing counts, whether each tested case was counted, the settled grade
+that trial's artifact directory. A request carries the task's input, with its
+`answer_format` line. A score receipt holds the trial's `comparison_status` and the task
+fields described above. Reports include attempted/obtained/evaluated/invalid/missing
+counts, whether each task was counted, the settled grade
 negotiation, required-grade satisfaction
 and independent critique and documentary packet/assessment references. Limitation
 records carry `asserted_by`, distinguishing a planner-ended claim from an observed
@@ -471,6 +459,6 @@ with `fallback_for` (the fault, its record and its reason), the fault kept in `f
 links to the per-attempt hash-chained timeline. Partial reports after failures
 explicitly keep `verification_complete: false` and do not change journal results.
 Catalog inventory receipts pin exact release bytes, versions and retired IDs to
-the run, including `requalification_refs` for controls rerun by this installation.
+the run, including `requalification_refs` for the checks this installation reran.
 Report `catalog_inventory_ref` identifies this immutable inventory.
 Prepared assessment and retirement records in a release do not confer claim grades.

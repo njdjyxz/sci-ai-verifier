@@ -19,9 +19,10 @@ SENSITIVE = re.compile(r"token|secret|password|authorization|api.?key|credential
 MAX_EVENTS = 20000
 MAX_LOG_BYTES = 32*1024*1024
 MAX_TEXT = 16000
-# Claim-only sessions run four at a time and each logs its stream. The file lock alone does not
-# serialize threads of one process on POSIX and gives up after five seconds, so emits also
-# queue on this lock, keeping the digest chain in order.
+# Threads of one process may log at once, as four parallel claim-only sessions did until their
+# retirement on 2026-10-05. The file lock alone does not serialize threads of one process on
+# POSIX and gives up after five seconds, so emits also queue on this lock, keeping the digest
+# chain in order.
 EMIT_LOCK = threading.Lock()
 
 

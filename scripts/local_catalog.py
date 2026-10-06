@@ -44,8 +44,8 @@ def parser():
     parsed.add_argument("--previous-sha256")
     parsed.add_argument("--catalog-id")
     parsed.add_argument("--version")
-    parsed.add_argument("--minimum-runtime",default="0.7.0")
-    parsed.add_argument("--maximum-runtime-exclusive",default="0.8.0")
+    parsed.add_argument("--minimum-runtime",default="0.8.0")
+    parsed.add_argument("--maximum-runtime-exclusive",default="0.9.0")
     return parsed
 
 

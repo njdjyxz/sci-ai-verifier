@@ -1,19 +1,19 @@
-# Local profile: implementation 0.7.0, with task tests
+# Local profile: implementation 0.8.0
 
 ## Computational execution and operator settings
 
 The public action accepts an operator-selected `--config` JSON file. Settings
 are validated and pinned into the subject identity. The planner cannot change
-them. A pinned, already installed Linux Docker image enables computational
-skills; absent configuration produces an operational limitation for those
-skills. Before a run starts, the packages a skill declares can be added to a copy
-of that image for its subject trials, as "Skill environment" below describes. The
-verifier never installs anything during a trial.
+them. A pinned, already installed Linux Docker image is what every claim's tests run
+in (`local-tasks.md`); without one nothing can run, and claims end on the documentary
+path or a recorded limitation. Before a run starts, the packages a skill declares or
+imports can be added to a copy of that image for its subject trials, as "Skill
+environment" below describes. The verifier never installs anything during a trial.
 
-Each computational trial has a new local container, with no network, no host
-credentials, no evaluator or expected-answer mount, an unprivileged user, a
-read-only root, bounded writable temporary directories, and memory/process/time
-limits. Only the immutable submitted files are mounted read-only. A private
+Each trial has a new local container, with no network, no host credentials, no
+expected-answer mount, an unprivileged user, a read-only root, bounded writable
+temporary directories, and memory/process/time limits. Only the immutable submitted
+files and the task's input files are mounted read-only. A private
 subject MCP server exposes commands inside this container. The native Claude
 CLI remains on the host and has no host shell or host Read tool in this mode.
 It must invoke the pinned submitted Skill before producing its answer.
@@ -24,7 +24,7 @@ Container cleanup occurs on success, failure and interruption, with a bounded
 container lifetime as a backstop. This is not a claim of VM-level isolation.
 
 Private subject tools are not public workflow tools and cannot select runs,
-containers, host programs, images or host paths. The frozen case input contains
+containers, host programs, images or host paths. The frozen task input contains
 no expected answer. External capabilities require explicit operator settings;
 the model cannot broaden that capability set.
 
@@ -42,20 +42,16 @@ or prove a declared read-only adapter is read-only. No planner-selected executab
 shell argument substitution or automatic app write/publish operation is exposed.
 App-specific credentials never enter a container or saved configuration.
 
-Generated Python evaluators receive only one scoring packet per process and run
-in separate containers from subjects. Cases need fetched/imported provenance.
-Positive, negative, boundary, invalid and held-out controls are mandatory. Control
-passing is mechanical qualification, not evidence of independent scientific
-validity. Subject trials are scored individually before all-trials aggregation.
-Operationally missing trials stay operational; invalid scientific observations
-remain in coverage denominators.
+Subject trials are scored one by one, by Python's fixed checks, before all-trials
+aggregation. Operationally missing trials stay operational; invalid scientific
+observations remain in coverage denominators.
 
 ## Skill environment
 
 When `sandbox_image` is set, setup prepares the image the skill's subject trials run
 in. It runs after the model probe and before the run or its planner exists, and it is
-the only step of a verification that downloads packages; "Packages a skill declares"
-in `resource-policy.md` owns that trust decision.
+the only step of a verification that downloads packages; "Packages a skill declares or
+imports" in `resource-policy.md` owns that trust decision.
 
 **Declarations.** Setup snapshots the skill exactly as `load_submitted_skill` will and
 reads nothing else. A declaration is an install command inside a fenced code block of
@@ -68,13 +64,22 @@ themselves (`pip`, `setuptools`, `wheel`, `uv`) are rejected, and so is a comman
 sets any option other than a harmless one such as `--upgrade` or `--quiet`, so a skill
 cannot choose the index. A `-r` naming a requirements file inside the snapshot is
 skipped, because that file is read on its own. A `--hash` value is dropped, because the
-verifier hashes what it downloads. At most 100 requirements are accepted. A module the
-skill imports but never declares is not installed. No model and no tool argument can
-add to the list.
+verifier hashes what it downloads. At most 100 requirements are accepted.
 
-**Status.** `not_needed` when nothing is declared; `all_rejected` when every
-declaration was rejected; `disabled` when requirements exist but `package_index` is
-null; `source_unavailable` when setup cannot snapshot the skill, in which case
+**Imports.** A top-level module the skill's code imports, in its `.py` files and the
+Python code blocks of its Markdown, that no declared requirement provides is added as a
+requirement when the reviewed table of "Packages a skill declares or imports" in
+`resource-policy.md` lists it, as the distribution that table names, such as
+`scikit-learn` for `sklearn`. Its source reads `import <module>`. A module the table does
+not list is reported, never guessed. With nothing declared, a build happens only when the
+operator's image lacks a listed module the skill imports, and it then holds every listed
+module the skill imports, because the base it starts from holds none. No model and no
+tool argument can add to the list. Run `90c60cbe`'s dose-response skill imports `numpy`
+and `scipy` and declares neither, so until this its own fitting script could not run.
+
+**Status.** `not_needed` when nothing is declared and the operator's image has every
+listed module the skill imports; `all_rejected` when every declaration was rejected and
+no import needs a build; `disabled` when requirements exist but `package_index` is null; `source_unavailable` when setup cannot snapshot the skill, in which case
 `load_submitted_skill` records the fault as it would anyway; otherwise `built`. Only
 `built` gives subject trials a different image; otherwise they run in `sandbox_image`.
 
@@ -104,9 +109,9 @@ again and nothing accumulates. Setup also removes environment images more than a
 that a killed verification left behind.
 
 **Subject trials only.** The built image serves the skill's subject trials and nothing
-else. Calculations, generated evaluators, scoring and catalog requalification keep the
-operator's `sandbox_image`, so no package the skill chose runs inside code that produces
-an expected answer or scores a trial. The built image is part of the subject identity, so
+else. Task generators, reference solutions, scoring and catalog requalification keep
+the operator's `sandbox_image`, so no package the skill chose runs inside code that
+produces an expected answer or scores a trial. The built image is part of the subject identity, so
 the identity checks catch any change, and `environment_digest` includes the environment
 record.
 
@@ -133,45 +138,30 @@ Python computes an **evidence ceiling** from facts it recorded itself. Only that
 ceiling, or a grade the last critique of the same design supported, may be proposed;
 both overclaiming and aiming low are refused before any session is spent:
 
-- **A** needs every expected answer quoted token-exactly from reference bytes Python
-  itself retrieved over public HTTPS, calculated by Python from a formula so quoted
-  after reproducing worked examples so quoted, as `qualify_local_candidate` in
-  `tool-contracts.md` specifies, or planted by Python in a task's files from a model so
-  quoted, with the reference solution recovering it (`local-tasks.md`); scored by an
-  installed comparison method or a task's fixed checks, with at least three trials of
-  this model subject.
-- **B** allows an operator-imported pinned dataset, or a generated Python evaluator
-  whose controls all pass, with the same trial minimum. A planner-authored scorer
-  cannot reach A, because direct validation excludes AI judgment in scoring. A
-  calculated answer is not a scorer: the planner writes the program that produces a
-  key, the quoted worked examples check it mechanically, scoring stays installed, and
-  the report says the planner wrote it. Nor is the AI reader of "Reading replies": it
-  reports which answer a reply gives, against a key and a rule fixed before any trial.
-- **C** covers any reproducible comparison, including a single trial, a substring
-  rather than token-exact quote, and a candidate reused offline whose reference origin
-  was never recorded.
-- Failed controls support no execution grade.
+- **A** needs every expected value planted by Python in a task's files from a model
+  quoted token-exactly from reference bytes Python itself retrieved over public HTTPS,
+  with the reference solution recovering it, or quoted token-exactly from such bytes
+  (`local-tasks.md`); scored by a task's fixed checks, with at least three trials of
+  this model subject. The planner writes the generator, as it once wrote calculations:
+  Python runs it, the quoted model bounds it, the critique reads it, and the report says
+  who wrote it. It is not a scorer, since Python's checks score every trial.
+- **B** allows an expected value quoted from an operator-imported pinned dataset, with
+  the same trial minimum.
+- **C** covers any other reproducible comparison, such as a design reused offline whose
+  reference origin was never recorded.
 
-Those are the reference and trial requirements. Each grade also needs a number and
-kind of counting cases, owned by "Cases each grade requires" in `evidence-rubric.md`.
+Those are the reference and trial requirements. Each grade also needs a number of
+counting tasks, owned by "Cases each grade requires" in `evidence-rubric.md`.
 The ceiling is the weaker of the two. The local planner receives that section and
 "Negotiating the grade" pinned with its other instructions, since its session cannot
 read files.
 
-For a design of questions, Python first measures what `beyond_scope` describes, a rule *No more* in
-`evidence-rubric.md` owns and `select_local_candidate` in `tool-contracts.md` specifies.
-Fresh no-tool sessions that see only the claim answer each case twice, and a case any
-answer misses does not count. The critique judging that design never sees those
-answers. A session that cannot complete, or that another model answered after a
-refusal, leaves its case unmeasured, not rejected, so a provider fault cannot lower a
-grade.
-
-A fresh no-tool session then receives the claim, the evidence design, the reference
-provenance, the justification and the design's scope and limitations whole, Python's
-ceiling, Python's search record, the concerns earlier reviewers raised
-about earlier versions of this design (their objections, required revisions and coverage
-gaps, and every case they did not count, with its verdict, reason and suggested
-replacement), each of which it judges answered or not, and the fixed critique rubric.
+A fresh no-tool session then receives the claim with the text of its sections, the task
+design whole (`local-tasks.md` lists it), the reference provenance, the justification and
+the design's scope and limitations, Python's ceiling, Python's search record, the concerns
+earlier reviewers raised about earlier versions of this design (their objections, required
+revisions, and every task they did not count, with its verdict, reason and suggested
+replacement), and the fixed critique rubric.
 The search record is read from this attempt's workflow log, not from the planner's notes:
 every WebSearch query the planner ran, marked with the claim it was working on (the one its
 last verifier tool call named), and every reference, resource or asset fetch Python served,
@@ -189,51 +179,42 @@ a grade it does not state. Withholding the letter reduces anchoring; it does not
 the signal. The planner's notes are held to the same rule, which step 3 of "Negotiating
 the grade" in `evidence-rubric.md` owns: run b0955d2f's planner told one reviewer "The
 previous round settled at C", and a proposal whose notes mention an earlier review is
-now refused before its critique starts. It sees every case, each with its ID and answer form, and returns the
-strongest grade the evidence actually supports plus one verdict per case. The settled
-ceiling is the weakest of the proposal, Python's ceiling recomputed over the cases the
-critique counted and the claim-only answers did not miss, and that critique's grade.
-A task design's critique also sees the text of the claim's sections, judges earlier
-concerns in its findings rather than one by one, and lists no facts: `local-tasks.md`
-says what it receives.
+now refused before its critique starts. It returns the strongest grade the evidence
+actually supports plus one verdict per task. The settled ceiling is the weakest of the
+proposal, Python's ceiling recomputed over the tasks the critique counted, and that
+critique's grade.
 
 When the settled grade is below the proposal, the planner revises before it accepts, as
 step 4 of "Negotiating the grade" in `evidence-rubric.md` says: a stronger design and its
 new ceiling earn another round, and accepting the grade that design settled at settles
-immediately without another session. For a design of questions, a critique that agrees with a proposal below A but
-names coverage gaps, or finds an earlier concern unanswered, returns the claim, and its
-grade is accepted only after a new search (the returns under `select_local_candidate` in
-`tool-contracts.md`).
-Repeating a proposal on
-a design already critiqued is refused and consumes neither a session nor a round, so
-the budget of one round per rubric grade bounds real revisions rather than repetition.
-Rounds with rejected cases, whether the critique or the claim-only answers rejected
-them, are also counted against the two replacement rounds in `evidence-rubric.md`; once
-those are spent, a round that still rejects cases settles the plan. Accepting a design that settled at no grade leaves the plan
+immediately without another session. Repeating a proposal on a design already
+critiqued is refused and consumes neither a session nor a round, so the budget of one
+round per rubric grade bounds real revisions rather than repetition. Rounds with
+rejected tasks are also counted against the two replacement rounds in
+`evidence-rubric.md`; once those are spent, a round that still rejects tasks settles
+the plan. Accepting a design that settled at no grade leaves the plan
 ungraded: it still executes and produces comparison evidence, and the claim continues
 to the documentary path. An unavailable critique is an operational limitation.
 
 The critique's reply has a fixed shape that Claude Code enforces, as the reply-shape
 paragraph under `select_local_candidate` in `tool-contracts.md` describes: a reply outside
 it goes back to the same session to be corrected, and a reply that judges the design is
-never re-rolled, whatever grade it gives. The critique session has ten minutes; the documentary assessor keeps two; each
-claim-only session has two, four running at once. Judging every case, listing the claim's
-facts and giving each earlier concern a verdict took live critiques 90 to 210 seconds on
-2026-09-30 and 2026-10-01, and two replays judging eleven concerns ran past the five minutes
-critiques then had; the two-minute deadline they once shared with the assessor killed one
-in run 74eadedd.
+never re-rolled, whatever grade it gives. The critique session has ten minutes and the
+documentary assessor two. Live critiques took 90 to 210 seconds on 2026-09-30 and
+2026-10-01, and a live task critique 107 seconds on 2026-10-05; the two-minute deadline
+critiques once shared with the assessor killed one in run 74eadedd.
 
-The installed policy then requires every planned trial and case to be scored. Missing
-observations are operational. Invalid observations remain counted. Only counting cases
-enter accuracy, consistency and status; the others still run and are reported with
+The installed policy then requires every planned trial of every task to be scored.
+Missing observations are operational. Invalid observations remain counted. Only counting
+tasks enter accuracy, consistency and status; the others still run and are reported with
 their verdicts. The achieved grade is the settled ceiling, fixed before any trial ran,
 and nothing observed afterwards moves it: invalid observations and disagreement
-between a case's trials can change the status, never the grade, and each is recorded
+between a task's trials can change the status, never the grade, and each is recorded
 among the execution limits. `evidence-rubric.md` owns that rule; a skill failing every
 trial against an A-grade reference keeps grade A. The verdict is pass only
-if all scored trials pass, fail if at least one fails and none is invalid, and
-inconclusive if any is invalid, each trial's status being the one "Reading replies"
-settles. No eligible grade grants no scientific verdict and
+if all scored trials pass, fail if at least one fails, whatever the others, and
+inconclusive if none fails and any is invalid: under unanimity one wrong result
+decides the claim. No eligible grade grants no scientific verdict and
 requests a separate documentary assessment; it never silently invents a weaker grade.
 Synthetic fixture observations never receive a grade.
 
@@ -269,18 +250,18 @@ tool-contracts.md.
 A claim that a subject-trial fault still stops after the one re-run of "Subject
 boundary" receives a **fallback** documentary assessment, so it still gives the reader something to refer to.
 `write_report_card` runs it after the planner has finished, so Python assembles the packet
-itself. Its evidence is the reference quote each of the claim's planned cases was keyed to,
-already proved exact at qualification, at most eight of them. Its limitations are Python's
+itself. Its evidence is the quotes the claim's design rests on, the generator's model and
+each output's quoted value or rule, already proved exact at qualification, at most eight. Its limitations are Python's
 own account of the stop. No subject answer enters it. Assessor, rubric and grade are those
 of any D. The record keeps the runner fault in its `fault` field and reads `not_obtained`
 for accuracy, consistency and completeness, because execution was attempted and lost. It
 names itself a fallback. It is not attempted, and the reason is recorded, when documentary
-assessment is disabled, when the claim never qualified a candidate, or when less time
+assessment is disabled, when the claim never qualified a design, or when less time
 remains before the attempt deadline than one assessor session plus five minutes for the
 report. An assessor failure leaves the fault record as the claim's outcome. Run 84e90683's
 ring-option claim is why: both attempts timed out, and the claim reported nothing.
 
-This contract defines version 0.7's implemented local mechanisms and enforceable
+This contract defines version 0.8's implemented local mechanisms and enforceable
 boundaries. The repository's DEVELOPMENT-PLAN.md retains the full project goal
 and records automated validation separately from pending manual CLI/desktop,
 container/app and domain-scientific acceptance.
@@ -295,25 +276,21 @@ file for the calling agent's plain-language summaries, unless `html_report` is f
 
 ## Scope and evidence
 
-The local implementation supports text and computational skills, pinned resources, the
-installed comparison methods and qualified generated Python evaluators. Those methods
-and the answer form each one requires are enumerated in `tool-contracts.md` under
-`qualify_local_candidate`, which owns that list; do not restate it here.
-The planner extracts source-grounded claims, as "Claims" below describes, searches for
-independent primary references with WebSearch, and proposes known-answer cases in one of
-those forms, or tasks (`local-tasks.md`).
-Python retrieves public HTTPS reference bytes itself; agent-authored quotes or
-search summaries alone cannot qualify a candidate. Reference quotes must occur in
-retrieved material, and so must every expected value except one Python calculated from
-a quoted formula, as `qualify_local_candidate` specifies. At least three distinct cases, positive
-and negative controls, numeric boundary controls, exact resource hashes, source
-URLs, versions, license notes and scope limitations are required.
+The local implementation supports skills of text and scripts, run in a container,
+pinned resources, and task tests (`local-tasks.md`). The planner extracts
+source-grounded claims, as "Claims" below describes, searches for independent primary
+references with WebSearch, and designs tasks whose expected values Python plants from a
+quoted model or takes from a quote. Python retrieves public HTTPS reference bytes itself;
+agent-authored quotes or search summaries alone cannot qualify a design. Every quote,
+and every quoted value, must occur in retrieved material. A reference solution that
+passes every output, exact resource hashes, source URLs, versions, license notes and
+scope limitations are required.
 
 `qualified_local` establishes reproducible mechanics and quote provenance only.
-It does not establish that a source is scientifically authoritative, that an input
-is semantically matched to its reference, or that coverage is representative.
+It does not establish that a source is scientifically authoritative, that a generator
+implements its model, or that coverage is representative.
 Those are what the independent critique judges when the grade is settled; a
-qualified candidate that was never graded carries no scientific status. Reports
+qualified design that was never graded carries no scientific status. Reports
 separate comparison outcomes from scientific status and grade.
 No local registration changes the reviewed global registry.
 An empty catalog initiates discovery without a manual seed. Inadequate evidence,
@@ -325,13 +302,10 @@ claim-local limitations. Every accepted claim must be accounted for.
 The planner extracts the claims; Python checks their quotes and their sections, never
 their meaning. A claim is a group of whole sections of `SKILL.md`, and every section is in
 one claim or set aside with a reason, as "Claims" in `local-tasks.md` says; that section
-owns the rule and its limit. With a container configured, each claim is tested by tasks
-that run the skill on generated or fetched input (`local-tasks.md`). Without one nothing
-can run, so a claim is tested by a design of questions under `qualify_local_candidate` in
-`tool-contracts.md`: its cases spread over the facts the claim states, each fact a source
-can key getting a case before any fact gets a second, and its `coverage` justification
-records which case tests each fact. Python refuses a design of questions, and a generated
-evaluator, while a container is configured (`tasks_required`).
+owns the rule and its limit. Each claim is tested by tasks that run the skill on
+generated or fetched input (`local-tasks.md`). Without a container nothing can run, so a
+claim ends on the documentary path or a recorded limitation. Designs of questions,
+calculated answers and generated evaluators were retired on 2026-10-05.
 
 The report lists each claim's sections, and the sections set aside with their reasons.
 
@@ -346,21 +320,21 @@ candidate can be reused offline by digest, including its reference evidence.
 
 ## Subject boundary
 
-Each case starts a fresh Claude Code process in a temporary workspace outside the
+Each trial starts a fresh Claude Code process in a temporary workspace outside the
 controller project. A generated local plugin contains a recognized `submitted`
 skill, its original instruction body and supporting files. The wrapper
 replaces execution-affecting frontmatter; original bytes and the transformation
 digest remain in the receipt. Explicit Skill-tool invocation and a successful
 matching tool result are required. A prompt mentioning the skill is insufficient.
 Dynamic skill shell interpolation and nested Claude configuration are unsupported.
-Dependencies come from the pinned image, plus the packages the skill declares when the
-operator has configured a package index ("Skill environment"). No trial installs
+Dependencies come from the pinned image, plus the packages the skill declares or imports
+when the operator has configured a package index ("Skill environment"). No trial installs
 packages, and the subject's command tool says so: in run 84e90683 every trial of the ring-option claim
 first tried to install RDKit, and two spent their whole limit on the attempt and on
 working the answer out by hand.
 
-Text sessions expose Skill and a bounded private submitted-file reader. Computational sessions
-expose Skill and the private container/resource/app tools described above. Host
+Subject sessions expose Skill and the private container/resource/app tools described
+above. Host
 shell, unrestricted reads, delegation and unrelated MCP tools are unavailable.
 The controller has WebSearch
 and the exact internal verifier MCP tools, with no file or shell tools. Separate
@@ -369,7 +343,7 @@ explicit system prompts, restricted mode, all-path CLAUDE.md exclusions and a
 fresh empty repository root exclude unrelated local customizations.
 Claude Code v2.1.268 or later is required: it is the earliest version the verifier's
 reply schemas were tested on. Managed enterprise configuration and
-the CLI itself remain part of the trusted host; the text session is not an OS sandbox.
+the CLI itself remain part of the trusted host; the CLI session is not an OS sandbox.
 Before the planner starts, the runner asks the pinned model for a one-word reply in a
 fresh no-tool session. A CLI that cannot serve that model stops the run as
 `model_unavailable` before any planner or subject cost; run a8036722 once died three
@@ -387,14 +361,13 @@ the refusal recorded on the trial. Run 3dc02567 showed all three: Opus 5 refused
 R-group question, Opus 4.8 answered two trials in its place, and Opus 5 answered the
 third itself.
 
-No reference answer, candidate, evaluator file, verifier conversation or arbitrary
-planner instruction is included in subject input. Subject input is the frozen
-case input, the answer-format line Python writes from the case's answer type, and the
-pinned skill. A task's input is its job, the paths of its files, mounted read-only at
-`/task`, and its output fields; the trial's results come back in `/work/results.json`
-(`local-tasks.md`). A process deadline and output ceiling are
+No expected value, design, generator, solver, verifier conversation or arbitrary
+planner instruction is included in subject input. Subject input is the pinned skill
+and the task's input: its job, the paths of its files, mounted read-only at `/task`, its
+output fields and the line Python writes about them. The trial's results come back in
+`/work/results.json` (`local-tasks.md`). A process deadline and output ceiling are
 enforced; timeout/cancellation terminates the process tree. A trial that reaches its
-deadline is `claude_timeout`, and its record names the case, the trial and the
+deadline is `claude_timeout`, and its record names the task, the trial and the
 `subject_timeout_seconds` it reached. That limit is this verifier's setting, not a
 property of the skill, and the report says so. An interrupted trial
 request is retained and is never silently replayed. Restarting verification
@@ -408,55 +381,10 @@ because it is evidence; neither is a security fault or a failure of Python's own
 The first attempt's record and receipts stay in the report beside the retry's. A claim
 is not retried, and the report says why, when its plan settled no execution grade (the
 documentary step after it needs the planner), when the subject-call budget cannot
-cover it, or when less time remains before the attempt deadline than one minute per
-trial, five per task trial, plus five for the report. A claim the re-run does not clear, or that is not
+cover it, or when less time remains before the attempt deadline than five minutes per
+trial plus five for the report. A claim the re-run does not clear, or that is not
 re-run, then receives the fallback documentary assessment described under
 "Independent documentary path".
-
-## Reading replies
-
-Every reply scored by an installed comparison method is read in two steps.
-
-**Python's reader** finds the reply's answer line and compares it with the expected
-answer by the case's answer type, under the rules `qualify_local_candidate` in
-`tool-contracts.md` owns. A reply it passes is a pass, and nothing overturns that.
-
-**The AI reader** reads every other trial of a counted case, one Python's reader
-failed or could not read, once all of the claim's trials have run. Each reading is a
-fresh no-tool session on the pinned model, two minutes long, four at a time. It sees
-the case's question, the answer-format line, the answer type, the expected answer and
-the reply. It never sees the claim, the skill, the design, the grade, any other trial
-or Python's verdict. Its reply has a fixed schema, enforced like the critique's: it
-says whether the answer the reply commits to `matches` the expected answer, `differs`
-from it, or is `no_single_answer` (several answers, a hedge, a refusal or none), and
-gives that answer copied from the reply, with a reason. It never judges whether the
-expected answer is right, and it cannot change it.
-
-An accepted reading decides the trial: `matches` is `pass`, `differs` is `fail` and
-`no_single_answer` is `invalid`. Python refuses a reading, and the trial keeps Python's
-verdict, when:
-- the copied answer is not in the reply;
-- another model answered;
-- or Python's reader settles the copied answer the other way. A `matches` whose copied
-  answer Python reads as a different number or option is refused, and so is a
-  `differs` whose copied answer Python's reader passes.
-
-A reader session that fails also leaves Python's verdict. No reading is ever retried,
-because reading again until the answer changes is verdict shopping. A synthetic run has
-no reader, since its status is withheld anyway. The claim-only answers under
-`select_local_candidate` are read the same way, except `UNDETERMINED` and the reserved
-`none of these`, which say what they mean.
-
-**What a reading changes.** The expected answers and the comparison rule are fixed
-before any trial runs. A reading only establishes what a reply says, so it never moves
-the grade; "AI-involvement disclosure" in `evidence-rubric.md` owns that rule. Every
-reading is disclosed:
-- each AI-read trial's score receipt and report row carry the reading, the copied
-  answer, the reason and Python's own verdict;
-- the result's `reading_summary` counts the counted trials the AI reader read and
-  changed, and gives the status and accuracy Python's reader alone would give;
-- a reading that changed a counted trial makes `ai_involvement.verdict` a sentence
-  saying so, and adds `trials_decided_by_ai_reader` to the execution limits.
 
 ## Authentication and storage
 
@@ -467,8 +395,8 @@ appropriate process environment, never arguments or saved configuration.
 Each process receives an allowlisted environment and isolated configuration.
 Authentication requires user setup; the verifier does not extract saved secrets.
 
-`.verifier/candidates/` holds immutable qualified configurations and private
-reference evidence. `.verifier/subject-runs/` holds sanitized execution receipts;
+`.verifier/candidates/` holds immutable qualified task designs and private reference
+evidence. `.verifier/subject-runs/` holds sanitized execution receipts;
 temporary executable workspaces are removed after each process. On Windows a child
 process can hold a file briefly after its parent exits, so removal is retried for a
 bounded time. Removal also uses the extended-length path form: Claude Code saves a large
@@ -480,7 +408,11 @@ failed one. Each verification then starts by removing this verifier's own
 `stale_temporary_swept`; nothing younger is touched, so a run in progress is never swept.
 Configured candidate bundles are fetched by exact digest, requalified and cached
 under `.verifier/catalog-cache/` for offline reuse. They contain candidates and
-their referenced objects only. Imported review assertions never confer scientific
+their referenced objects only, a task design's input files among them. Results
+recorded on another machine are not evidence here, so requalifying a task design
+runs its generator and reference solution again in this machine's container: the
+generator must rebuild the bundled files and planted values exactly, and the
+solution must pass every output again. Imported review assertions never confer scientific
 approval. Operator settings pin independently trusted reviews separately.
 
 `scripts/local_catalog.py` lists, exports, imports, proposes, revises and reads the

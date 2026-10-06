@@ -1,6 +1,8 @@
 """Local workflow acceptance: real persistence, synthetic independent observations."""
 
+import base64
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -11,9 +13,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.agent import Runtime
-from sci_ai_verifier.common import Fault, canonical
+from sci_ai_verifier.common import Fault, canonical, digest
 from sci_ai_verifier.local_entry import BoundRuntime, PublicRuntime
 from sci_ai_verifier.local_candidates import fetch_public
+from sci_ai_verifier.local_tasks import RESULTS_FILE, RESULTS_INSTRUCTION
 from sci_ai_verifier.mcp import Server
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,9 +24,42 @@ QUOTE = "The skill returns a plain decimal for each reference-table query."
 # Two sections, so a manifest can hold two claims ("Claims" in local-tasks.md).
 SKILL = QUOTE + "\n\n## Notes\nThe skill also documents its decimal output.\n"
 REFERENCE = "Independent fixture reference: alpha is 1.0, beta is 2.0, gamma is 3.0, zeta is 4.0, eta is 5.0."
-# Three rows suffice for C; grade A needs five counting cases, per evidence-rubric.md.
+TABLE = {"alpha": "1.0", "beta": "2.0", "gamma": "3.0", "zeta": "4.0", "eta": "5.0"}
+# Two counting tasks suffice for B and C; grade A needs three, per evidence-rubric.md.
 ROWS = ("alpha", "beta", "gamma")
 FIVE_ROWS = ROWS + ("zeta", "eta")
+IMAGE = "sha256:" + "b" * 64
+
+
+def row_of(given):
+    """The table row a task's job names."""
+    return re.search(r"value for (\w+)\.", given["task"]).group(1)
+
+
+def results(value):
+    """A results file holding `value`, as a trial or the reference solution writes it."""
+    return json.dumps({"value": value}).encode()
+
+
+def task(name, sections, reference_ref):
+    """One task: report a row of the fixture table, its value quoted from the fixture reference."""
+    return {"case_id": name, "job": "Report the fixture table's value for " + name + ".", "sections": sections,
+            "outputs": [{"field": "value", "type": "number", "value": TABLE[name], "reference_ref": reference_ref,
+                         "source_quote": REFERENCE}],
+            "applicability": "Fixture table row"}
+
+
+class TableRunner:
+    """Stands in for the operator's container: the reference solution looks each row up in the table."""
+
+    def __init__(self, settings=None, *, log=None, sandbox_factory=None):
+        pass
+
+    def generate(self, code, arguments):
+        raise AssertionError("The fixture's tasks quote their values and have no generator.")
+
+    def solve(self, code, given, files):
+        return {"exit_code": 0, "stderr": "", "results": results(float(TABLE[row_of(given)])), "image_id": IMAGE}
 
 
 class Subject:
@@ -41,11 +77,13 @@ class Subject:
             raise KeyboardInterrupt()
         if self.mode == "unavailable":
             raise Fault("claude_unavailable", "Unavailable fixture")
-        answer = {"alpha": "1.0", "beta": "2.0", "gamma": "3.0", "zeta": "4.0", "eta": "5.0"}[request["case_input"]["input"]]
-        # "prose" gives the right number inside a sentence, which Python's reader never reads.
-        observation = {"text": "999" if self.mode == "wrong" else "The value is " + answer if self.mode == "prose" else answer,
-                       "response_id": "synthetic-" + str(len(self.requests)), "model_id": "synthetic",
-                       "invocation_verified": self.mode != "unverified", "synthetic": True}
+        # "silent" writes no results file, so its trial is unreadable rather than wrong.
+        value = 999.0 if self.mode == "wrong" else float(TABLE[row_of(request["case_input"])])
+        written = [] if self.mode == "silent" else [results(value)]
+        observation = {"text": "Wrote the results file.", "response_id": "synthetic-" + str(len(self.requests)),
+                       "model_id": "synthetic", "invocation_verified": self.mode != "unverified", "synthetic": True,
+                       "artifacts": [{"path": RESULTS_FILE, "sha256": digest(raw), "bytes": len(raw),
+                                      "base64": base64.b64encode(raw).decode()} for raw in written]}
         if self.models is not None:
             observation["observed_model_ids"] = self.models[min(len(self.requests), len(self.models)) - 1]
         return observation
@@ -61,6 +99,10 @@ class LocalTests(unittest.TestCase):
         self.source = self.base / "source"
         self.source.mkdir()
         (self.source / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        # No container runs here: the reference solution is the table lookup above.
+        runner = patch("sci_ai_verifier.local_tasks.SandboxRunner", TableRunner)
+        runner.start()
+        self.addCleanup(runner.stop)
         self.subject = Subject()
         self.runtime = Runtime(self.base / "data", self.source, ROOT / "skills/scientific-verifier",
                                profile="local", subject_adapter=self.subject)
@@ -95,14 +137,13 @@ class LocalTests(unittest.TestCase):
             with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(REFERENCE.encode(), REFERENCE)):
                 self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/reference", version="fixture-v1", license="Unknown; private analysis only")
             self.reference_ref = self.data["reference_ref"]
-        reference_ref = self.reference_ref
-        arguments = {"claim_id": self.claim_id, "name": "Fixture table", "scope": "Reference-table queries", "method": "numeric",
+        sections = next(claim["sections"] for claim in self.claims if claim["claim_id"] == self.claim_id)
+        arguments = {"claim_id": self.claim_id, "name": "Fixture table", "scope": "Reference-table queries",
                      "limitations": "Fictional reference demonstrates mechanics only.",
-                     "cases": [{"case_id": name, "input": name, "expected": str(index)+".0", "reference_ref": reference_ref,
-                                "source_quote": REFERENCE, "applicability": "Fixture table row"}
-                               for index, name in enumerate(rows, 1)]}
+                     "solver": {"code": "print('fixture reference solution')"},
+                     "cases": [task(name, sections, self.reference_ref) for name in rows]}
         arguments.update(overrides)
-        self.call("qualify_local_candidate", **arguments)
+        self.call("qualify_local_tasks", **arguments)
         return self.data["candidate_ref"]
 
     def select(self, key, target_grade="C", **overrides):
@@ -177,8 +218,9 @@ class LocalTests(unittest.TestCase):
         self.assertTrue(self.data["verification_complete"])
         report_path = Path(self.data["report_markdown_path"])
         self.assertIn("SYNTHETIC", report_path.read_text())
-        self.assertIn("| alpha | 1.0 | 1.0 | pass |", report_path.read_text())
-        self.assertEqual(self.data["report"]["claims"][0]["tests"][0]["observed"], "1.0")
+        self.assertIn("| alpha | 1 | pass | none | none | yes |", report_path.read_text())
+        first = self.data["report"]["claims"][0]["tests"][0]
+        self.assertEqual((first["expected"], first["outputs"][0]["found"]), ({"value": "1.0"}, 1.0))
         report_path.unlink()
         resumed = self.runtime.call("resume_verifier_run", {"run_id": self.data["run_id"]})
         self.assertTrue(resumed["data"]["verification_complete"])
@@ -188,10 +230,10 @@ class LocalTests(unittest.TestCase):
         self.assertIn("local", report["content"])
         self.assertTrue(report_path.exists())
         for request in self.subject.requests:
-            # The case input and the line Python writes from its answer type, never the key.
-            self.assertEqual(set(request["case_input"]), {"input", "answer_format"})
-            self.assertEqual(request["case_input"]["answer_format"],
-                             "Write only the answer on the first line of your reply: the number.")
+            # The task's job, paths and fields, and the line Python writes for every task, never the key.
+            self.assertEqual(set(request["case_input"]),
+                             {"task", "input_files", "results_file", "results_format", "answer_format"})
+            self.assertEqual(request["case_input"]["answer_format"], RESULTS_INSTRUCTION)
             self.assertNotIn(REFERENCE, canonical(request).decode())
             self.assertNotIn("candidate_ref", canonical(request).decode())
         self.data = self.runtime.call("start_verifier_run", {"source_path": str(self.source)})["data"]
@@ -246,403 +288,24 @@ class LocalTests(unittest.TestCase):
         self.call("write_report_card")
         self.assertEqual(len(self.data["report"]["claims"]), 2)
 
-    def test_unsupported_method_saved_as_rejected(self):
-        self.extract()
-        self.candidate(method="execute-python")
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(self.data["candidate"]["qualification_problems"])
-
-    def reference(self):
-        """Retrieve the fixture reference so a later qualification can cite it."""
-        self.extract()
-        self.call("list_local_candidates", claim_id=self.claim_id)
-        with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(REFERENCE.encode(), REFERENCE)):
-            self.call("fetch_local_reference", claim_id=self.claim_id, url="https://example.org/reference",
-                      version="fixture-v1", license="Unknown; private analysis only")
-        self.reference_ref = self.data["reference_ref"]
-
-    # Only the first is quoted in REFERENCE; distractors need no provenance of their own.
-    OPTIONS = ["alpha is 1.0", "beta is 2.0", "delta is 4.0", "epsilon is 5.0", "none of these"]
-
-    def rows(self, expected, *, options=None, prompt=None, count=3):
-        # Inputs must stay distinct, so the index varies the prompt rather than the answer.
-        out = []
-        for index in range(count):
-            text = prompt(index) if prompt else "Fixture prompt %d" % index
-            case = {"case_id": "case-%d" % index, "input": text, "expected": expected,
-                    "reference_ref": self.reference_ref, "source_quote": REFERENCE,
-                    "applicability": "Fixture table row"}
-            if options is not None:
-                case["options"] = options
-            out.append(case)
-        return out
-
-    def menu(self, options):
-        return lambda index: "Row %d? Reply with the number of: %s" % (
-            index, "; ".join("%d) %s" % (n, value) for n, value in enumerate(options, 1)))
-
-    def test_a_plain_word_is_a_term_not_an_exact_token(self):
-        # "molar" answered as "Molar" failed 3 of 3 in live run fb64115f. A single-case word
-        # has more than one surface form, so it is compared as a term, regardless of case.
-        self.reference()
-        self.candidate(lookup=False, method="exact", cases=self.rows("alpha"))
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("is a `term`" in problem for problem in self.data["candidate"]["qualification_problems"]))
-        self.candidate(lookup=False, method="term", cases=self.rows("alpha"))
-        self.assertEqual(self.data["outcome"], "qualified_local", self.data["candidate"]["qualification_problems"])
-
-    def test_an_open_answer_whose_surface_form_is_forced_still_qualifies(self):
-        # Generation beats recognition, so a number stays an open answer rather than a menu.
-        self.reference()
-        self.candidate(lookup=False, method="exact", cases=self.rows("1.0"))
-        self.assertEqual(self.data["outcome"], "qualified_local")
-        # The key, a truncation and inline code; a suffix, a prefix and a sentence, which must
-        # not pass; and bold, bold then an explanation, a fence, a label and an explanation below.
-        self.assertEqual({control["positive_negative_boundary_checks"]
-                          for control in self.data["candidate"]["controls"]}, {11})
-
-    def test_an_exact_answer_is_read_from_its_answer_line_with_every_character_kept(self):
-        """Run 0a243b7e: `R1` then an explanation, which the prompt invited, scored fail. Presentation
-        comes off the line's ends one layer at a time; the token itself is never changed."""
-        from sci_ai_verifier.local_candidates import compare
-        for reply in ("R1\n\nThe fragment is stored under R1.", "\n  R1  \n", "**R1**", "`R1`", "R1.",
-                      "```\nR1\n```", "Answer: R1", "**Answer:** R1\n\nexplained", "## Answer\n\nR1"):
-            with self.subTest(reply=reply):
-                self.assertEqual(compare("exact", reply, "R1"), "pass")
-        for reply in ("The key is R1", "R2\n\nR1", "r1", "R 1", "R1 and R2"):
-            with self.subTest(reply=reply):
-                self.assertEqual(compare("exact", reply, "R1"), "fail")
-        self.assertEqual(compare("exact", "", "R1"), "invalid")
-        # Characters that look like markdown are content in an exact token.
-        self.assertEqual(compare("exact", "rgroup_label\n\nexplained", "rgroup_label"), "pass")
-        self.assertEqual(compare("exact", "[*]", "[*]"), "pass")
-        self.assertEqual(compare("exact", "Answer: __init__", "__init__"), "pass")
-
-    def test_an_indexed_choice_probes_every_other_option(self):
-        self.reference()
-        cases = self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS))
-        cases[1]["expected"] = "2"  # answers may not all sit at one position
-        self.candidate(lookup=False, method="choice", cases=cases)
-        self.assertEqual(self.data["outcome"], "qualified_local")
-        # The index, a non-numeric reply, an out-of-range number, a sentence, the option named four
-        # other ways, each other option, a number with another option's text, and the five
-        # presentation probes that prove how a reply is read.
-        for control in self.data["candidate"]["controls"]:
-            self.assertTrue(control["passed"])
-            self.assertEqual(control["positive_negative_boundary_checks"], 19)
-
-    def test_a_choice_answer_indexes_the_option_that_is_quoted(self):
-        """The index is the planner's ordering; the option behind it carries provenance."""
-        self.reference()
-        self.candidate(lookup=False, method="choice",
-                       cases=self.rows("3", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("exact quote from a fetched reference" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
-
-    def test_a_choice_option_missing_from_the_prompt_is_rejected(self):
-        # An option the subject was never shown leaves the case open-ended.
-        self.reference()
-        self.candidate(lookup=False, method="choice",
-                       cases=self.rows("1", options=self.OPTIONS,
-                                       prompt=lambda index: "Row %d? 1) alpha is 1.0; 5) none of these" % index))
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("verbatim in the case input" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
-
-    def test_a_choice_reserves_its_last_option_and_never_answers_it(self):
-        self.reference()
-        swapped = ["alpha is 1.0", "beta is 2.0", "delta is 4.0", "none of these", "epsilon is 5.0"]
-        self.candidate(lookup=False, method="choice",
-                       cases=self.rows("1", options=swapped, prompt=self.menu(swapped)))
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("reserved" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
-        self.candidate(lookup=False, method="choice",
-                       cases=self.rows("5", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("never the reserved last one" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
-
-    def test_a_choice_needs_four_alternatives_besides_the_reserved_one(self):
-        """Two options let a coin flip carry a case 12.5% of the time over three trials.
-
-        The floor is the schema's, and qualify() validates against it, so the catalog
-        import path that calls qualify() directly is covered by the same rule.
-        """
-        from sci_ai_verifier.local_candidates import qualify, MINIMUM_OPTIONS
-        self.reference()
-        short = ["alpha is 1.0", "beta is 2.0", "none of these"]
-        self.assertLess(len(short), MINIMUM_OPTIONS)
-        proposal = {"name": "Fixture", "scope": "s", "method": "choice", "limitations": "l",
-                    "cases": self.rows("1", options=short, prompt=self.menu(short))}
-        with self.assertRaises(Fault) as caught:
-            qualify(proposal, {self.reference_ref: {"text": REFERENCE}})
-        self.assertEqual(caught.exception.code, "invalid_arguments")
-
-    def mixed_cases(self):
-        open_rows = [{**case, "method": "numeric"} for case in self.rows("1.0", count=2)]
-        closed = [{**case, "case_id": "closed-%d" % index, "method": "choice"}
-                  for index, case in enumerate(self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))]
-        closed[1]["expected"] = "2"  # answers may not all sit at one position
-        return open_rows + closed
-
-    def test_a_choice_case_without_options_is_rejected_rather_than_crashing(self):
-        """Run 74eadedd: a mixed design marked a case choice with no options, and qualification
-        raised IndexError, which reached the planner twice as a bare internal error."""
-        self.reference()
-        cases = self.mixed_cases()
-        del cases[2]["options"]
-        for method, design in (("mixed", cases), ("choice", [{key: value for key, value in case.items() if key != "options"}
-                                                             for case in self.rows("1", prompt=self.menu(self.OPTIONS))])):
-            with self.subTest(method=method):
-                self.candidate(lookup=False, method=method, cases=design)
-                self.assertEqual(self.data["outcome"], "rejected")
-                self.assertTrue(any("A choice case lists its options" in problem
-                                    for problem in self.data["candidate"]["qualification_problems"]))
-
-    def test_choice_answers_may_not_all_sit_at_one_position(self):
-        """All eleven choice cases of run 0a243b7e answered option 1, so a subject that
-        always picked the first option would have passed every one."""
-        self.reference()
-        self.candidate(lookup=False, method="choice",
-                       cases=self.rows("1", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("Vary which option position" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
-        # A single choice case among open ones has nothing to vary.
-        self.candidate(lookup=False, method="mixed", cases=self.mixed_cases()[:3])
-        self.assertEqual(self.data["outcome"], "qualified_local")
-
-    def test_a_correct_option_that_alone_starts_differently_is_rejected(self):
-        """Runs 84e90683 and 31b67427: the key was the one option without a leading "the",
-        and the second run's critique counted it. The style gives the answer away, so a
-        reader picks it without knowing the claim."""
-        self.reference()
-        lone = ["alpha is 1.0", "the beta is 2.0", "the delta is 4.0", "the epsilon is 5.0", "none of these"]
-        capital = ["alpha is 1.0", "Beta is 2.0", "Delta is 4.0", "Epsilon is 5.0", "none of these"]
-        # "The" and "the" are one word, so a capitalised sentence among them hides nothing.
-        mixed = ["alpha is 1.0", "The beta is 2.0", "the delta is 4.0", "the epsilon is 5.0", "none of these"]
-        for options, told in ((lone, "starts with 'alpha' where every other option starts with 'the'"),
-                              (capital, "is the only option not capitalised"),
-                              (mixed, "starts with 'alpha' where every other option starts with 'The'")):
-            with self.subTest(options=options):
-                cases = self.rows("1", options=options, prompt=self.menu(options))
-                self.candidate(lookup=False, method="choice", cases=cases)
-                self.assertEqual(self.data["outcome"], "rejected")
-                problems = self.data["candidate"]["qualification_problems"]
-                self.assertTrue(any("In case case-0 the correct option " + told in problem for problem in problems))
-        # Written in the key's own style, or with starts that vary, the options qualify.
-        for options in (["alpha is 1.0", "alpha is 2.0", "alpha is 4.0", "alpha is 5.0", "none of these"],
-                        self.OPTIONS):
-            with self.subTest(options=options):
-                cases = self.rows("1", options=options, prompt=self.menu(options))
-                moved = [options[1], options[0], *options[2:]]  # the same key at position 2
-                cases[1].update(expected="2", options=moved, input=self.menu(moved)(1))
-                self.candidate(lookup=False, method="choice", cases=cases)
-                self.assertEqual(self.data["outcome"], "qualified_local")
-
-    def test_the_leading_word_check_on_option_sets_from_real_runs(self):
-        """Every key a real run gave away by its first word is caught, and counted option
-        sets from run 3b3f3c94, written in their keys' style, pass."""
-        from sci_ai_verifier.local_candidates import lone_start
-        leaked = {
-            "84e90683 thr-closed-quantity": (["the maximum time in seconds allowed for the MCS calculation",
-                "the minimum number of bonds that the returned MCS must contain",
-                "fraction of the dataset that must contain the MCS",
-                "the minimum Tanimoto similarity required between any two input molecules", "none of these"], 3),
-            "84e90683 thr-closed-outliers": (["some molecules were now left out due to the set threshold",
-                "the threshold argument raises the number of candidate seeds the algorithm is allowed to enumerate before it stops",
-                "the threshold argument switches the algorithm from maximising the number of atoms to maximising the number of bonds",
-                "the threshold argument makes ring bonds match only other ring bonds, which keeps whole rings in the result",
-                "none of these"], 1),
-            "31b67427 which-object-is-the-query": (["the parameters object that was configured",
-                "the original fragment, exactly as the decomposition produced it",
-                "a copy of a molecule with query properties adjusted",
-                "the parent molecule the fragment came from", "none of these"], 3)}
-        passed = {
-            "3b3f3c94 th-molecules-left-out": (["every analogue still had to contain the returned substructure",
-                "the molecules were all trimmed to their largest fragment before the search",
-                "the molecules were weighted by how much of the substructure they contained",
-                "some molecules were now left out due to the set threshold", "none of these"], 4),
-            "3b3f3c94 dummy-plain-match-fails": (["returns the atom indices of the whole parent molecule",
-                "fails to produce any matches", "raises an exception about unsanitized query atoms",
-                "matches only the fragments that contain a ring", "none of these"], 2),
-            "3b3f3c94 pic50-definition-wording": (["the negative natural logarithm of the IC50 value in molar",
-                "the negative log of the IC50 value in molar", "the base-10 logarithm of the IC50 value in nanomolar",
-                "the reciprocal of the IC50 value in molar", "none of these"], 2)}
-        for name, (options, index) in leaked.items():
-            with self.subTest(name):
-                self.assertIsNotNone(lone_start(options, index))
-        for name, (options, index) in passed.items():
-            with self.subTest(name):
-                self.assertIsNone(lone_start(options, index))
-
-    def test_a_correct_option_that_alone_repeats_a_word_of_the_question_is_rejected(self):
-        """Run 3b3f3c94: the question named CompleteRingsOnly, the key was the only option
-        mentioning rings, and its critique counted it. A reader matches the word instead of
-        knowing the claim."""
-        self.reference()
-        asked = lambda options: lambda index: "Which row concerns alpha? " + self.menu(options)(index)
-        cases = self.rows("1", options=self.OPTIONS, prompt=asked(self.OPTIONS))
-        self.candidate(lookup=False, method="choice", cases=cases)
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("In case case-0 only the correct option repeats 'alpha' from the question" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
-        # Used in the other options too, the word no longer marks the key.
-        shared = ["alpha is 1.0", "alpha is 2.0", "alpha is 4.0", "alpha is 5.0", "none of these"]
-        cases = self.rows("1", options=shared, prompt=asked(shared))
-        moved = [shared[1], shared[0], *shared[2:]]  # the same key at position 2
-        cases[1].update(expected="2", options=moved, input=asked(moved)(1))
-        self.candidate(lookup=False, method="choice", cases=cases)
-        self.assertEqual(self.data["outcome"], "qualified_local")
-
-    def test_the_repeated_word_check_on_questions_from_real_runs(self):
-        """The two stem-word leaks a replay on the pinned model found are caught; the reply
-        instructions every case carries, and words every option shares, are not."""
-        from sci_ai_verifier.local_candidates import content_words, lone_echo
-        rings = ["results cannot include atoms that carry a formal charge",
-                 "results cannot include atoms whose valences differ between molecules",
-                 "results cannot include atoms outside the largest fragment",
-                 "results cannot include lone ring atoms", "none of these"]
-        reasons = ["Often from a runtime point of view, we want to skip ring perception",
-                   "Often from a reporting point of view, we want to hide ring fusion",
-                   "Often from a diversity point of view, we want to allow larger ring systems",
-                   "Often from an application point of view, we want to retain rings", "none of these"]
-        partial = ["results cannot include rings that are only partly aromatic", "results cannot include partial rings",
-                   "results cannot include rings that are fused to another ring",
-                   "results cannot include rings larger than six atoms", "none of these"]
-        units = ["IC50 is in nanomolar concentration", "IC50 is in micromolar concentration",
-                 "IC50 is in molar concentration", "IC50 is in milligrams per millilitre", "none of these"]
-        listed = lambda options: "\n".join("%d. %s" % (number, value) for number, value in enumerate(options, 1))
-        instruction = " Reply with the number of the correct option on the first line, and nothing else on that line.\n"
-        questions = {
-            "3b3f3c94 ring-no-lone-ring-atoms": ("In RDKit's FMCS implementation the atom-level comparison parameters "
-                "also expose `CompleteRingsOnly`. What does enabling it exclude from the returned result?"
-                + instruction + listed(rings), rings, 4, ["ring"]),
-            "31b67427 application-reason-retain-rings": ("A medicinal chemist running an MCS search over a congeneric "
-                "series switches on the ring-matching restriction instead of leaving the search at its defaults. "
-                "Which statement gives the application-side reason for doing so?\n\n" + listed(reasons)
-                + "\n\nReply with the option number on the first line, and put nothing else on that line.",
-                reasons, 4, ["application"]),
-            "3b3f3c94 ring-no-partial-rings": ("In RDKit's FMCS implementation, the bond-level `CompleteRingsOnly` "
-                "parameter is enabled (`completeRingsOnly=True`). What does enabling it impose on the common "
-                "substructure that is returned?" + instruction + listed(partial), partial, 2, []),
-            "3b3f3c94 pic50-required-units": ("The pIC50 of a compound is to be computed with the formula pIC50 = "
-                "-log(IC50). In which units must the IC50 value be expressed for that formula to give the correct "
-                "result?" + instruction + listed(units), units, 3, [])}
-        for name, (text, options, index, echoed) in questions.items():
-            with self.subTest(name):
-                self.assertEqual(lone_echo(text, options, index), echoed)
-        self.assertEqual(content_words("CompleteRingsOnly queries application-side matches"),
-                         {"complete", "ring", "query", "application", "side", "match"})
-
-    def test_a_mixed_design_names_a_method_on_every_case_and_only_there(self):
-        self.reference()
-        self.candidate(lookup=False, method="mixed", cases=self.mixed_cases())
-        self.assertEqual(self.data["outcome"], "qualified_local")
-        # Numeric and choice controls each ran on their own cases.
-        checks = [control["positive_negative_boundary_checks"] for control in self.data["candidate"]["controls"]]
-        self.assertEqual(checks, [13, 13, 19, 19, 19])
-        self.assertEqual(self.data["candidate"]["absolute_tolerance"], "0.000001")
-        unnamed = self.mixed_cases()
-        del unnamed[0]["method"]
-        stray = [{**case, "method": "numeric"} for case in self.rows("1.0")]
-        for method, cases in (("mixed", unnamed), ("numeric", stray)):
-            with self.subTest(method=method):
-                self.candidate(lookup=False, method=method, cases=cases)
-                self.assertEqual(self.data["outcome"], "rejected")
-                self.assertTrue(any("mixed design every case names its method" in problem
-                                    for problem in self.data["candidate"]["qualification_problems"]))
-
-    def test_each_case_of_a_mixed_design_is_scored_by_its_own_method(self):
-        from sci_ai_verifier.local import compare
-        self.reference()
-        self.candidate(lookup=False, method="mixed", cases=self.mixed_cases())
-        candidate = self.data["candidate"]
-        numeric, closed = candidate["cases"][0], candidate["cases"][2]
-        # "1" is the right number for the open case and the right option for the closed one;
-        # "1.0000001" is only a number, and names no option, so the closed case cannot read it.
-        self.assertEqual(compare(candidate, numeric, "1.0000001", {}, None), "pass")
-        self.assertEqual(compare(candidate, closed, "1.0000001", {}, None), "invalid")
-        self.assertEqual(compare(candidate, closed, "1", {}, None), "pass")
-        # A closed reply may name its option by text, which only the closed case reads that way.
-        self.assertEqual(compare(candidate, closed, "alpha is 1.0", {}, None), "pass")
-        self.assertEqual(compare(candidate, numeric, "alpha is 1.0", {}, None), "invalid")
-
-    def test_every_open_answer_type_qualifies_through_the_published_tool(self):
-        """Each type's key, quoted from the fixture reference, qualifies with every control passing."""
-        self.reference()
-        designs = {"term": ["alpha", "beta", "gamma"], "expression": ["alpha", "beta", "gamma"],
-                   "list": ["alpha, beta", "beta, gamma", "gamma, zeta"], "set": ["alpha, beta", "beta, gamma", "zeta, eta"]}
-        for method, keys in designs.items():
-            with self.subTest(method=method):
-                cases = [{**case, "expected": key} for case, key in zip(self.rows("x"), keys)]
-                self.candidate(lookup=False, method=method, cases=cases)
-                self.assertEqual(self.data["outcome"], "qualified_local", self.data["candidate"]["qualification_problems"])
-                self.assertTrue(all(control["passed"] for control in self.data["candidate"]["controls"]))
-        cases = [{**case, "unit": "nM"} for case in self.rows("1.0")]
-        self.candidate(lookup=False, method="numeric", cases=cases)
-        self.assertEqual(self.data["outcome"], "qualified_local", self.data["candidate"]["qualification_problems"])
-
-    def test_a_key_its_type_would_misjudge_is_refused_with_the_reason(self):
-        self.reference()
-        refused = [("set", self.rows("alpha, alphas"), "must be distinct"),
-                   ("exact", [{**case, "unit": "nM"} for case in self.rows("1.0")], "Only a numeric case takes a unit"),
-                   ("term", self.rows("delta"), "exact quote from a fetched reference")]
-        for method, cases, message in refused:
-            with self.subTest(method=method, message=message):
-                self.candidate(lookup=False, method=method, cases=cases)
-                problems = self.data["candidate"]["qualification_problems"]
-                self.assertEqual(self.data["outcome"], "rejected")
-                self.assertTrue(any(message in problem for problem in problems), problems)
-
-    def test_an_option_that_reads_as_another_option_s_number_is_refused(self):
-        self.reference()
-        for first in ("3", "3.0"):
-            with self.subTest(first=first):
-                options = [first, "beta is 2.0", "delta is 4.0", "epsilon is 5.0", "none of these"]
-                cases = self.rows("2", options=options, prompt=self.menu(options))
-                self.candidate(lookup=False, method="choice", cases=cases)
-                self.assertEqual(self.data["outcome"], "rejected")
-                self.assertTrue(any("reads as the number of option 3" in problem
-                                    for problem in self.data["candidate"]["qualification_problems"]))
-        # A number that is its own position, or no position at all, names one option only.
-        options = ["1.0", "beta is 2.0", "0.0", "3600", "none of these"]
-        cases = self.rows("2", options=options, prompt=self.menu(options))
-        self.candidate(lookup=False, method="choice", cases=cases)
-        self.assertFalse(any("reads as the number" in problem
-                             for problem in self.data["candidate"]["qualification_problems"]))
-
-    def test_only_the_choice_method_takes_options(self):
-        self.reference()
-        self.candidate(lookup=False, method="numeric",
-                       cases=self.rows("1.0", options=self.OPTIONS, prompt=self.menu(self.OPTIONS)))
-        self.assertEqual(self.data["outcome"], "rejected")
-        self.assertTrue(any("Only the choice method takes options" in problem
-                            for problem in self.data["candidate"]["qualification_problems"]))
-
-    def test_a_candidate_qualified_under_superseded_rules_is_not_offered(self):
-        """Lookup reuses a saved candidate without re-qualifying it, so the version string
-        is the only thing keeping one that passed retired rules out of a later run."""
+    def test_a_design_qualified_under_retired_rules_is_not_offered(self):
+        """Lookup reuses a saved design without re-qualifying it, so the version string is the only
+        thing keeping one that passed retired rules, such as a design of questions, out of a later run."""
         from sci_ai_verifier.local_candidates import candidates, save_candidate
-        self.reference()
-        self.candidate(lookup=False, method="exact", cases=self.rows("1.0"))
-        self.assertEqual(self.data["outcome"], "qualified_local")
+        key = self.ready()
         store = self.runtime.store
-        self.assertTrue(any(item["candidate_ref"] == self.data["candidate_ref"]
-                            for item in candidates(store)))
-        stale = {**store.get_json(self.data["candidate_ref"]),
-                 "method_version": "local-reference-comparison-2"}
-        key = save_candidate(store, stale)
-        self.assertFalse(any(item["candidate_ref"] == key for item in candidates(store)))
+        self.assertTrue(any(item["candidate_ref"] == key for item in candidates(store)))
+        stale = save_candidate(store, {**store.get_json(key), "method_version": "local-reference-comparison-3"})
+        self.assertFalse(any(item["candidate_ref"] == stale for item in candidates(store)))
 
     def test_unfetched_or_invented_reference_fails_qualification(self):
         self.extract()
-        cases = [{"case_id": str(i), "input": str(i), "expected": str(i), "reference_ref": "0"*64,
-                  "source_quote": "Invented quote", "applicability": "Unsupported"} for i in range(3)]
-        self.candidate(cases=cases)
+        self.call("list_local_candidates", claim_id=self.claim_id)
+        self.reference_ref = "0" * 64  # Never fetched for this claim.
+        self.candidate(lookup=False)
         self.assertEqual(self.data["outcome"], "rejected")
+        self.assertIn("must be quoted exactly from a reference fetched for this claim",
+                      " ".join(self.data["candidate"]["qualification_problems"]))
 
     def test_stale_token_cannot_execute_subject(self):
         self.ready()
@@ -946,7 +609,7 @@ class ClaimScopeTests(unittest.TestCase):
         self.assertIn("## The reference solution", pinned["references/local-tasks.md"])
         self.assertNotIn("**Tested fact by fact.**", pinned["references/local-contract.md"])
         self.assertNotIn("At most five", pinned["references/local-contract.md"])
-        self.assertIn("**Tasks.**", pinned["references/evidence-rubric.md"])
+        self.assertIn("In the local profile a case is a task", pinned["references/evidence-rubric.md"])
         self.assertIn("**Revise before accepting.**", pinned["references/evidence-rubric.md"])
         self.assertIn("saving run time is no reason", pinned["references/evidence-rubric.md"])
         self.assertIn("`qualify_local_tasks`", pinned["references/tool-contracts.md"])
@@ -963,23 +626,6 @@ class ClaimScopeTests(unittest.TestCase):
         self.assertEqual([item["heading"] for item in sections("---\nname: fixture\n---\n# Title\nAbout.\n")],
                          ["Title"])
 
-    def test_a_reference_file_belongs_to_the_first_section_that_names_it(self):
-        """How a manifest from before claims named their sections is read."""
-        from sci_ai_verifier.claims import section_coverage
-        skill = ("# Skill\n## Models\nSee references/cox.md for Cox models.\n## Metrics\nUse the C-index.\n"
-                 "## Other\nNothing testable.\n## Reference files\n- references/cox.md\n")
-        files = {"SKILL.md": skill, "references/cox.md": "l1_ratio lies in (0, 1].", "notes.md": "Unnamed."}
-        claims = [{"claim_id": "a", "source_path": "references/cox.md", "source_quote": "l1_ratio lies in (0, 1]."},
-                  {"claim_id": "b", "source_path": "SKILL.md", "source_quote": "Use the C-index."},
-                  {"claim_id": "c", "source_path": "notes.md", "source_quote": "Unnamed."}]
-        coverage = section_coverage(files, claims)
-        self.assertEqual({item["heading"]: item["claims"] for item in coverage["sections"]},
-                         {"Models": ["a"], "Metrics": ["b"], "Other": [], "Reference files": []})
-        self.assertEqual(coverage["uncovered"], ["Other", "Reference files"])
-        self.assertEqual(coverage["claims_outside_sections"], ["c"])
-        self.assertEqual(coverage["sections"][0]["files"], ["references/cox.md"])
-        self.assertIsNone(section_coverage({"README.md": "x"}, claims))
-
     def test_the_report_says_which_sections_the_claims_hold_and_which_are_set_aside(self):
         h = self.h
         h.ready()
@@ -990,7 +636,7 @@ class ClaimScopeTests(unittest.TestCase):
         self.assertEqual(report["claims"][0]["sections"], ["(before the first heading)", "Notes"])
         markdown = Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
         self.assertIn("Skill sections: the claims hold 2 of the 2 sections of SKILL.md.", markdown)
-        self.assertIn("Skill section: (before the first heading); Notes", markdown)
+        self.assertIn("Skill sections: (before the first heading); Notes", markdown)
         # With no claim, every section is set aside, and the report says why.
         h.data = h.runtime.call("start_verifier_run", {"source_path": str(h.source)})["data"]
         h.call("load_submitted_skill", source_path=str(h.source))
@@ -1081,48 +727,6 @@ class TruncatedRunTests(unittest.TestCase):
         self.assertEqual(self.record("sandbox_image_unavailable", [])["status_withheld_reason"],
                          "not_executed")
         self.assertEqual(self.record("sandbox_image_unavailable", [])["fault"], "sandbox_image_unavailable")
-
-
-class ReplyReadingTests(unittest.TestCase):
-    """How a subject's reply is read. Live run 7efbdd8c answered 57 of 57 cases right and
-    scored five invalid, all of them a correct number the subject had put in bold."""
-
-    def compare(self, method, actual, expected):
-        from sci_ai_verifier.local_candidates import compare
-        return compare(method, actual, expected)
-
-    def test_the_replies_that_scored_invalid_in_run_7efbdd8c_now_read_correctly(self):
-        # Verbatim from the saved observations, including the explanation below the answer.
-        observed = [("**1**", "1"),
-                    ("**1**\n\nThe Boost.Python signature declares `threshold=1.0` (require the "
-                     "substructure in all molecules).", "1"),
-                    ("**2**", "2")]
-        for reply, expected in observed:
-            self.assertEqual(self.compare("choice", reply, expected), "pass", reply)
-
-    def test_emphasis_and_whitespace_are_presentation_for_every_numeric_method(self):
-        for method, expected in (("choice", "3"), ("numeric", "7.60")):
-            for reply in ("**%s**", "__%s__", "`%s`", "  %s  ", "***%s***"):
-                self.assertEqual(self.compare(method, reply % expected, expected), "pass", reply)
-
-    def test_a_number_inside_prose_is_never_extracted(self):
-        """Searching the reply for a number is how a wrong answer becomes a false pass."""
-        self.assertEqual(self.compare("choice", "The answer is 1", "1"), "invalid")
-        self.assertEqual(self.compare("choice", "Not 2, the answer is 1", "1"), "invalid")
-        self.assertEqual(self.compare("numeric", "It comes to 7.60", "7.60"), "invalid")
-
-    def test_a_wrong_number_still_fails_however_it_is_formatted(self):
-        self.assertEqual(self.compare("choice", "**2**", "1"), "fail")
-        self.assertEqual(self.compare("numeric", "**7.61**", "7.60"), "fail")
-
-    def test_exact_replies_lose_presentation_but_never_a_character_of_the_token(self):
-        # The same characters are content inside a token: an identifier's underscore, SMARTS `[*]`.
-        self.assertEqual(self.compare("exact", "rgroup_label", "rgroup_label"), "pass")
-        self.assertEqual(self.compare("exact", "**rgroup_label**", "rgroup_label"), "pass")
-        self.assertEqual(self.compare("exact", "rgroup label", "rgroup_label"), "fail")
-        self.assertEqual(self.compare("exact", "Rgroup_label", "rgroup_label"), "fail")
-        self.assertEqual(self.compare("exact", "[*]", "[*]"), "pass")
-        self.assertEqual(self.compare("exact", "__init__", "__init__"), "pass")
 
 
 if __name__ == "__main__":

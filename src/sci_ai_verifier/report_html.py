@@ -16,7 +16,6 @@ from html import escape
 from pathlib import Path
 from types import SimpleNamespace
 
-from .answers import instruction
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "report_html.py"
 TYPES = {"numeric": "number", "exact": "exact token", "term": "word or phrase", "choice": "multiple choice",
@@ -28,9 +27,11 @@ OUTCOMES = {"local_plan_fixed": "plan fixed", "local_grade_revision_required": "
             "local_grade_proposal_refused": "refused before review"}
 REFUSALS = {"prior_review_in_packet": "its notes mentioned an earlier review",
             "return_unsearched": "accepted with no new search", "local_design_unchanged": "the same design again",
-            "sections_unused": "its tasks did not use this claim's sections"}
+            "sections_unused": "its tasks did not use this claim's sections",
+            "critique_packet_too_large": "its review packet was over the size limit"}
 HOST = {"managed_host_configuration_is_trusted": "The verifier trusts the computer and the settings it runs on.",
         "local_container_execution": "The tests ran in a container on one local computer.",
+        "container_image_not_configured": "No container image was set, so no task could run.",
         "evidence_grade_is_an_evidence_strength_indicator_not_an_endorsement":
             "A grade shows how strong the evidence is. It is not an approval of the skill.",
         "live_cli_acceptance_required": "The verifier itself is still being tested with live runs.",
@@ -591,8 +592,6 @@ def test_details(t):
     if t.get("kind") == "task":
         return task_details(t)
     rows = [("Full question", f'<div class="question">{e(t["question"])}</div>')]
-    if t["method"]:
-        rows.append(("Answer format", e(instruction(t["method"], t.get("unit")))))
     rows.append(("Expected answer", e(expected_text(t))))
     if t["calculated"]:
         rows.append(("How the key was made", "Python calculated it with the planner's program, inputs "

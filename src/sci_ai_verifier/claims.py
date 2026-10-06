@@ -135,54 +135,20 @@ def sections(text):
     return [item for item in found if any(line.strip() for line in item["body"])]
 
 
-def section_coverage(files, claims):
-    """Which sections of SKILL.md the claims cover, or `None` when the skill has no SKILL.md.
-
-    A claim quoting SKILL.md covers the section its quote starts in; a claim quoting another file
-    covers the first section that names that file, so an index of files at the end credits nothing.
-    `files` maps snapshot paths to text.
-    """
-    text = files.get("SKILL.md")
-    if text is None:
-        return None
-    parts = sections(text)
-    starts = [item["line"] for item in parts]
-    covered = {index: [] for index in range(len(parts))}
-    outside = []
-    for claim in claims:
-        places = []
-        if claim["source_path"] == "SKILL.md" and claim["source_quote"] in text:
-            line = text[:text.index(claim["source_quote"])].count("\n") + 1
-            before = [index for index, start in enumerate(starts) if start <= line]
-            places = before[-1:]
-        else:
-            places = [index for index, item in enumerate(parts) if claim["source_path"] in "\n".join(item["body"])][:1]
-        for index in places:
-            covered[index].append(claim["claim_id"])
-        if not places:
-            outside.append(claim["claim_id"])
-    listed = []
-    for index, item in enumerate(parts):
-        body = "\n".join(item["body"])
-        listed.append({"heading": item["heading"], "level": item["level"], "line": item["line"],
-                       "files": sorted(path for path in files if path != "SKILL.md" and path in body),
-                       "claims": covered[index]})
-    return {"file": "SKILL.md", "sections": listed,
-            "uncovered": [item["heading"] or "(before the first heading)" for item in listed if not item["claims"]],
-            "claims_outside_sections": outside}
-
-
-def section_texts(store, snapshot, wanted, limit=12000):
-    """The text of the named sections of a snapshot's top-level file, each cut at `limit` characters."""
+def section_texts(store, snapshot, wanted, limit=12000, total=150000):
+    """The text of the named sections of a snapshot's top-level file, each cut at `limit` characters and
+    all together at `total`, so a claim of many long sections still fits the critique's packet."""
     entry = next((item for item in snapshot["files"] if item["path"] == snapshot.get("top_path", "SKILL.md")), None)
     if entry is None or entry["encoding"] != "utf-8":
         return []
-    found = []
+    found, left = [], total
     for number, item in enumerate(sections(normalize(store.get(entry["digest"]).decode("utf-8"))), 1):
         if "S" + str(number) in wanted:
             body = "\n".join(item["body"]).strip("\n")
-            found.append({"section": "S" + str(number), "heading": item["heading"] or UNHEADED,
-                          "text": body if len(body) <= limit else body[:limit] + " [truncated]"})
+            room = min(limit, left)
+            text = body if len(body) <= room else body[:room] + " [truncated]"
+            left -= min(len(body), room)
+            found.append({"section": "S" + str(number), "heading": item["heading"] or UNHEADED, "text": text})
     return found
 
 
