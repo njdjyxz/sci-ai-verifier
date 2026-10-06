@@ -48,6 +48,7 @@ the table below before `f84c131c` used 0.7.0 or earlier, and tested claims with 
 | `1d1c3b6e` (2026-10-01) | tooluniverse-dose-response | 1 at A, 2 at B, 1 at D with no trials; 51 of 51 counted trials passed, none by the AI reader; 0 invalid, 0 faults |
 | `90c60cbe` (2026-10-02) | tooluniverse-dose-response | 4 at A, one of them `fail` on a single case; 57 of 60 counted trials passed, 1 by the AI reader; 0 invalid, 0 faults |
 | `f84c131c` (2026-10-06) | tooluniverse-dose-response | Task tests, 0.8.0: 4 at A, all `pass`; 48 of 48 trials passed, 0 invalid, 0 faults |
+| `2bef9e0d` (2026-10-06) | western-blot-quantification | Task tests with the coverage return: 4 at A, all `pass`; 57 of 57 trials passed, 0 invalid, 0 faults; 4 tasks passed only on tolerance, hiding a flaw in the skill |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -2110,7 +2111,7 @@ window:
    - time and cost per claim, against the 4 claims and $30 of run `90c60cbe`.
 3. Record it in a new entry, with what to change before the next skill.
 
-## Claude: 2026-10-06 (run f84c131c, the first with task tests; a reviewed command table for ToolUniverse's `tu`; the coverage return for tasks)
+## Claude: 2026-10-06 (runs f84c131c and 2bef9e0d, the first with task tests; a reviewed command table for ToolUniverse's `tu`; the coverage return for tasks)
 
 ### Current stage and status
 
@@ -2122,6 +2123,13 @@ claim that no task tested, and the data were nearly noise-free. The verifier now
 ToolUniverse's `tu`, which the run lacked, through a reviewed command table. That table was checked
 live but no run has used it yet. A critique that agrees with a grade, A included, but lists untested
 parts of the claim now sends the claim back once (section 7).
+
+Run `2bef9e0d` on western-blot-quantification, the first with the coverage return, also settled four
+claims at A with status pass, 57 of 57 trials, and covered 75% of the skill's words against 13% under
+questions. It also showed what a pass can hide: the skill's two-step formula is wrong when lanes are
+loaded unequally, no task loaded them unequally, and the tolerance absorbed the difference
+(section 8). Options for that and for tasks that state their own rule are open questions 6 and 7.
+Nothing has been built for them.
 
 ### What has been done
 
@@ -2247,11 +2255,77 @@ re-recording the critique from one of `f84c131c`'s real packets.
   - Suite 383 → 387 tests, 385 passing and 2 skipped. The verification bootstrap is 195,150 of
     200,000 bytes.
 
+**8. Run `2bef9e0d`.** The operator: "clean and run the verifier on western blot skill", then "yes,
+record it and draft the options".
+- **Cleanup.** Moved, nothing deleted, into session `0f5df502`'s scratchpad: run `f84c131c` with its
+  attempt, subject runs and 5 candidates (`cleaned-f84c131c/`, 4,641 files), and the false start
+  below (`cleaned-6bd93bfc/`, 94 files). Kept: runs `32e60bd6` and `76ce4af1`, the store, the reports
+  and 13 candidates.
+- **A false start.** This session's `serve-local` dated from 06:37, before commits `3d41f1b` and
+  `a31f708`. I ran the same action through `scripts/verify.py verify` with the registration's
+  arguments in a background shell instead. That run, `6bd93bfc`, died two minutes in when the app
+  restarted the session. The restarted session's server postdated both commits, and `verify_skill`
+  ran `2bef9e0d` from it.
+- **Preflight.** Docker was up. The 5-hour window was at 3%, and the run took it to 72%, the most of
+  any run so far.
+- **Result.** [report-card.md](.verifier/runs/2bef9e0d-f74d-4362-8a06-55e3a8385014/report-card.md).
+  The page's notes were filled and the page redrawn.
+
+  | Claim | Sections | Tasks before → after the return | Trials passed | After the return | Gaps listed |
+  | --- | --- | --- | --- | --- | --- |
+  | 1. Loading-control normalization | S4, S5, S11–S13, S27 | 4 → 4 | 12 of 12 | two web searches, same design | 3 |
+  | 2. Fold change, then averaging | S6, S7, S14, S15, S26 | 4 → 4 | 12 of 12 | two web searches, same design | 7 |
+  | 3. Choosing the analysis route | S8, S17–S19 | 4 → 5, rewritten | 15 of 15 | revised | 8 → 7 |
+  | 4. Mistakes that spoil quantification | S20–S24, S28, S29 | 4 → 6 | 18 of 18 | revised | 7 → 6 |
+
+  - Every claim: grade A, pass, unanimous, no invalid trials, every task counted, two critique rounds.
+  - Set aside with reasons: S1–S3 (title, metadata, overview), S9 and S10 (image steps whose tools the
+    skill does not ship), S16 (plots), S25 (output files) and S30 (references). Coverage: 1,916 of
+    2,558 words (75%) and 22 of 30 sections, against 333 words (13%) and 4 sections in the
+    question-era run `32e60bd6`.
+  - Run time 98.5 of 180 minutes, cost $34.7: planner $19.97 over 53 turns, 57 trials $9.41, 6
+    critiques $5.36. `f84c131c` took 78 minutes and $23.0, `32e60bd6` 78 minutes and $30.9.
+- **The coverage return.** Every critique agreed with A and listed gaps, so every claim came back
+  once.
+  - Claims 3 and 4 were revised. For claim 3 the planner, citing the critique, found each branch of
+    the decision tree tested on one side only. Claim 4 gained tasks on the order of averaging and on
+    a highly variable repeat.
+  - Claims 1 and 2 each ran two web searches at once, opened no result and accepted the same design.
+    That satisfied the `return_unsearched` check.
+- **A flaw the pass hid.**
+  - The skill's two-step formula divides the modified form by the total form over the loading
+    control. That is the modified form times the loading control over the total form, so it does not
+    cancel unequal loading.
+  - All four tasks built on it (wb2, wb4, c2d, e4) loaded every lane within about 6%. The planner
+    noted that then "the answer does not depend on which of the two published ratio conventions is
+    used".
+  - The test AI followed the skill and came out up to 3.4%, 5.4%, 5.5% and 2.4% off the key, inside
+    tolerances of 10%, 10%, 8% and 8%.
+  - Claim 1's critique computed exactly this, wrote that a subject following the sections verbatim
+    passes, and listed it as a coverage gap. The rubric's fairness criterion asks that a correct
+    analysis following the skill passes, which assumes the skill's procedure is the correct one.
+- **Tasks that state their rule.** Claim 4's jobs gave the deciding thresholds (15%, 15%, 10%, a
+  coefficient of variation of 0.5); g3 named the planted defect and g5 both orders of averaging. Its
+  critique objected that the tasks test "correct execution of a given rule, not whether the skill
+  surfaces the defect or chooses the criterion", and counted them.
+- **Checked against `f84c131c`,** the other task run, since the 2026-10-02 bar asks for more than one
+  skill:
+  - Every answer there was within 0.18% of the reference solver's result for the same file, even
+    where 20–28% off a small planted plateau, which is fitting noise. Here the four two-step tasks
+    were 2.4–5.5% off the solver, and every other task within 0.01%. "Off the solver but inside the
+    tolerance" separates the two runs exactly.
+  - Its `c4_midpoint_not_sampled` job also defined its criterion ("between 25 percent and 75
+    percent"), so tasks that state their rule occur in both skills.
+  - Its critiques named regimes its tasks avoided, such as midpoints well inside the range, but its
+    answers matched the solver, so it shows no hidden departure like the two-step one.
+
 ### Decisions taken 2026-10-06
 
 - **Operator:** run the `tu` check, and add `tu` if it passes. Done.
 - **Operator:** add the coverage return for tasks, and re-record the critique from a real packet.
   Done (section 7).
+- **Operator:** clean and run western-blot-quantification, then record the run and draft options for
+  its weak spots. Done (section 8; open questions 6 and 7). Nothing was built.
 - **Proposed here and built:** the return applies at every grade, A included, unlike the
   question-era return, which skipped A.
 - **Proposed here and built (section 3):**
@@ -2268,24 +2342,59 @@ re-recording the critique from one of `f84c131c`'s real packets.
 3. Answered by the operator (section 7).
 4. **Merge `whole-skill-tests`** now that a task run has worked? The merge is the operator's.
 5. The 2026-10-05 entry's open questions on the final reviewer stand.
+6. **An A that hid a flaw** (section 8). The design avoided the case where the skill goes wrong, the
+   tolerance absorbed the difference, and two web searches closed the return. These options combine:
+   - (a) **Flag answers that pass only on tolerance.** After the trials, Python compares each number
+     with the reference solver's result for the same file. Beyond 0.5%, which separates the two task
+     runs exactly, the report and page mark the task "passed on tolerance only", with the size of the
+     difference; grade and status stay. Owners: "Reading a trial's results" in `local-tasks.md`, and
+     the report. No rubric change. A subject that rounds hard can trip it, so it informs the reader
+     rather than deciding.
+   - (b) **As (a), but the flagged task counts as inconclusive,** so the claim's status becomes
+     inconclusive and its grade stays. Here claims 1, 2 and 3 would have been inconclusive.
+   - (c) **Make a known departure a required revision.** Where the skill's procedure, followed
+     literally, departs from the reference solution in a situation the claim covers, at least one
+     task must put the departure outside its tolerance. A critique that finds none requires one and
+     may not support the proposed grade until it exists. Owners: the task rule in `local-tasks.md`,
+     and criterion 3 and the verdicts in `evidence-rubric.md` and the task rubric. The rubric moves to
+     v4, which needs a live re-recording of about $0.70, asked first. On this skill claim 1 would most
+     likely fail, which is the right result.
+   - (d) **The search that ends a return.** Drop it: the planner may keep a design, the report says how
+     many gaps it left open, and `return_unsearched` goes. Or require one line per gap, saying why it
+     cannot be tested or naming a reference fetched since the return, which Python counts. Or require
+     a fetch instead of a search.
+   - Recommended: (a), (c), and dropping the search in (d), since under (c) the gaps that matter become
+     required revisions. (a) rests on two skills, (c) on one.
+7. **Tasks that state their rule** (section 8). `local-tasks.md` already says the job must not tell the
+   test AI "which steps of the skill to follow … or which problem was planted", but `leaked` covers
+   only naming the problem, and the critique counted such tasks while objecting. Options:
+   - (a) Widen `leaked` to a job that states a step, an order or a criterion the claim's sections
+     supply; such a task does not count. Where the sections give no criterion, as for when a signal
+     stops being proportional to the load, the job may state one, and the report marks the task
+     "criterion given".
+   - (b) Mark only: the report flags every task whose job states a criterion, and nothing else changes.
+   - (c) Leave it to the critique's objections, as now.
+   - Recommended: (a). It enforces a rule the contract already has, it occurred in both task runs, and
+     it shares 6(c)'s rubric bump and re-recording. Here g3 and g5 would likely not count, which still
+     leaves claim 4 four counting tasks.
 
 ### Urgent next steps, if any
 
-None. Before the next run, start a **new** Code session, since `src/` changed, and check Docker
-first. Expect a few more critique rounds per run now: each claim whose critique lists gaps comes
-back once.
+None. Before any run, check that this session's `serve-local` postdates the last `src/` commit, and
+if it does not, restart the session rather than run around it: a background `verify` dies with the
+session (section 8).
 
 ### Suggested next move
 
-Run a second skill with task tests before changing the critique's rules, so that a rule drawn from
-one skill does not overfit (the 2026-10-02 bar). Western-blot-quantification fits: its 13% coverage
-under questions motivated the whole-skill design.
+Decide open questions 6 and 7. Then build the chosen options, contracts first, with one rubric bump
+and one re-recording. Then re-run two skills: western-blot-quantification, where under 6(c) claim 1
+should meet a task with unequal loading, and tooluniverse-dose-response, to check that the new rules
+do not misfire on a skill without the flaw.
 
 ### Recommended next action
 
-With the operator's go-ahead, after a usage and Docker check:
-1. Start a new Code session and run `verify_skill` on western-blot-quantification.
-2. It is finished when the report exists and shows, per claim, its coverage gaps, whether the
-   claim came back for them, and what the planner did: new tasks, or a recorded search and
-   acceptance.
-3. Compare the claims' untested parts with `f84c131c`'s, and the run's time and cost with its.
+With the operator's choices on open questions 6 and 7:
+1. Edit the owner documents each chosen option names, then the code, with a test for each new rule.
+2. If the rubric changed, re-record the task critique live, about $0.70, after asking.
+3. It is finished when the suite passes and any re-recording is in place. Ask before the re-runs:
+   each costs $25–35 and most of a 5-hour window.
