@@ -68,6 +68,10 @@ IMPORT_DISTRIBUTIONS = {
     "Bio": "biopython", "rdkit": "rdkit", "lifelines": "lifelines", "sksurv": "scikit-survival",
     "openpyxl": "openpyxl", "h5py": "h5py", "pyarrow": "pyarrow", "xarray": "xarray", "anndata": "anndata",
     "scanpy": "scanpy", "joblib": "joblib", "requests": "requests", "tqdm": "tqdm"}
+# The same section's reviewed table of commands: the distribution that provides each command a skill's
+# shell code blocks run. ToolUniverse's `tu` computes its dose-response tools locally, so it runs offline.
+COMMAND_DISTRIBUTIONS = {"tu": "tooluniverse"}
+SHELL_INFO = {"", "bash", "sh", "shell", "zsh", "console"}
 
 # The fixed programs the operator's image runs. Their digests are part of the cache key, so a
 # change to either one rebuilds every environment rather than reusing one it did not make.
@@ -115,12 +119,13 @@ if check.returncode:
     sys.exit(4)
 '''
 MANIFEST = r'''
-import importlib.metadata, importlib.util, json, sys
-names = json.loads(sys.argv[1])
+import importlib.metadata, importlib.util, json, shutil, sys
+names, commands = json.loads(sys.argv[1]), json.loads(sys.argv[2])
 found = sorted({(item.metadata["Name"] or "", item.version) for item in importlib.metadata.distributions()})
 missing = sorted(name for name in names if name not in sys.stdlib_module_names and importlib.util.find_spec(name) is None)
 print(json.dumps({"python": sys.version.split()[0], "distributions": [list(item) for item in found],
-                  "imports_unavailable": missing}))
+                  "imports_unavailable": missing,
+                  "commands_unavailable": sorted(name for name in commands if shutil.which(name) is None)}))
 '''
 SCRIPT_DIGESTS = {"resolve": digest(RESOLVE.encode("utf-8")), "install": digest(INSTALL.encode("utf-8"))}
 
@@ -349,14 +354,34 @@ def imported_modules(files):
                   if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,99}", name))[:200]
 
 
+def run_commands(files):
+    """The listed commands the skill's Markdown runs: the first word of a simple command in a shell block."""
+    found = set()
+    for path, text in files:
+        if not path.lower().endswith(".md"):
+            continue
+        for first, info, body in fenced_blocks(text):
+            if (info.split()[:1] or [""])[0].lower() not in SHELL_INFO:
+                continue
+            for _, line in logical_lines(first, body):
+                line = re.sub(r"^\s*\$\s+", "", line)
+                try:
+                    commands = shell_commands(line)
+                except ValueError:
+                    commands = [line.split()]  # An unclosed quote, such as JSON continued on the next line.
+                found.update(words[0] for words in commands if words and words[0] in COMMAND_DISTRIBUTIONS)
+    return sorted(found)
+
+
 def implied_requirements(record):
-    """The requirements the skill's undeclared imports add, by the reviewed table, in module order."""
+    """The requirements the skill's undeclared imports and listed commands add, by the reviewed tables."""
     declared = {item["name"] for item in record["requirements"]}
     found = []
-    for module in record["imports"]:
-        name = IMPORT_DISTRIBUTIONS.get(module)
+    wanted = [(IMPORT_DISTRIBUTIONS.get(module), "import " + module) for module in record["imports"]]
+    wanted += [(COMMAND_DISTRIBUTIONS[command], "command " + command) for command in record.get("commands") or []]
+    for name, source in wanted:
         if name and normalized(name) not in declared and normalized(name) not in {item["name"] for item in found}:
-            found.append({"requirement": normalized(name), "name": normalized(name), "sources": ["import " + module]})
+            found.append({"requirement": normalized(name), "name": normalized(name), "sources": [source]})
     return found
 
 
@@ -385,8 +410,8 @@ def remove(docker, args, log=None):
             return
 
 
-def manifest(docker, image, imports, settings, *, required, log=None):
-    """What the image reports about itself: installed distributions and unavailable imports.
+def manifest(docker, image, imports, settings, *, required, log=None, commands=()):
+    """What the image reports about itself: installed distributions, unavailable imports and commands.
 
     Untrusted: an installed package can alter what Python reports. It goes to the record only.
     """
@@ -398,7 +423,7 @@ def manifest(docker, image, imports, settings, *, required, log=None):
              "--user", "65534:65534", "--memory", str(settings["memory_mib"]) + "m",
              "--memory-swap", str(settings["memory_mib"]) + "m", "--cpus", str(settings["cpus"]),
              "--pids-limit", str(settings["pids_limit"]), "--tmpfs", "/tmp:rw,nosuid,nodev,size=32m,mode=1777",
-             "--entrypoint", "python3", image, "-I", "-c", MANIFEST, json.dumps(imports)],
+             "--entrypoint", "python3", image, "-I", "-c", MANIFEST, json.dumps(imports), json.dumps(list(commands))],
             timeout=MANIFEST_TIMEOUT_SECONDS, max_bytes=2 * 1024 * 1024, capture_output=False)
     except Fault as error:
         if error.code in PASS_THROUGH:
@@ -412,6 +437,7 @@ def manifest(docker, image, imports, settings, *, required, log=None):
         distributions = [[str(item[0])[:100], str(item[1])[:64]] for item in report["distributions"][:5000]
                          if isinstance(item, list) and len(item) == 2]
         missing = [item for item in report["imports_unavailable"] if item in imports]
+        absent = [item for item in report.get("commands_unavailable") or [] if item in commands]
         python = str(report["python"])[:32]
         if code:
             raise ValueError()
@@ -421,7 +447,7 @@ def manifest(docker, image, imports, settings, *, required, log=None):
                               + (": " + err.decode("utf-8", "replace")[-500:] if err else ".")) from None
         return {"reported_by_image": True, "error": "The image could not report its packages."}
     return {"reported_by_image": True, "python": python, "distributions": distributions,
-            "imports_unavailable": missing}
+            "imports_unavailable": missing, "commands_unavailable": absent}
 
 
 def lock_installed(report, lock):
@@ -550,7 +576,8 @@ def _build(docker, store, record, settings, log):
         if code or not IMAGE_ID.fullmatch(image):
             raise unavailable("Docker could not commit the skill environment: " + err.decode("utf-8", "replace")[-300:])
         try:
-            report = manifest(docker, image, record["imports"], settings, required=True, log=log)
+            report = manifest(docker, image, record["imports"], settings, required=True, log=log,
+                              commands=record.get("commands") or [])
             if not lock_installed(report, lock):
                 raise unavailable("The built image does not report every locked package as installed.")
         except BaseException:
@@ -601,6 +628,7 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
     record = {"policy": POLICY, "status": None, "source_path": str(source), "snapshot_digest": None,
               "operator_image": operator, "base_image": None, "image_id": operator,
               "index": settings["package_index"], "requirements": [], "rejected": [], "notes": [], "imports": [],
+              "commands": [],
               "manifest": None, "operator_manifest": None}
     store = Store(workspace)
     state = {"source_path": str(source), "source_root": str(source_root), "limits": limits, "run_id": None,
@@ -618,13 +646,17 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
     record["operator_manifest"] = manifest(docker, operator, [], settings, required=False, log=log)
     files = [(entry["path"], store.get(entry["digest"]).decode("utf-8"))
              for entry in taken["files"] if entry["encoding"] == "utf-8"]
-    record.update(Declarations(files).record(), imports=imported_modules(files))
+    record.update(Declarations(files).record(), imports=imported_modules(files), commands=run_commands(files))
     implied = implied_requirements(record)
-    if not record["requirements"] and record["imports"]:
-        # Nothing declared: the operator's image serves unless it lacks a listed module the skill imports.
-        record["manifest"] = manifest(docker, operator, record["imports"], settings, required=False, log=log)
+    if not record["requirements"] and (record["imports"] or record["commands"]):
+        # Nothing declared: the operator's image serves unless it lacks a listed module the skill imports
+        # or a listed command it runs.
+        record["manifest"] = manifest(docker, operator, record["imports"], settings, required=False, log=log,
+                                      commands=record["commands"])
         lacking = [module for module in record["manifest"].get("imports_unavailable") or []
                    if module in IMPORT_DISTRIBUTIONS]
+        lacking += [command for command in record["manifest"].get("commands_unavailable") or []
+                    if command in COMMAND_DISTRIBUTIONS]
         if not lacking:
             implied = []
     record["requirements"] = record["requirements"] + implied
@@ -633,8 +665,9 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
         return finish(record, log)
     record["status"] = ("disabled" if record["requirements"] else "all_rejected" if record["rejected"]
                         else "not_needed")
-    if record["imports"] and record["manifest"] is None:
-        record["manifest"] = manifest(docker, operator, record["imports"], settings, required=False, log=log)
+    if (record["imports"] or record["commands"]) and record["manifest"] is None:
+        record["manifest"] = manifest(docker, operator, record["imports"], settings, required=False, log=log,
+                                      commands=record["commands"])
     return finish(record, log)
 
 
@@ -678,10 +711,13 @@ def planner_block(record):
                                             "load_submitted_skill reports why."}[status])
     reasons = sorted({item["reason"] for item in record["rejected"]} & REASONS)
     imported = [item["name"] for item in record["requirements"] if from_import(item)]
-    lines.append(f"Declarations: {len(record['requirements']) - len(imported)} accepted, {len(record['rejected'])} "
-                 "rejected" + (" (" + ", ".join(reasons) + ")" if reasons else "")
+    commanded = [item["name"] for item in record["requirements"] if from_command(item)]
+    lines.append(f"Declarations: {len(record['requirements']) - len(imported) - len(commanded)} accepted, "
+                 f"{len(record['rejected'])} rejected" + (" (" + ", ".join(reasons) + ")" if reasons else "")
                  + (f"; added from the skill's imports: {', '.join(name for name in imported if SAFE_NAME.fullmatch(name))}"
-                    if imported else "") + ".")
+                    if imported else "")
+                 + (f"; added for the commands it runs: {', '.join(n for n in commanded if SAFE_NAME.fullmatch(n))}"
+                    if commanded else "") + ".")
     lines.append("Task generators, reference solutions and scoring run in the operator's image, without the skill's "
                  "packages.")
     report = record.get("operator_manifest") or {}
@@ -701,6 +737,11 @@ def from_import(requirement):
     return any(str(source).startswith("import ") for source in requirement.get("sources") or [])
 
 
+def from_command(requirement):
+    """True for a requirement the reviewed table added for a command the skill runs."""
+    return any(str(source).startswith("command ") for source in requirement.get("sources") or [])
+
+
 def report_line(summary):
     """report-card.md's Environment line, in plain text; the caller escapes it."""
     status = summary["status"]
@@ -708,7 +749,8 @@ def report_line(summary):
         text = (f"Environment: {status}. Subject trials ran in {summary['image_id']}, the plain Python base "
                 f"{summary['base_image']} plus {summary['packages']} wheels from {summary['index']} (lock "
                 f"{summary.get('lock_digest')}), for {summary['requirements']} requirements, "
-                f"{summary.get('from_imports', 0)} of them added from the skill's imports, and "
+                f"{summary.get('from_imports', 0)} of them added from the skill's imports and "
+                f"{summary.get('from_commands', 0)} for the commands it runs, and "
                 f"{summary['rejected']} rejected; the image was removed after the run. Task generators, reference "
                 f"solutions and scoring used the operator's image {summary['operator_image']}.")
     else:
@@ -719,6 +761,9 @@ def report_line(summary):
     missing = summary.get("imports_unavailable_reported_by_image")
     if missing:
         text += " Imports the image reported as unavailable (its own report, untrusted): " + ", ".join(missing) + "."
+    absent = summary.get("commands_unavailable_reported_by_image")
+    if absent:
+        text += " Commands the image reported as unavailable (its own report, untrusted): " + ", ".join(absent) + "."
     return text
 
 
@@ -727,9 +772,12 @@ def report_summary(record):
     summary = {"status": record["status"], "image_id": record["image_id"], "operator_image": record["operator_image"],
                "base_image": record["base_image"], "index": record["index"], "requirements": len(record["requirements"]),
                "from_imports": sum(from_import(item) for item in record["requirements"]),
+               "from_commands": sum(from_command(item) for item in record["requirements"]),
                "rejected": len(record["rejected"]), "packages": len(record.get("lock", {}).get("entries", []))}
     if record.get("lock"):
         summary["lock_digest"] = record["lock"]["digest"]
     if isinstance(record.get("manifest"), dict) and "imports_unavailable" in record["manifest"]:
         summary["imports_unavailable_reported_by_image"] = record["manifest"]["imports_unavailable"]
+    if isinstance(record.get("manifest"), dict) and record["manifest"].get("commands_unavailable"):
+        summary["commands_unavailable_reported_by_image"] = record["manifest"]["commands_unavailable"]
     return summary

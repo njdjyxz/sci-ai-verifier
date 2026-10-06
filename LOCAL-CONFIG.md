@@ -45,9 +45,9 @@ dependencies. Images must provide Python 3, `/bin/sh` and `cp`.
 With `package_index` set, a verification of a computational skill first installs the
 packages the skill itself declares (its `pip install` commands in code blocks, its
 `requirements*.txt` or its `pyproject.toml`) into a copy of `environment_base_image`.
-A package its code imports without declaring, such as `scipy`, is added too when the
-resource policy's reviewed table lists the module; anything else is reported, never
-guessed. Only that skill's subject trials use the copy, and the verification never
+A package its code imports without declaring, such as `scipy`, or a command its
+instructions run, such as ToolUniverse's `tu`, is added too when the resource policy's
+reviewed tables list it; anything else is reported, never guessed. Only that skill's subject trials use the copy, and the verification never
 downloads packages at any other time. "Skill environment" in the local contract and
 "Packages a skill declares or imports" in the resource policy describe the rules and
 the trust decision.

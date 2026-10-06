@@ -28,7 +28,8 @@ A hosted multiuser/API product is a separate future deployment project.
 
 Version 0.8.0 implements the local workflow, testing each claim by tasks (`local-tasks.md`):
 the skill runs on input Python built, and Python checks every output. Question tests were
-retired on 2026-10-05, and no live verifier run has used task tests yet. Under 0.7.0 one
+retired on 2026-10-05. The first live run with task tests (tooluniverse-dose-response,
+2026-10-06) settled its four claims at grade A with every trial passing. Under 0.7.0 one
 live run completed the earlier question workflow end to end (glycoengineering, 2026-09-16,
 four claims at evidence grade A). That is partial acceptance on the A-grade branch only;
 more skills must run before the design is treated as working.

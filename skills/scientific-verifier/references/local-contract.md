@@ -71,14 +71,21 @@ Python code blocks of its Markdown, that no declared requirement provides is add
 requirement when the reviewed table of "Packages a skill declares or imports" in
 `resource-policy.md` lists it, as the distribution that table names, such as
 `scikit-learn` for `sklearn`. Its source reads `import <module>`. A module the table does
-not list is reported, never guessed. With nothing declared, a build happens only when the
-operator's image lacks a listed module the skill imports, and it then holds every listed
-module the skill imports, because the base it starts from holds none. No model and no
+not list is reported, never guessed.
+
+**Commands.** A command the skill's Markdown runs, the first word of a simple command in a
+fenced code block marked as shell (`bash`, `sh`, `shell`, `zsh`, `console`) or unmarked,
+is added the same way when the command table of that section lists it, as `tooluniverse`
+for `tu`; its source reads `command <name>`. An unlisted command is never installed, and
+a trial that needs it records it as a run problem. With nothing declared, a build happens
+only when the operator's image lacks a listed module the skill imports or a listed command
+it runs, and it then holds every listed module and command the skill uses, because the base
+it starts from holds none. No model and no
 tool argument can add to the list. Run `90c60cbe`'s dose-response skill imports `numpy`
 and `scipy` and declares neither, so until this its own fitting script could not run.
 
 **Status.** `not_needed` when nothing is declared and the operator's image has every
-listed module the skill imports; `all_rejected` when every declaration was rejected and
+listed module the skill imports and every listed command it runs; `all_rejected` when every declaration was rejected and
 no import needs a build; `disabled` when requirements exist but `package_index` is null; `source_unavailable` when setup cannot snapshot the skill, in which case
 `load_submitted_skill` records the fault as it would anyway; otherwise `built`. Only
 `built` gives subject trials a different image; otherwise they run in `sandbox_image`.

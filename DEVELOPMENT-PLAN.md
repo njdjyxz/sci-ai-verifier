@@ -22,7 +22,7 @@
 Version 0.8.0 implements the local workflow, testing each claim by tasks. `verify` and
 `serve-local` provide one public action; Claude Code owns the planner loop and fresh subject
 sessions; Python owns deterministic tools, bounded processes and saved evidence. Every run in
-the table below used 0.7.0 or earlier, and tested claims with questions.
+the table below before `f84c131c` used 0.7.0 or earlier, and tested claims with questions.
 
 **Live acceptance is partial.** These runs have completed end to end:
 
@@ -47,6 +47,7 @@ the table below used 0.7.0 or earlier, and tested claims with questions.
 | `3303fd93` (2026-10-01) | tooluniverse-dose-response | 1 at A, 3 at B; 48 of 48 counted trials passed, 8 of them by the AI reader; 0 invalid, 0 faults |
 | `1d1c3b6e` (2026-10-01) | tooluniverse-dose-response | 1 at A, 2 at B, 1 at D with no trials; 51 of 51 counted trials passed, none by the AI reader; 0 invalid, 0 faults |
 | `90c60cbe` (2026-10-02) | tooluniverse-dose-response | 4 at A, one of them `fail` on a single case; 57 of 60 counted trials passed, 1 by the AI reader; 0 invalid, 0 faults |
+| `f84c131c` (2026-10-06) | tooluniverse-dose-response | Task tests, 0.8.0: 4 at A, all `pass`; 48 of 48 trials passed, 0 invalid, 0 faults |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
 described only in the messages of commits `a202146` and `041552c`. Run `7f88fbef` stopped on
@@ -118,16 +119,15 @@ the planner, never told its deadline, gave its last claim no test with an hour l
 2026-10-01 entry addresses that. In `90c60cbe`, told, it tested all four. The 2026-10-02 entry
 sets a bar for changes, so that rules drawn from one run do not overfit.
 
-**Task tests are built and not yet run live** (the 2026-10-05 entry, sections 5 and 6, on branch
-`whole-skill-tests`). A skill is split into claims that are groups of its whole sections, and each
+**Task tests have run live once** (built in the 2026-10-05 entry, sections 5 and 6, on branch
+`whole-skill-tests`): run `f84c131c` (the 2026-10-06 entry) settled the dose-response skill's four
+claims at A with every trial passing, while its reviewers named parts no task tested. A skill is split into claims that are groups of its whole sections, and each
 claim is tested by tasks that run the skill on input Python built. Questions, calculated answers,
 generated evaluators, the claim-only check and the AI reader were removed on 2026-10-05, as version
 0.8.0; what they did is recorded above and in the archive. One live test session and two live task
-critiques worked, and the second critique's stream is recorded as a test; no live verifier run has used
-task tests.
+critiques worked, and the second critique's stream is recorded as a test.
 
-Automated suite: **380 tests, 378 passing and 2 skipped, none failing**, after the question tests
-were removed. The one that used to
+Automated suite: **383 tests, 381 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -2109,3 +2109,142 @@ window:
      and `missing command tu` should appear among the run problems;
    - time and cost per claim, against the 4 claims and $30 of run `90c60cbe`.
 3. Record it in a new entry, with what to change before the next skill.
+
+## Claude: 2026-10-06 (run f84c131c, the first with task tests; a reviewed command table for ToolUniverse's `tu`)
+
+### Current stage and status
+
+Version 0.8.0, local workflow, on `whole-skill-tests`, which is the operator's to merge. The first
+live run with task tests, `f84c131c` on tooluniverse-dose-response, completed. All four claims
+settled at grade A with status pass, and 48 of 48 trials passed. That is a second skill family's
+A branch working under tasks. It does not show full coverage: each reviewer named parts of its
+claim that no task tested, and the data were nearly noise-free. The verifier now installs
+ToolUniverse's `tu`, which the run lacked, through a reviewed command table. That table was checked
+live but no run has used it yet.
+
+### What has been done
+
+This session, 2026-10-06:
+
+**1. Run `f84c131c`.** The operator: "use scientific-verifier-local to verify this skill … Show me
+observation table where each row is one claim … per claim table, each row is one test".
+- **Preflight.**
+  - Docker had stopped when Claude restarted; launching Docker Desktop brought the engine up in
+    20 s.
+  - The 5-hour window was at 0%, and the run took it to 55%.
+  - This session's `serve-local` started at 00:18, after the last commit.
+- **Result.**
+  - Four claims: S1, S2 and S4; S3; S5; S6 and S7. S8, Related skills, was set aside.
+  - Each claim had 4 tasks of 3 trials: grade A, pass, 12 of 12 trials passing, unanimous, no
+    invalid trials, one critique round, every task counted.
+  - Run time 78 of 180 minutes, cost $23.04: planner $12.61 over 46 turns, trials about $8.5,
+    critiques about $1.9.
+  - 47 of 48 tries ran the skill's own fitting script, which scipy in the image made possible.
+    Run problems: `tu` missing in 3 tries, `cygpath` in 1.
+  - The models came from GraphPad Prism's curve-fitting guide. Claim 3's two judgment rules came
+    from Wikipedia, a tertiary source.
+- **Delivered.** The page's notes were filled and the page redrawn, and the operator got tables per
+  claim and per task. Records: [report-card.md](.verifier/runs/f84c131c-b936-4534-b7ff-043ca2cb0216/report-card.md).
+
+**2. Why parts stay untested.** The operator asked: "what's the reason there are still parts we
+don't test? did we set a too high budget for number of tests we can give?" No cap was binding:
+each claim used 4 of 6 tasks and at most 5 of 12 outputs, and the run used 48 of 128 trial calls
+and 78 of 180 minutes. The records show three causes:
+- **The skill's own thresholds have no outside source.** These are the r-squared rule, the
+  steep/shallow slope labels and the minimum point count. Grade A forbids keying an expected value
+  to the skill's text, and the planner said so for claims 3 and 4.
+- **Python checks that every section is used, not every rule.** The planner built grade A's 3
+  tasks plus one spare and listed what it skipped: the confidence interval and log IC50, the
+  point-count rule, the IC50-versus-Ki warning.
+- **Gaps had no consequence.** Every critique named gaps and weak tests, such as blanks too small
+  for blank subtraction to matter, but agreed with A and required no revision. The coverage-gap
+  return that acted on that was retired with question tests on 2026-10-05.
+
+Proposed, not decided: open questions 1 and 2.
+
+**3. `tu` and the command table.** The operator: "yes, run the check and add tu if it passes".
+- **Why it was missing.** The skill declares nothing, and `tu` is a shell command, not a Python
+  import. The install rules covered declarations and the import table only, so setup recorded
+  `not_needed`.
+- **The check.**
+  - `tooluniverse` 1.5.6 on PyPI provides `tu`, its console script `tooluniverse_cli_entry:main`.
+  - Its dose-response tools compute locally with scipy; its source says "No external API calls".
+  - Built through the verifier's own `_build`: 70 s, 109 wheels and 155 MB, against caps of 200
+    wheels and 1 GiB. The largest wheels are scipy, faiss-cpu, numpy, pandas and tooluniverse.
+  - In a trial container (no network, read-only root, user 65534, 512 MiB, 1 CPU) all three tools
+    ran in about 2.6 s each: IC50 0.762 with r-squared 0.9998, and a fold shift of 13.4.
+- **Built.** Contracts came first:
+  - [`resource-policy.md`](skills/scientific-verifier/references/resource-policy.md) gains a
+    command table, `tu` to `tooluniverse`;
+  - [`local-contract.md`](skills/scientific-verifier/references/local-contract.md) "Skill
+    environment" gains **Commands.**;
+  - `LOCAL-CONFIG.md` says the same.
+
+  Then [`environment.py`](src/sci_ai_verifier/environment.py):
+  - `COMMAND_DISTRIBUTIONS` holds the table;
+  - `run_commands` reads the first word of each simple command in a shell or unmarked fenced
+    block of Markdown. On an unclosed quote it falls back to the line's first word, which the
+    skill's three-line JSON needs;
+  - the image probe reports `commands_unavailable`, and with nothing declared a listed command the
+    operator's image lacks triggers a build that also holds every listed import;
+  - the planner's block and the report line name the commands.
+
+  Three new tests cover detection, the build and no build.
+- **End to end on the real skill.** Setup found `tu`, built numpy, scipy and tooluniverse
+  (109 wheels, 67 s), `tu` answered in a trial container, and the image was removed.
+- **Cost.** Every verification of this skill now spends about 70 s of setup and downloads about
+  155 MB, since environments are not cached.
+
+**4. A skill bug.** The skill's `scripts/fit_dose_response.py --help` crashes: two help strings
+hold a bare `%`, which argparse formats. Fitting is unaffected. The fix belongs to the skill.
+
+**5. Docker** crashed at startup again on stale socket files. Two rounds of renaming
+`%LOCALAPPDATA%\Docker\run` and `%LOCALAPPDATA%\docker-secrets-engine` aside (`*.stale-20261006`,
+then `*.stale2-20261006`; nothing deleted) brought the engine back.
+
+**6. Verification.**
+- Suite 380 → 383 tests, 381 passing and 2 skipped.
+- Sizes: the verification bootstrap is 194,947 of 200,000 bytes; stage 2 118,018 of 120,000;
+  `local-contract.md` 35,020 of 40,960.
+
+### Decisions taken 2026-10-06
+
+- **Operator:** run the `tu` check, and add `tu` if it passes. Done.
+- **Proposed here and built:**
+  - commands are read from shell or unmarked fenced blocks of Markdown only;
+  - an unlisted command is never installed, and a trial that needs it records it as a run problem;
+  - the image probe reports missing commands;
+  - with nothing declared, a listed command the operator's image lacks triggers a build.
+
+### Open questions for the operator
+
+1. **A coverage return for tasks.** When a critique agrees with the grade but lists untested
+   rules, send the claim back once to add tasks? Recommended: yes. It is backed by this run and by
+   the question-era runs of this skill. Rough cost: $1–2 and about 10 minutes for each claim sent
+   back.
+2. **The skill's own thresholds.** Leave them untested and listed, as now, or test them as "the skill
+   follows its own rule" at a grade below A, since the expected values would come from the skill?
+3. **Re-record the critique from a real run.** `f84c131c`'s critique packets are the first real task
+   packets. Replace the live-check recording with one of them, about $0.50? Recommended: yes, the
+   next time the rubric changes.
+4. **Merge `whole-skill-tests`** now that a task run has worked? The merge is the operator's.
+5. The 2026-10-05 entry's open questions on the final reviewer stand.
+
+### Urgent next steps, if any
+
+None. Before the next run, start a **new** Code session, since `src/` changed, and check Docker
+first.
+
+### Suggested next move
+
+Run a second skill with task tests before changing the critique's rules, so that a rule drawn from
+one skill does not overfit (the 2026-10-02 bar). Western-blot-quantification fits: its 13% coverage
+under questions motivated the whole-skill design.
+
+### Recommended next action
+
+With the operator's go-ahead, after a usage and Docker check:
+1. Start a new Code session and run `verify_skill` on western-blot-quantification.
+2. It is finished when the report exists and shows, per claim, what its critique named as
+   untested.
+3. Compare those gaps with `f84c131c`'s, then decide open question 1.

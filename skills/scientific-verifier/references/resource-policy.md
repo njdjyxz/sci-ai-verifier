@@ -179,10 +179,10 @@ The personal/local profile stores fetched private reference evidence and mechani
 
 ## Packages a skill declares or imports
 
-The local profile may download the Python packages a submitted skill declares, or imports without declaring, so its trials can run them. The operator opts in with `package_index`, which is off by default. "Skill environment" in `local-contract.md` owns the mechanism.
+The local profile may download the Python packages a submitted skill declares, or imports or runs without declaring, so its trials can run them. The operator opts in with `package_index`, which is off by default. "Skill environment" in `local-contract.md` owns the mechanism.
 
 - **One step, before the run.** Nothing later can add a package or reach an index. Trials have no network.
-- **Names from the skill's snapshot only**, plus their dependencies. No model names a package, and no skill chooses the index. A declared requirement is the skill's own name for a package. An undeclared import becomes a requirement only through this reviewed table, so a skill cannot make the verifier guess a name, and a module the table does not list is reported instead:
+- **Names from the skill's snapshot only**, plus their dependencies. No model names a package, and no skill chooses the index. A declared requirement is the skill's own name for a package. An undeclared import, or a command the skill's instructions run, becomes a requirement only through these reviewed tables, so a skill cannot make the verifier guess a name, and a module or command the tables do not list is reported instead:
 
   | Imported module | Distribution |
   | --- | --- |
@@ -212,6 +212,10 @@ The local profile may download the Python packages a submitted skill declares, o
   | `joblib` | `joblib` |
   | `requests` | `requests` |
   | `tqdm` | `tqdm` |
+
+  | Command | Distribution |
+  | --- | --- |
+  | `tu` | `tooluniverse` |
 - **Gates.** Wheels only, from one HTTPS index, hashed by the verifier, installed offline from a lock, with count and size caps.
 - **Scope.** Subject trials only. Task generators, reference solutions and scoring keep the operator's image.
 - **Residual risk.** Trust moves from vetting each package to "index, wheels and lock", as in ordinary CI. A compromised package still runs inside trials. The offline, capped, disposable sandbox contains it and must not be relaxed. The size cap applies only after download.

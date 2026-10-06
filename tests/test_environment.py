@@ -19,9 +19,10 @@ from sci_ai_verifier import __version__
 from sci_ai_verifier.agent import INLINE_BUDGET, Runtime
 from sci_ai_verifier.claude_runner import ClaudeCode
 from sci_ai_verifier.common import Fault, canonical, utc_now
-from sci_ai_verifier.environment import (IMPORT_DISTRIBUTIONS, INSTALL, KEY_LABEL, MAX_REQUIREMENTS, RECORD_LABEL,
-                                         RESOLVE, Declarations, imported_modules, planner_block, prepare_environment,
-                                         remove_environment)
+from sci_ai_verifier.environment import (COMMAND_DISTRIBUTIONS, IMPORT_DISTRIBUTIONS, INSTALL, KEY_LABEL,
+                                         MAX_REQUIREMENTS, RECORD_LABEL, RESOLVE, Declarations, imported_modules,
+                                         planner_block, prepare_environment, remove_environment, report_line,
+                                         report_summary, run_commands)
 from sci_ai_verifier.ingest import snapshot
 from sci_ai_verifier.local_config import load_configuration, source_limits
 from sci_ai_verifier.local_science import environment_digest
@@ -154,11 +155,26 @@ class DeclarationTests(unittest.TestCase):
         self.assertEqual(imported_modules(files), ["numpy", "pandas", "rdkit", "sksurv"])
         self.assertEqual(Declarations(files).record()["requirements"], [])
 
-    def test_the_import_table_is_the_one_resource_policy_md_owns(self):
+    def test_the_tables_are_the_ones_resource_policy_md_owns(self):
         text = (ROOT / "skills/scientific-verifier/references/resource-policy.md").read_text(encoding="utf-8")
         section = text.split("## Packages a skill declares or imports", 1)[1].split("\n## ", 1)[0]
-        rows = dict(re.findall(r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|", section))
-        self.assertEqual(rows, IMPORT_DISTRIBUTIONS)
+        modules, commands = section.split("| Command | Distribution |", 1)
+        row = r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|"
+        self.assertEqual(dict(re.findall(row, modules)), IMPORT_DISTRIBUTIONS)
+        self.assertEqual(dict(re.findall(row, commands)), COMMAND_DISTRIBUTIONS)
+
+    def test_a_listed_command_is_read_from_shell_blocks_only(self):
+        """The dose-response skill runs `tu` with JSON continued over three lines, an unclosed quote per line."""
+        skill = ("Run `tu run Tool` in prose, which is not a command.\n"
+                 "```bash\ntu run DoseResponse_calculate_ic50 '{\"operation\":\"calculate_ic50\",\n"
+                 "  \"concentrations\":[0.001,0.01],\n  \"responses\":[98,95]}'\n```\n"
+                 "```python\ntu = 1\n```\n")
+        self.assertEqual(run_commands([("SKILL.md", skill)]), ["tu"])
+        for block in ("```\n$ cd data && tu run X '{}'\n```\n", "```console\n$ tu list\n```\n"):
+            self.assertEqual(run_commands([("SKILL.md", block)]), ["tu"], block)
+        for block in ("```python\ntu run X\n```\n", "```bash\nfoo run X\n```\n", "```bash\necho tu\n```\n"):
+            self.assertEqual(run_commands([("SKILL.md", block)]), [], block)
+        self.assertEqual(run_commands([("scripts/run.sh", "tu run X\n")]), [])  # Markdown only
 
 
 def built_record(source, snapshot_digest):
@@ -199,8 +215,8 @@ class FakeDocker:
         self.commands, self.endpoint, self.wheels = [], "npipe:////./pipe/docker_engine", list(WHEELS)
         self.resolver_error, self.install_code, self.distributions, self.raise_on = None, 0, None, None
         self.base_entrypoint, self.manifest_fails = None, False
-        # Modules the image's own report says it lacks.
-        self.lacking = {"missing_module"}
+        # Modules and commands the image's own report says it lacks.
+        self.lacking, self.lacking_commands = {"missing_module"}, set()
 
     def __call__(self, command, **kwargs):
         args = command[3:] if command[1:2] == ["--host"] else command[1:]
@@ -221,10 +237,11 @@ class FakeDocker:
                 return self.install_code, b"", b"pip check found conflicts: scipy requires numpy>=2.5" if self.install_code else b""
             if self.manifest_fails:
                 return 1, b"", b"python3: bad interpreter"
-            asked = json.loads(args[-1])
+            asked, commands = json.loads(args[-2]), json.loads(args[-1])
             installed = self.distributions if self.distributions is not None else [["numpy", "2.4.6"], ["scikit-survival", "0.28.0"]]
             return 0, canonical({"python": "3.12.14", "distributions": installed,
-                                 "imports_unavailable": [name for name in asked if name in self.lacking]}), b""
+                                 "imports_unavailable": [name for name in asked if name in self.lacking],
+                                 "commands_unavailable": [name for name in commands if name in self.lacking_commands]}), b""
         if args[0] == "commit":
             return 0, (BUILT + "\n").encode(), b""
         return 0, b"", b""
@@ -351,6 +368,42 @@ class BuildTests(unittest.TestCase):
         self.assertEqual([(item["requirement"], item["sources"][0]) for item in record["requirements"]],
                          [("numpy==2.4.6", "SKILL.md:4"), ("scikit-survival==0.28.0", "SKILL.md:4"),
                           ("scipy", "import scipy")])
+
+    TU = "\n```bash\ntu run DoseResponse_calculate_ic50 '{\"operation\":\"calculate_ic50\",\n  \"responses\":[98,95]}'\n```\n"
+
+    def test_a_listed_command_the_operator_image_lacks_is_built_with_the_skills_imports(self):
+        """Run f84c131c's tries found no `tu`, the ToolUniverse command the dose-response skill runs."""
+        self.dose_response(declared=self.TU)
+        self.docker.lacking, self.docker.lacking_commands = {"pytest"}, {"tu"}
+        record = self.prepare()
+        self.assertEqual((record["status"], record["image_id"], record["commands"]), ("built", BUILT, ["tu"]))
+        # The plain base holds nothing, so every listed import the skill uses comes along.
+        self.assertEqual([(item["requirement"], item["sources"]) for item in record["requirements"]],
+                         [("numpy", ["import numpy"]), ("scipy", ["import scipy"]),
+                          ("scikit-survival", ["import sksurv"]), ("tooluniverse", ["command tu"])])
+        resolver = next(args for args in self.runs() if "bridge" in args)
+        self.assertEqual(resolver[-1], "tooluniverse")
+        self.assertIn("added for the commands it runs: tooluniverse", planner_block(record))
+        summary = report_summary(record)
+        self.assertEqual((summary["from_imports"], summary["from_commands"]), (3, 1))
+        self.assertIn("3 of them added from the skill's imports and 1 for the commands it runs", report_line(summary))
+
+    def test_a_command_the_operator_image_has_needs_no_build(self):
+        self.dose_response(declared=self.TU)
+        self.docker.lacking = {"pytest"}
+        record = self.prepare()
+        self.assertEqual((record["status"], record["image_id"], record["requirements"]), ("not_needed", IMAGE, []))
+        self.assertEqual(record["manifest"]["commands_unavailable"], [])
+        self.assertNotIn("bridge", self.networks())
+        # A command alone, with no import, still asks the image whether it has it.
+        (self.skill / "scripts/fit.py").write_text("print('no imports')\n", encoding="utf-8")
+        self.docker.lacking_commands = {"tu"}
+        record = self.prepare()
+        self.assertEqual((record["status"], [item["requirement"] for item in record["requirements"]]),
+                         ("built", ["tooluniverse"]))
+        self.assertIn("Commands the image reported as unavailable (its own report, untrusted): tu.",
+                      report_line(report_summary({**record, "manifest": {"imports_unavailable": [],
+                                                                         "commands_unavailable": ["tu"]}})))
 
     def test_needed_imports_without_an_index_are_disabled_not_installed(self):
         self.dose_response()
