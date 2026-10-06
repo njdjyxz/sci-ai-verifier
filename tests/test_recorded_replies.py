@@ -33,7 +33,7 @@ RECORDED = ROOT / "tests/recorded"
 # recording maps to the key its refused reply added. The question critique and the claim-only answer
 # were given schemas retired with question tests on 2026-10-05; they stay as more live evidence of
 # Claude Code's correction loop, which every structured session relies on.
-STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "paramete r_name",
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "paramaters",
                          "critic-structured.jsonl": "StructuredOutput", "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
@@ -152,9 +152,9 @@ class RecordedReplyTests(unittest.TestCase):
                                 and citation["quote"] in item["quote"] for item in sent["evidence"]))
 
     def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
-        """Run f84c131c's claim 3 packet, the first real task packet, judged by the pinned model under the live
-        rubric: A, every task counted, and five rules of the claim's section that no task tests, which the
-        coverage return acts on. Its first reply added a stray key and was refused and resent."""
+        """Run 2bef9e0d's claim 1 packet judged by the pinned model under the live rubric: A, every task counted,
+        and one departure, the skill's two-step formula keeping the lane loading its tasks held equal, which
+        holds the grade below the proposal. Its first reply added a stray key and was refused and resent."""
         raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
         self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
@@ -164,10 +164,13 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
         self.assertEqual({item["verdict"] for item in value["case_verdicts"]}, {"counts"})
         self.assertEqual(len(value["findings"]), len(TASK_CRITIQUE_RUBRIC["criteria"]))
-        # It agrees with the proposal and lists what no task tests: a coverage return (tool-contracts.md).
+        # It agrees with A but finds where the skill departs from the reference with no task exposing it, so
+        # the hold (tool-contracts.md) settles B until a task loads lanes unequally.
         self.assertEqual(sent["proposed_grade"], "A")
-        self.assertEqual(len(value["coverage_gaps"]), 5)
-        self.assertTrue(any("r^2" in gap for gap in value["coverage_gaps"]))
+        self.assertEqual(len(value["departures"]), 1)
+        self.assertIn("PSMAD2 x GAPDH / SMAD2", value["departures"][0])
+        self.assertTrue(any("loading variation" in item for item in value["required_revisions"]))
+        self.assertEqual({item["criterion_given"] for item in value["case_verdicts"]}, {""})
 
     def test_task_critique_end_to_end_over_a_replayed_recording(self):
         """critique_tasks with only the child process replaced: the recorded packet is exactly what it sends,
@@ -358,12 +361,12 @@ class TaskCritiqueShapeTests(unittest.TestCase):
 
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
-                "objections": [], "required_revisions": [], "coverage_gaps": [],
+                "objections": [], "required_revisions": [], "coverage_gaps": [], "departures": [],
                 "case_verdicts": {"t1": self.verdict(), "t2": self.verdict("leaked", "Name the columns plainly.")},
                 **changes}
 
-    def verdict(self, verdict="counts", replacement=""):
-        return {"verdict": verdict, "reason": "because", "replacement": replacement}
+    def verdict(self, verdict="counts", replacement="", criterion=""):
+        return {"verdict": verdict, "reason": "because", "replacement": replacement, "criterion_given": criterion}
 
     def refused(self, value, case_ids=("t1", "t2")):
         with self.assertRaises(Fault):
@@ -407,6 +410,8 @@ class TaskCritiqueShapeTests(unittest.TestCase):
                        self.base(required_revisions=[""]), self.base(required_revisions=[1]),
                        self.base(required_revisions={"a": "b"}), self.base(required_revisions=["x"] * 9),
                        self.base(objections=["x"] * 9), self.base(extra="field"),
+                       self.base(departures="not a list"), self.base(departures=[" "]), self.base(departures=["x"] * 9),
+                       {key: value for key, value in self.base().items() if key != "departures"},
                        {key: value for key, value in self.base().items() if key != "required_revisions"},
                        {key: value for key, value in self.base().items() if key != "case_verdicts"}):
             with self.subTest(broken=canonical(broken)[:90]):
@@ -421,7 +426,11 @@ class TaskCritiqueShapeTests(unittest.TestCase):
                              ("rejected without replacement", {"t1": self.verdict(), "t2": self.verdict("unsound")}),
                              ("counted with replacement", {"t1": self.verdict(replacement="x"), "t2": rejected}),
                              ("blank reason", {"t1": {**self.verdict(), "reason": " "}, "t2": rejected}),
-                             ("missing reason", {"t1": {"verdict": "counts", "replacement": ""}, "t2": rejected}),
+                             ("missing reason", {"t1": {"verdict": "counts", "replacement": "", "criterion_given": ""},
+                                                 "t2": rejected}),
+                             ("blank rule given", {"t1": self.verdict(criterion="  "), "t2": rejected}),
+                             ("missing rule given", {"t1": {"verdict": "counts", "reason": "r", "replacement": ""},
+                                                     "t2": rejected}),
                              ("a list, as before the schema", [{"case_id": "t1", **self.verdict()},
                                                                {"case_id": "t2", **rejected}]),
                              ("not an object", "all count")):
@@ -431,7 +440,14 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
         """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
         from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
-        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v3")
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v4")
+        # A rule the job gives is named, or leaks when the sections supply it; a key the skill's own procedure
+        # misses where it departs from the reference is no unfairness to the skill (local-tasks.md).
+        self.assertIn("rule, threshold or order of steps", TASK_CRITIQUE_RUBRIC["case_verdicts"]["leaked"])
+        self.assertNotIn("following the skill", TASK_CRITIQUE_RUBRIC["case_verdicts"]["unsound"])
+        self.assertIn("rubric.departures", TASK_CRITIQUE_RUBRIC["criteria"][2])
+        self.assertIn("Python holds the grade below the proposal", TASK_CRITIQUE_RUBRIC["departures"])
+        self.assertIn("leave it empty", TASK_CRITIQUE_RUBRIC["criterion_given"])
         # Whatever the grade, what no task tests is listed, for the coverage return (tool-contracts.md).
         self.assertIn("coverage_gaps", TASK_CRITIQUE_RUBRIC["coverage"])
         self.assertIn("Whatever your grade", TASK_CRITIQUE_RUBRIC["coverage"])

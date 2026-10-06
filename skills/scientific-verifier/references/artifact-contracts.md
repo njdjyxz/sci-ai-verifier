@@ -422,8 +422,9 @@ its `generator` and `solver`; per task its `files` (name, `object_ref`, bytes), 
 values, `outputs` with their resolved `expected` values, the solver's `solver_results` and
 `solver_checks`; and `task_receipts` with the programs' digests, the image and each run's
 exit code. A task trial's score receipt holds `outputs`: each field's expected value,
-tolerance, the value found and its verdict, with `results_found` and the trial's
-`run_problems`.
+tolerance, the value found and its verdict, and for a number that passed far from the
+reference solution's result its `reference_result` and `off_reference` ("Reading a trial's
+results" in `local-tasks.md`), with `results_found` and the trial's `run_problems`.
 
 The report card carries `environment_ref` and an `environment` summary, and
 report-card.md opens with an Environment line. It also carries `coverage`: each section of
@@ -435,16 +436,17 @@ number of independent tasks held it below its source's grade, `size_limited`: th
 source supports and the counting tasks it had and needed. A run whose subject image was built lists
 `skill_packages_from_configured_index` among its host limitations. A plan audit records the proposed grade, the evidence
 ceiling Python computed with its limiting reasons, the independent critique with its
-per-case verdicts and coverage gaps, the `counted_cases` and the `case_ceiling` recomputed
-over them, the round number and the settled ceiling; a coverage return is recorded once per
-claim, with its round and Python's search count then; `negotiation_refs` retains every round's audit,
+per-case verdicts (each with its `criterion_given`), coverage gaps and departures, the
+`counted_cases` and the `case_ceiling` recomputed over them, the round number and the
+settled ceiling; a coverage return is recorded once per claim, with its round and the
+design it returned; `negotiation_refs` retains every round's audit,
 so the negotiation is readable after the fact. Each trial has request, response and
 score receipts; new or changed files are immutable objects with readable copies in
 that trial's artifact directory. A request carries the task's input, with its
 `answer_format` line. A score receipt holds the trial's `comparison_status` and the task
 fields described above. Reports include attempted/obtained/evaluated/invalid/missing
-counts, whether each task was counted, the settled grade
-negotiation, required-grade satisfaction
+counts, whether each task was counted and whether it passed on tolerance only, the settled
+grade negotiation and how a coverage return ended, required-grade satisfaction
 and independent critique and documentary packet/assessment references. Limitation
 records carry `asserted_by`, distinguishing a planner-ended claim from an observed
 failure. A trial's receipt and report row carry any safety `refusals` its stream

@@ -167,7 +167,7 @@ A fresh no-tool session then receives the claim with the text of its sections, t
 design whole (`local-tasks.md` lists it), the reference provenance, the justification and
 the design's scope and limitations, Python's ceiling, Python's search record, the concerns
 earlier reviewers raised about earlier versions of this design (their objections, required
-revisions, coverage gaps, and every task they did not count, with its verdict, reason and
+revisions, coverage gaps, departures, and every task they did not count, with its verdict, reason and
 suggested replacement), and the fixed critique rubric.
 The search record is read from this attempt's workflow log, not from the planner's notes:
 every WebSearch query the planner ran, marked with the claim it was working on (the one its

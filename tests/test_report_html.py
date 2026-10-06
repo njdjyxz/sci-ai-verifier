@@ -93,7 +93,7 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn('id="claim-2"', page)
         self.assertEqual(page.count("<div class=\"id\">"), 2, "one row per test, not per try")
         self.assertIn("2 · beta", page, "a choice key shows the option it names")
-        self.assertIn("No — the question gives the answer away", page)
+        self.assertIn("No — it gives away the answer or the rule", page)
         self.assertIn("2 of 3", page)
         self.assertIn("A→B", page, "the planner's grade and the reviewer's, per round")
         self.assertIn("No tests ran", page)

@@ -27,6 +27,9 @@ CASE_REASONS = {"fewer_than_two_counting_tasks", "fewer_than_three_counting_task
 EXTERNAL_REASONS = {"expected_answers_not_independently_retrieved"}
 # Revisions a claim may spend replacing tasks the critique did not count.
 REPLACEMENT_ROUNDS = 2
+# The grade a departure the critique lists holds a proposal to; below C there is no execution grade
+# ("Departures" under select_local_candidate in tool-contracts.md).
+BELOW = {"A": "B", "B": "C"}
 # The installed aggregation rule. It is recorded on every card because `fail` cannot be
 # read without it: thirteen passes in fifteen trials is a failure under unanimity and a
 # pass under a majority rule. Making this planner-selectable per claim is deliberately
@@ -37,7 +40,7 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v9",
+    "id": "evidence-strength-v10",
     "minimum_tasks": TASK_MINIMUM,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
@@ -61,6 +64,8 @@ POLICY = {
     "axes": "grade reports the reference and test bundle only; accuracy, consistency, "
             "completeness and status are recorded separately and none overwrites another",
     "ceiling": "strongest grade supported by recorded evidence facts, lowered by the independent critique",
+    "departures": "while the critique lists where the skill's own procedure departs from the reference solution "
+                  "with no task exposing it, the grade settles one below the proposal it judged",
     "grades": {
         "A": "expected values planted by Python in task files from a model quoted token-exactly from a reference "
              "Python retrieved, and recovered by the reference solution, or quoted token-exactly from such a "
@@ -198,12 +203,12 @@ def rejected_cases(critique):
     return [item for item in (critique or {}).get("case_verdicts") or [] if item["verdict"] != "counts"]
 
 
-def case_gap(candidate, counted, grade, supported):
+def case_gap(candidate, counted, grade, supported, departures=False):
     """What `grade`'s task requirement still lacks over the counted tasks, in numbers and words.
 
     Run 31b67427's planner accepted B one counting case short of A, believing it lacked an
     open case it already had. Python holds the count, so it states it, and says when the
-    critique's own grade is a limit as well.
+    critique's own grade, or a departure it lists, is a limit as well.
     """
     cases = [case for case in candidate["cases"] if counted is None or case["case_id"] in counted]
     need = POLICY["tasks"][grade]
@@ -214,6 +219,9 @@ def case_gap(candidate, counted, grade, supported):
         if weaker(grade, supported) != grade:
             summary += (" The critique's own grade is " + str(supported or "none")
                         + ", so its objections need answering as well.")
+    elif departures:
+        summary = ("This design's " + str(len(cases)) + " counted tasks meet " + grade + "'s requirement. What "
+                   "holds the settled grade down is each departure the critique lists, until a task exposes it.")
     else:
         summary = ("This design's " + str(len(cases)) + " counted tasks meet " + grade + "'s requirement. The "
                    "critique's own grade, " + str(supported or "none") + ", is what holds the settled grade down, "
@@ -222,8 +230,12 @@ def case_gap(candidate, counted, grade, supported):
             "summary": summary}
 
 
-def audit(candidate, claim, settings, selection, references, *, critique=None, rounds=1):
-    """Freeze the plan, its evidence ceiling and the critique that settled the grade."""
+def audit(candidate, claim, settings, selection, references, *, critique=None, rounds=1, judged=True):
+    """Freeze the plan, its evidence ceiling and the critique that settled the grade.
+
+    `judged` is false when the planner accepts the grade this design's critique already settled at:
+    that grade already holds any departure's limit, which applies to the proposal the critique judged.
+    """
     problems = []
     if len(candidate["cases"]) < TASK_MINIMUM:
         problems.append("insufficient_distinct_cases")
@@ -239,6 +251,11 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
     counted = counted_cases(critique)
     case_ceiling, case_limits = evidence_ceiling(candidate, references, selection["trials_per_case"], counted)
     settled = weaker(weaker(proposed, supported if supported in ("A", "B", "C") else None), case_ceiling)
+    # Run 2bef9e0d's critique worked out that the skill's two-step formula passed only inside the tolerance,
+    # agreed with A, and listed it as a coverage gap. A departure now holds the grade below the proposal.
+    held = bool(judged and critique and critique.get("departures"))
+    if held:
+        settled = weaker(settled, BELOW.get(proposed))
     return {
         "kind": "local-plan-audit", "candidate_fingerprint": fingerprint(candidate),
         "selection_digest": digest(canonical(selection)),
@@ -246,7 +263,7 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
         "environment_digest": selection["environment_digest"], "scope": claim["scope"],
         "policy": POLICY, "policy_ref": POLICY_REF,
         "proposed_grade": proposed, "evidence_ceiling": ceiling, "evidence_limits": limits,
-        "critique": critique, "critique_rounds": rounds, "settled_ceiling": settled,
+        "critique": critique, "critique_rounds": rounds, "settled_ceiling": settled, "held_by_departures": held,
         "counted_cases": counted if counted is not None else [case["case_id"] for case in candidate["cases"]],
         "case_ceiling": case_ceiling, "case_limits": case_limits,
         "justification": {key: selection[key] for key in PLANNER_JUSTIFICATION},

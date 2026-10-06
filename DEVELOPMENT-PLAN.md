@@ -2111,7 +2111,7 @@ window:
    - time and cost per claim, against the 4 claims and $30 of run `90c60cbe`.
 3. Record it in a new entry, with what to change before the next skill.
 
-## Claude: 2026-10-06 (runs f84c131c and 2bef9e0d, the first with task tests; a reviewed command table for ToolUniverse's `tu`; the coverage return for tasks)
+## Claude: 2026-10-06 (runs f84c131c and 2bef9e0d, the first with task tests; a reviewed command table for ToolUniverse's `tu`; the coverage return for tasks; departures, rules given and passes on tolerance)
 
 ### Current stage and status
 
@@ -2128,8 +2128,10 @@ Run `2bef9e0d` on western-blot-quantification, the first with the coverage retur
 claims at A with status pass, 57 of 57 trials, and covered 75% of the skill's words against 13% under
 questions. It also showed what a pass can hide: the skill's two-step formula is wrong when lanes are
 loaded unequally, no task loaded them unequally, and the tolerance absorbed the difference
-(section 8). Options for that and for tasks that state their own rule are open questions 6 and 7.
-Nothing has been built for them.
+(section 8). The operator chose four options from open questions 6 and 7, and all four are built
+(section 9): a departure of the skill from the reference holds the grade, a task may not state a
+rule the claim supplies, a pass far from the reference is marked, and no search ends a coverage
+return. No run has used them yet.
 
 ### What has been done
 
@@ -2319,13 +2321,69 @@ record it and draft the options".
   - Its critiques named regimes its tasks avoided, such as midpoints well inside the range, but its
     answers matched the solver, so it shows no hidden departure like the two-step one.
 
+**9. Departures, rules given, passes on tolerance, and no search to end a return.** The operator:
+"build the recommended options: 6a, 6c, 6d drop, 7a", then the claim-1 re-recording.
+- **Contracts first.**
+  - [`local-tasks.md`](skills/scientific-verifier/references/local-tasks.md) owns the task rules: a
+    job may not give a rule, threshold or order of steps the claim's sections supply, and a rule
+    they lack is named in `criterion_given`; **Where the skill departs from the reference**; and
+    **Passed on tolerance**, with its 0.5% margin.
+  - [`evidence-rubric.md`](skills/scientific-verifier/references/evidence-rubric.md): "Not given
+    away", "Right", the `leaked` and `unsound` rows, and steps 4 and 5. `unsound` no longer calls a
+    key unfair because following the skill misses it.
+  - `select_local_candidate` in
+    [`tool-contracts.md`](skills/scientific-verifier/references/tool-contracts.md) owns
+    **Departures** and the hold, drops `return_unsearched`, and names `departures` and
+    `criterion_given` in the critique's reply. `workflow.md`, `artifact-contracts.md` and
+    `local-contract.md` point at them.
+- **Rubric v4.** Criterion 3 asks that some task expose each departure of the skill's own
+  procedure from the reference solution. `rubric.departures` and `rubric.criterion_given` say how
+  to report them, and the `leaked` and `unsound` verdicts follow the table. The reply adds
+  `departures`, and per task `criterion_given`, empty or the rule.
+- **The hold.** While the critique lists a departure, the settled grade is one below the proposal
+  it judged: A to B, B to C, C to no grade (policy `evidence-strength-v10`). Accepting that grade
+  holds it no lower. A revised design whose critique lists none can settle at the proposal. The
+  reply carries `departures` and says how to answer them, and earlier departures reach the next
+  critique.
+- **Passed on tolerance.** Scoring keeps `reference_result` and `off_reference` for a number that
+  passed more than 0.5% from a nonzero reference result. The report lists those tasks and the page
+  marks them; status and grade do not change.
+- **The coverage return** needs no search to end. The report says whether the planner kept the
+  design, and how many gaps it left open, or revised it.
+- **Report and page** show departures, rules given, passes on tolerance and how a return ended.
+- **The re-recording.** Run `2bef9e0d` claim 1's stored packet, with v4 in place of v3, judged by
+  `claude-opus-5` in 274 s for $0.96: a live check of the hold on the case that motivated it.
+  - A, all four tasks counted, five objections, three required revisions, three coverage gaps and
+    one departure. Followed literally, the skill's two-step formula is the modified form times the
+    loading control over the total form, which keeps the per-lane loading, and it agreed with the
+    key only because every phospho/total task held loading equal. The critique called them "not two
+    defensible readings of one claim" and required a fifth task with about 2-fold loading variation.
+  - Under the hold, that claim would have settled at B until such a task existed, not at A.
+  - Its first reply added a stray `paramaters` key, which Claude Code refused, and the session
+    resent it.
+  - It replaces `f84c131c`'s recording, and `tests/recorded/README.md` says so.
+- **Verification.**
+  - New tests: the hold at A, B and C, and accepting it; a revised design that exposes the
+    departure; the tolerance mark, unit and end to end with the page; a rule given, end to end;
+    the reply's new shapes. The test of the search check went with it.
+  - Suite 387 → 391 tests, 389 passing and 2 skipped.
+  - Sizes: the verification bootstrap is 195,574 of 200,000 bytes; every pinned local block is
+    under 40,960, the largest `local-contract.md` at 35,047.
+
 ### Decisions taken 2026-10-06
 
 - **Operator:** run the `tu` check, and add `tu` if it passes. Done.
 - **Operator:** add the coverage return for tasks, and re-record the critique from a real packet.
   Done (section 7).
 - **Operator:** clean and run western-blot-quantification, then record the run and draft options for
-  its weak spots. Done (section 8; open questions 6 and 7). Nothing was built.
+  its weak spots. Done (section 8).
+- **Operator:** build 6(a), 6(c), dropping the search in 6(d), and 7(a), and re-record the critique
+  from `2bef9e0d`'s claim-1 packet. Done (section 9).
+- **Proposed here and built (section 9):**
+  - Python applies the hold, one grade below the proposal the critique judged, instead of trusting
+    the critique to lower its own grade; accepting the held grade does not lower it again.
+  - `criterion_given` is the critique's judgment, per task.
+  - A zero reference result is not compared for the tolerance mark.
 - **Proposed here and built:** the return applies at every grade, A included, unlike the
   question-era return, which skipped A.
 - **Proposed here and built (section 3):**
@@ -2342,7 +2400,8 @@ record it and draft the options".
 3. Answered by the operator (section 7).
 4. **Merge `whole-skill-tests`** now that a task run has worked? The merge is the operator's.
 5. The 2026-10-05 entry's open questions on the final reviewer stand.
-6. **An A that hid a flaw** (section 8). The design avoided the case where the skill goes wrong, the
+6. Answered by the operator (section 9): (a), (c), and dropping the search in (d). The options as drafted:
+   **An A that hid a flaw** (section 8). The design avoided the case where the skill goes wrong, the
    tolerance absorbed the difference, and two web searches closed the return. These options combine:
    - (a) **Flag answers that pass only on tolerance.** After the trials, Python compares each number
      with the reference solver's result for the same file. Beyond 0.5%, which separates the two task
@@ -2365,7 +2424,8 @@ record it and draft the options".
      a fetch instead of a search.
    - Recommended: (a), (c), and dropping the search in (d), since under (c) the gaps that matter become
      required revisions. (a) rests on two skills, (c) on one.
-7. **Tasks that state their rule** (section 8). `local-tasks.md` already says the job must not tell the
+7. Answered by the operator (section 9): (a). The options as drafted: **Tasks that state their rule**
+   (section 8). `local-tasks.md` already says the job must not tell the
    test AI "which steps of the skill to follow … or which problem was planted", but `leaked` covers
    only naming the problem, and the critique counted such tasks while objecting. Options:
    - (a) Widen `leaked` to a job that states a step, an order or a criterion the claim's sections
@@ -2380,21 +2440,23 @@ record it and draft the options".
 
 ### Urgent next steps, if any
 
-None. Before any run, check that this session's `serve-local` postdates the last `src/` commit, and
-if it does not, restart the session rather than run around it: a background `verify` dies with the
-session (section 8).
+None. `src/` changed again, so before the next run restart the session and check that its
+`serve-local` postdates the commit; do not run around it, since a background `verify` dies with the
+session (section 8). Check Docker and usage first.
 
 ### Suggested next move
 
-Decide open questions 6 and 7. Then build the chosen options, contracts first, with one rubric bump
-and one re-recording. Then re-run two skills: western-blot-quantification, where under 6(c) claim 1
-should meet a task with unequal loading, and tooluniverse-dose-response, to check that the new rules
-do not misfire on a skill without the flaw.
+Re-run two skills on the new rules: western-blot-quantification, where claim 1 should now meet a task
+with unequal loading or settle below A, and tooluniverse-dose-response, to check that the hold and the
+marks do not fire on a skill whose answers match the reference (the 2026-10-02 bar).
 
 ### Recommended next action
 
-With the operator's choices on open questions 6 and 7:
-1. Edit the owner documents each chosen option names, then the code, with a test for each new rule.
-2. If the rubric changed, re-record the task critique live, about $0.70, after asking.
-3. It is finished when the suite passes and any re-recording is in place. Ask before the re-runs:
-   each costs $25–35 and most of a 5-hour window.
+With the operator's go-ahead, after a session restart and a Docker and usage check:
+1. Run `verify_skill` on western-blot-quantification.
+2. It is finished when the report shows, for claim 1, either a task with unequal loading and its
+   status, or a grade held below A with its departure; and which tasks passed on tolerance only and
+   which jobs gave a rule.
+3. Then run tooluniverse-dose-response and check that no departure, tolerance mark or rule given
+   appears where its answers match the reference. Each run costs $25–35 and most of a 5-hour
+   window.

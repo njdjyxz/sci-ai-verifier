@@ -127,6 +127,21 @@ def check(output, present, found):
     return "pass" if {fold(item) for item in found} == {fold(item) for item in expected} else "fail"
 
 
+# "Reading a trial's results" in local-tasks.md: a pass this far from the reference solution's own result is
+# marked, never failed. Every answer in run f84c131c was within 0.18% of its reference result; the four tasks
+# of run 2bef9e0d that hid the skill's departure from the reference were 2.4 to 5.5% off.
+REFERENCE_MARGIN = Decimal("0.005")
+
+
+def off_reference(found, result):
+    """A passing number's distance from the reference solution's result, kept when over the margin of it."""
+    exact = decimal_text(result)
+    if exact is None or Decimal(exact) == 0:
+        return {}
+    gap = abs(Decimal(decimal_text(found)) - Decimal(exact)) / abs(Decimal(exact))
+    return {"reference_result": exact, "off_reference": str(gap.quantize(Decimal("0.0001")))} if gap > REFERENCE_MARGIN else {}
+
+
 def read_results(files):
     """The results object from a container's new files (path -> bytes), or (None, why not)."""
     raw = files.get(RESULTS_FILE)
@@ -148,6 +163,7 @@ def score(case, files):
     is missing; a trial with nothing wrong and something missing or misshapen is `invalid`.
     """
     value, problem = read_results(files)
+    reference = case.get("solver_results") if isinstance(case.get("solver_results"), dict) else {}
     rows = []
     for output in case["outputs"]:
         present = value is not None and output["field"] in value
@@ -155,7 +171,9 @@ def score(case, files):
         verdict = check(output, present, found)
         rows.append({"field": output["field"], "type": output["type"], "expected": output["expected"],
                      **({"tolerance": str(tolerance(output))} if output["type"] == "number" else {}),
-                     "present": present, "found": found if present else None, "status": verdict})
+                     "present": present, "found": found if present else None, "status": verdict,
+                     **(off_reference(found, reference.get(output["field"]))
+                        if verdict == "pass" and output["type"] == "number" else {})})
     statuses = {row["status"] for row in rows}
     status = "fail" if "fail" in statuses else "invalid" if "invalid" in statuses else "pass"
     return {"status": status, "outputs": rows, "results_found": value is not None,

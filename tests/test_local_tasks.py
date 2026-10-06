@@ -131,6 +131,22 @@ class RulesTests(unittest.TestCase):
         self.assertEqual([(row["field"], row["found"], row["status"]) for row in rows],
                          [("slope", 3, "fail"), ("pick", "a", "pass")])
 
+    def test_a_pass_far_from_the_reference_result_is_marked_never_failed(self):
+        """Run 2bef9e0d: answers 2.4 to 5.5% off the reference solution's passed inside 8 and 10% tolerances."""
+        case = {"outputs": [{"field": "fold", "type": "number", "expected": "4.3937", "relative_tolerance": "0.10"},
+                            {"field": "sd", "type": "number", "expected": "0", "absolute_tolerance": "0.01"}],
+                "solver_results": {"fold": 4.3937, "sd": 0}}
+
+        def rows(fold, sd=0):
+            return score(case, {RESULTS_FILE: json.dumps({"fold": fold, "sd": sd}).encode()})["outputs"]
+        near, far = rows(4.40), rows(4.542, 0.005)
+        self.assertNotIn("off_reference", near[0])
+        self.assertEqual((far[0]["status"], far[0]["reference_result"], far[0]["off_reference"]),
+                         ("pass", "4.3937", "0.0338"))
+        # A zero reference result has no fraction to measure by, and a miss is a failure, not a mark.
+        self.assertNotIn("off_reference", far[1])
+        self.assertNotIn("off_reference", rows(5.0)[0])
+
     def test_the_subject_input_never_holds_an_expected_value(self):
         case = {"job": "Fit the table.", "files": [{"name": "doses.csv"}],
                 "outputs": [{"field": "slope", "type": "number", "planted": "slope", "expected": "2.5"}]}
@@ -276,6 +292,8 @@ class TaskSubject:
         results = fit(task_files, case_input)
         if self.mode == "wrong":
             results["slope"] = results["slope"] / 1000  # A unit slip: the skill's own input read as micro.
+        if self.mode == "close":
+            results["slope"] = results["slope"] * 1.03  # Another formula, inside the 10% tolerance.
         files = [] if self.mode == "silent" else [json.dumps(results).encode()]
         return {"text": "Wrote the results file.", "response_id": "synthetic-" + str(len(self.requests)),
                 "model_id": "synthetic", "invocation_verified": True, "synthetic": True,
@@ -318,10 +336,10 @@ class FlowTests(unittest.TestCase):
         self.h.call("qualify_local_tasks", claim_id=self.h.claim_id, **design(cases, ref))
         return self.h.data
 
-    def critic(self, supported="A", verdicts=None):
+    def critic(self, supported="A", verdicts=None, **given):
         def run(adapter, packet):
             self.packets.append(packet)
-            return critic_reply(packet, supported, rejected=verdicts)
+            return critic_reply(packet, supported, rejected=verdicts, **given)
         return patch("sci_ai_verifier.documentary.critique_tasks", side_effect=run)
 
     def select(self, key, grade):
@@ -411,6 +429,30 @@ class FlowTests(unittest.TestCase):
         page = Path(publish(h.base / "tasks", h.data["run_id"])["path"]).read_text(encoding="utf-8")
         self.assertIn("set aside: Synthetic: nothing to test.", page)
         self.assertIn("2 of 2 sections were set aside as having nothing to test", page)
+
+    def test_a_pass_off_the_reference_and_a_rule_the_job_gives_are_shown_not_scored(self):
+        """Run 2bef9e0d passed four tasks 2.4 to 5.5% off the reference solution, and gave the test AI the rules
+        its claim on problems was about: the report and page now say both, and neither changes a verdict."""
+        from sci_ai_verifier.report_html import publish
+        h = self.h
+        ref = self.start(TaskSubject("close"), graded=True)
+        key = self.qualify(ref, [task("t1", ["S1"]), task("t2", ["S2"], slope=4)])["candidate_ref"]
+        rule = "a slope counts as linear within 15 percent of the slope at the first dose"
+        with self.critic("B", criteria={"t2": rule}):
+            self.select(key, "B")
+        h.call("execute_local_claim", claim_id=h.claim_id)
+        self.assertEqual((h.data["result"]["scientific_status"], h.data["result"]["evidence_grade"]), ("pass", "B"))
+        h.call("write_report_card")
+        row = h.data["report"]["claims"][0]["tests"][0]["outputs"][0]
+        self.assertEqual((row["status"], row["off_reference"]), ("pass", "0.0300"))
+        markdown = Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Passed on tolerance only, more than 0.5% from the reference solution's result: "
+                      "t1 (up to 3.0%); t2 (up to 3.0%).", markdown)
+        self.assertIn("- Task t2 gives a rule the claim's sections do not: " + rule, markdown)
+        page = Path(publish(h.base / "tasks", h.data["run_id"])["path"]).read_text(encoding="utf-8")
+        for expected in ("Passed on tolerance only:</span> t1, t2", "On tolerance only: up to 3.0% from the reference",
+                         "The job gives a rule the skill does not: " + rule, "3.0% from the reference's 2"):
+            self.assertIn(expected, page)
 
     def test_no_results_file_is_invalid_and_the_claim_inconclusive(self):
         h = self.h

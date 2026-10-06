@@ -398,11 +398,11 @@ class GradeNegotiationTests(unittest.TestCase):
         # The rubric tells the critique to judge a described search by this record.
         self.assertIn("python_checked.search_record",self.packets[0]["rubric"]["criteria"][3])
 
-    def agreeing(self,supported,gaps=()):
-        """A critique that agrees with the proposal, naming `gaps` as coverage_gaps."""
+    def agreeing(self,supported,gaps=(),departures=()):
+        """A critique supporting `supported`, naming `gaps` as coverage_gaps and `departures` as departures."""
         def run(adapter,packet):
             self.packets.append(packet)
-            return critic_reply(packet,supported,coverage_gaps=gaps)
+            return critic_reply(packet,supported,coverage_gaps=gaps,departures=departures)
         return run
 
     def planner_log(self):
@@ -424,29 +424,24 @@ class GradeNegotiationTests(unittest.TestCase):
         """Run f84c131c: four critiques agreed with A while naming untested parts of every claim, and the
         question-era return, which skipped A, would not have asked the planner anything."""
         h=self.h
-        log=self.planner_log()
+        self.planner_log()
         with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.agreeing("A",[self.GAP])):
             h.select(self.key,target_grade="A")
             self.assertEqual(h.data["outcome"],"local_grade_revision_required")
             self.assertEqual((h.data["settled_grade"],h.data["coverage_gaps"]),("A",[self.GAP]))
             self.assertIn("once per claim",h.data["message"])
             self.assertEqual(h.data["claim_states"][h.claim_id],"local_discovery")
-            # Accepting A at once is the planner saying it searched; Python's record says it did not.
-            h.select(self.key,target_grade="A")
-            self.assertEqual((h.data["outcome"],h.data["reason"]),("local_grade_proposal_refused","return_unsearched"))
-            self.assertEqual(h.data["coverage_gaps"],[self.GAP])
-            self.assertEqual(len(self.packets),1,"a refused acceptance spends no session")
-            # One search for this claim since the return, and the same grade is accepted with no new session.
-            self.planner(log,{"type":"tool_use","id":"use-1","name":"WebSearch",
-                              "input":{"query":"dose-response r-squared acceptance threshold"}})
+            # No search is needed to keep the design: run 2bef9e0d's planner met that rule with searches it
+            # never read. Keeping it leaves the gaps open, and the report says so.
             h.select(self.key,target_grade="A")
         self.assertEqual(h.data["outcome"],"local_plan_fixed")
         self.assertEqual(h.data["audit"]["settled_ceiling"],"A")
-        self.assertEqual(len(self.packets),1)
+        self.assertEqual(len(self.packets),1,"accepting spends no session")
         h.call("execute_local_claim",claim_id=h.claim_id)
         h.call("write_report_card")
         report=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
         self.assertIn("Returned once for coverage gaps: the critique in round 1",report)
+        self.assertIn("The planner kept the design, leaving 1 open.",report)
         self.assertIn("Coverage gap: "+self.GAP,report)
 
     def test_the_gap_return_comes_once_and_the_next_design_is_judged_as_usual(self):
@@ -461,15 +456,47 @@ class GradeNegotiationTests(unittest.TestCase):
         # Its critique was told what the earlier one found untested, to check the revision against it.
         self.assertIn("An earlier version left untested: "+self.GAP,self.packets[1]["prior_objections"])
 
-    def test_with_no_workflow_log_the_returned_grade_is_accepted_unchecked(self):
-        """No log means no record to check, so Python cannot refuse on it."""
+    DEPARTURE=("Followed literally, Step B multiplies the modified band by the loading control, so a lane loaded "
+               "twice as heavily reads twice as high; no task loads lanes unequally, which would expose it.")
+
+    def test_a_departure_holds_the_grade_below_the_proposal_and_accepting_it_holds_no_lower(self):
+        """Run 2bef9e0d's critique worked out that the skill's own formula passed only inside the tolerance,
+        agreed with A, and listed it as a coverage gap."""
         h=self.h
-        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.agreeing("A",[self.GAP])):
+        with patch("sci_ai_verifier.documentary.critique_tasks",
+                   side_effect=self.agreeing("A",departures=[self.DEPARTURE])):
             h.select(self.key,target_grade="A")
             self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            self.assertEqual((h.data["supported_grade"],h.data["settled_grade"]),("A","B"))
+            self.assertEqual(h.data["departures"],[self.DEPARTURE])
+            self.assertIn("departs from the reference solution",h.data["message"])
+            self.assertIn("each departure the critique lists",h.data["case_gap"]["summary"])
+            # Accepting what this design settled at: the departure does not lower it again.
+            h.select(self.key,target_grade="B")
+        self.assertEqual((h.data["outcome"],h.data["audit"]["settled_ceiling"]),("local_plan_fixed","B"))
+        self.assertEqual(len(self.packets),1)
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        h.call("write_report_card")
+        report=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Departure no task exposes: "+self.DEPARTURE,report)
+        self.assertIn("Held below the grade proposed to this critique",report)
+
+    def test_a_revised_design_that_exposes_the_departure_settles_at_the_proposal(self):
+        h=self.h
+        four=h.candidate(lookup=False,rows=fixture.ROWS+("zeta",),name="Fixture table, four rows")
+        found=iter([[self.DEPARTURE],[]])
+
+        def run(adapter,packet):
+            self.packets.append(packet)
+            return critic_reply(packet,"A",departures=next(found))
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=run):
             h.select(self.key,target_grade="A")
-        self.assertEqual(h.data["outcome"],"local_plan_fixed")
-        self.assertFalse(self.packets[0]["python_checked"]["search_record"]["recorded"])
+            self.assertEqual(h.data["settled_grade"],"B")
+            h.select(four,target_grade="A")
+        self.assertEqual((h.data["outcome"],h.data["audit"]["settled_ceiling"]),("local_plan_fixed","A"))
+        # Its critique was told what the earlier one found, to check the revision against it.
+        self.assertIn("An earlier review found the skill departs from the reference solution, with no task "
+                      "exposing it: "+self.DEPARTURE,self.packets[1]["prior_objections"])
 
     def test_no_return_without_gaps_or_below_an_agreeing_grade(self):
         h=self.h

@@ -596,9 +596,8 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   use another claim's, which matters for a design found by lookup, or
   `prior_review_in_packet` when a note the critique would read mentions an earlier review
   (step 3 of "Negotiating the grade" in `evidence-rubric.md`), with the `field` and
-  `phrase` found, `critique_packet_too_large` when the critique's packet would exceed
-  its byte limit, with `packet_bytes` and `limit_bytes`, or `return_unsearched` (the
-  coverage return below) — and spends no session. Only a
+  `phrase` found, or `critique_packet_too_large` when the critique's packet would exceed
+  its byte limit, with `packet_bytes` and `limit_bytes` — and spends no session. Only a
   proposal that would start a critique is checked for an earlier review or its packet's
   size, and the critique is never given a shortened design. A task's applicability and the design's scope and
   limitations are fixed at qualification, so a note there needs a revised design.
@@ -608,7 +607,8 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   earlier reviews but never their grades, and may only lower the grade. Python then
   recomputes the ceiling over the tasks the critique counted; the audit records
   `counted_cases`, that `case_ceiling`, and a settled ceiling that is the weakest of the
-  proposal, the case ceiling and the critique's grade. `local_plan_fixed` freezes the
+  proposal, the case ceiling and the critique's grade, held below the proposal while the
+  critique lists `departures` (below). `local_plan_fixed` freezes the
   plan, its settled ceiling and that critique, and enters local_ready; accepting the
   grade an unchanged design already settled at settles there directly without a new
   session, including when it settled at no grade. `local_grade_revision_required` keeps
@@ -618,17 +618,22 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   `replacement_rounds_remaining`, and `case_gap`: the proposal's task requirement against
   the tasks the critique counted, with a `summary` sentence that also names the
   critique's own grade whenever it is below the proposal, and the critique's
-  `coverage_gaps`. **The coverage return.** A critique lists in `coverage_gaps`, whatever its
+  `coverage_gaps` and `departures`. **The coverage return.** A critique lists in `coverage_gaps`, whatever its
   grade, what the claim's sections say to do, check or conclude that no task tests
   (`rubric.coverage`). When it agrees with the proposal, the settled grade equalling it,
   and lists any, Python returns `local_grade_revision_required` instead of fixing the plan,
   once per claim and at every grade, A included. The planner then tests the gaps in a
   revised design, which is critiqued as usual and never returned for gaps again, or
-  searches for a source for each and accepts the grade. Python accepts it only when its
-  search record shows a search or fetch for this claim made since the return, and
-  otherwise refuses it as `return_unsearched`; with no workflow log there is no record to
-  check. Run `f84c131c`'s four critiques agreed with A while naming untested parts of every
-  claim, and nothing asked the planner to answer them. `local_design_unchanged`
+  accepts the grade and leaves them open; the report says which. Run `f84c131c`'s four
+  critiques agreed with A while naming untested parts of every claim, and nothing asked the
+  planner to answer them. A search once required before accepting was dropped after run
+  `2bef9e0d`, whose planner met it with web searches it never read. **Departures.** A
+  critique lists in `departures` each situation the claim covers where the skill's
+  procedure, followed literally, gives a different result from the reference solution and
+  no task puts the difference outside its tolerance (`local-tasks.md`). While it lists any,
+  the settled grade stays below the proposal: A becomes B, B becomes C and C no grade. The
+  planner then exposes each departure in a revised design or accepts the lower grade.
+  `local_design_unchanged`
   refuses a repeated proposal on a design already critiqued, spending neither a session
   nor a round, so only real revisions consume the budget. `local_grade_rounds_exhausted`
   reports a spent budget. On the last permitted round, or when a critique rejects tasks
@@ -644,11 +649,13 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   reply in shape is `critic_response_invalid` or `assessor_response_invalid`, an
   operational failure, never a grade and never a scientific finding. A critique holds
   `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string per
-  rubric criterion, in order), `objections`, `required_revisions` and `coverage_gaps` (each
-  at most eight strings, empty when there are none), and `case_verdicts`: one entry for every task ID in
-  the packet and no other, each holding a `verdict` (one of those defined in
-  `evidence-rubric.md`), a `reason`, and a `replacement` that is empty for `counts` and
-  otherwise describes a task that would test the claim instead. An assessment holds
+  rubric criterion, in order), `objections`, `required_revisions`, `coverage_gaps` and
+  `departures` (each at most eight strings, empty when there are none), and `case_verdicts`:
+  one entry for every task ID in the packet and no other, each holding a `verdict` (one of
+  those defined in `evidence-rubric.md`), a `reason`, a `replacement` that is empty for
+  `counts` and otherwise describes a task that would test the claim instead, and
+  `criterion_given`, empty unless the job states a rule the claim's sections do not supply,
+  which it then names (`local-tasks.md`). An assessment holds
   `status`, `findings` (one string per documentary criterion), one to eight `citations`
   naming packet references, and `limitations`, a single string. No string may be blank
   and no object may carry a key its schema does not name. Python checks the reply against

@@ -20,13 +20,13 @@ from types import SimpleNamespace
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "report_html.py"
 TYPES = {"numeric": "number", "exact": "exact token", "term": "word or phrase", "choice": "multiple choice",
          "expression": "formula", "list": "list, in order", "set": "list, any order"}
-NOT_COUNTED = {"leaked": "the question gives the answer away", "duplicate": "it repeats another test",
+NOT_COUNTED = {"leaked": "it gives away the answer or the rule", "duplicate": "it repeats another test",
                "beyond_scope": "the claim alone does not settle it", "naming": "it only asks what something is called",
                "unsound": "its expected value or tolerance is not right"}
 OUTCOMES = {"local_plan_fixed": "plan fixed", "local_grade_revision_required": "sent back to revise",
             "local_grade_proposal_refused": "refused before review"}
 REFUSALS = {"prior_review_in_packet": "its notes mentioned an earlier review",
-            "return_unsearched": "accepted with no new search", "local_design_unchanged": "the same design again",
+            "local_design_unchanged": "the same design again",
             "sections_unused": "its tasks did not use this claim's sections",
             "critique_packet_too_large": "its review packet was over the size limit"}
 HOST = {"managed_host_configuration_is_trusted": "The verifier trusts the computer and the settings it runs on.",
@@ -39,8 +39,8 @@ HOST = {"managed_host_configuration_is_trusted": "The verifier trusts the comput
 GUIDE = ("Fill in the empty fields below in plain words and short sentences, for a reader who has not seen the "
          "skill. Do not quote the skill. skill.name: a short plain name. skill.summary: 3 to 5 sentences on what "
          "the skill does. For each claim: title, 2 to 5 words; says, 2 to 4 sentences on what the claim says; "
-         "summary, 2 to 4 sentences on how it did, naming any test that failed or did not count and any fact left "
-         "untested. For each test: asks, the question or task in one short plain sentence; review, only if you checked a "
+         "summary, 2 to 4 sentences on how it did, naming any test that failed, did not count or passed on "
+         "tolerance only, and any fact left untested. For each test: asks, the question or task in one short plain sentence; review, only if you checked a "
          "failed or odd test, saying whether the question, the key or the skill was at fault. cautions: short "
          "sentences the reader should know. by: your name; author: who wrote this text, and when. Leave every "
          "other field as it is, then run the render command to update the page.")
@@ -260,6 +260,7 @@ def claim_view(run, number, claim, notes):
                          for row in counted_trials),
         "rounds": rounds, "looked": looked,
         "untested": critique.get("coverage_gaps"), "findings": critique.get("findings") or [],
+        "departures": critique.get("departures") or [],
         "seconds": (max(stamps) - min(stamps)).total_seconds() if len(stamps) > 1 else None,
         "cost": sum(run.costs.get(s) or 0 for s in sessions) if sessions else None,
         "references": claim.get("references") or {}, "limitations": record.get("limitations") or [],
@@ -274,7 +275,10 @@ def task_view(index, case_id, rows, case, verdict, dropped, written, references)
     for output in case.get("outputs") or []:
         source = references.get(output.get("reference_ref")) or {}
         outputs.append({**output, "url": source.get("url"), "version": source.get("version")})
+    gaps = [float(item["off_reference"]) for row in rows for item in row.get("outputs") or []
+            if item.get("off_reference") is not None]
     return {"kind": "task", "number": index, "case_id": case_id, "method": "task", "options": [],
+            "criterion_given": verdict.get("criterion_given") or "", "off_reference": max(gaps) if gaps else None,
             "asks": written.get("asks"), "review": written.get("review"), "question": rows[0].get("input", ""),
             "expected": rows[0].get("expected") or {}, "outputs": outputs, "files": rows[0].get("files") or [],
             "sections": rows[0].get("sections") or [], "planted": case.get("planted"),
@@ -513,9 +517,13 @@ def task_table(v):
         tries = "".join(f'<span class="ans {"ok" if row.get("comparison_status") == "pass" else "bad"}" '
                         f'title="{e(misses(row))}">{e(row.get("comparison_status"))}'
                         f'{(": " + e(misses(row))) if misses(row) else ""}</span>' for row in t["trials"])
+        given = (f'<div class="dim">The job gives a rule the skill does not: {e(t["criterion_given"])}</div>'
+                 if t["criterion_given"] else "")
+        near = (f'<div class="dim">On tolerance only: up to {t["off_reference"]:.1%} from the reference '
+                f'solution</div>' if t["off_reference"] is not None else "")
         out.append(f'<tr><td class="n">{t["number"]}</td><td>{e(t["asks"] or gist(t["question"]))}'
-                   f'<div class="id">{e(t["case_id"])}</div></td><td>{e(", ".join(t["sections"]))}</td>'
-                   f'<td>{checked}</td><td>{tries}</td><td class="n">{t["passed"]} of {len(t["trials"])}</td>'
+                   f'<div class="id">{e(t["case_id"])}</div>{given}</td><td>{e(", ".join(t["sections"]))}</td>'
+                   f'<td>{checked}</td><td>{tries}</td><td class="n">{t["passed"]} of {len(t["trials"])}{near}</td>'
                    f'<td>{e(counted_text(t)[:1].upper() + counted_text(t)[1:])}</td></tr>')
         if t["review"]:
             out.append(f'<tr class="review"><td></td><td colspan="6"><span class="flag">⚑ Our check:</span> '
@@ -545,11 +553,19 @@ def task_details(t):
         rows.append(("Why this task", e(t["why"])))
     if t["verdict"]:
         rows.append(("Reviewer AI said", f'<b>{e(t["verdict"].get("verdict"))}</b> — {e(t["verdict"].get("reason"))}'))
+    if t["criterion_given"]:
+        rows.append(("Rule the job gives", e(t["criterion_given"]) + '<div class="dim">The skill\'s sections do not '
+                     "give this rule, so the task tests applying it as given.</div>"))
+    if t["off_reference"] is not None:
+        rows.append(("Passed on tolerance only", f'Up to {t["off_reference"]:.1%} from the reference solution\'s '
+                     "result, inside a tolerance meant for honest variation. The skill computed something else."))
     tries = []
     for row in t["trials"]:
         found = "".join(f'<tr><td>{e(item["field"])}</td><td>{e(shown(item, item.get("expected")))}</td>'
-                        f'<td>{e(json.dumps(item.get("found"), ensure_ascii=False)) if item.get("present") else "missing"}</td>'
-                        f'<td>{chip(item.get("status"))}</td></tr>' for item in row.get("outputs") or [])
+                        f'<td>{e(json.dumps(item.get("found"), ensure_ascii=False)) if item.get("present") else "missing"}'
+                        + (f'<div class="dim">{float(item["off_reference"]):.1%} from the reference\'s '
+                           f'{e(item["reference_result"])}</div>' if item.get("off_reference") is not None else "")
+                        + f'</td><td>{chip(item.get("status"))}</td></tr>' for item in row.get("outputs") or [])
         problems = row.get("run_problems") or []
         tries.append(f'<div class="try"><b>Try {e(row.get("trial"))}</b> · {chip(row.get("comparison_status"))}'
                      + (f'<div class="dim">{e(row["results_problem"])}</div>' if row.get("results_problem") else "")
@@ -651,6 +667,15 @@ def chapter(v, author):
     out.append('<div class="stats">' + "".join(stats) + "</div>")
     if v["fault"]:
         out.append(f'<p><span class="flag">⚑ Stopped by a fault:</span> {e(v["fault"])}</p>')
+    if v["departures"]:
+        out.append('<p><span class="flag">⚑ Held below the proposed grade:</span> the reviewer found where the '
+                   "skill's own procedure gives a different result from the reference solution, and no task tests "
+                   "it. Its list is under the test details.</p>")
+    near = [t["case_id"] for t in v["tests"] if t.get("off_reference") is not None]
+    if near:
+        out.append('<p><span class="flag">⚑ Passed on tolerance only:</span> ' + e(", ".join(near))
+                   + ". The skill's answers were more than 0.5% from the reference solution's, inside a tolerance "
+                   "meant for honest variation.</p>")
     if v["run_problems"]:
         out.append('<p><span class="flag">⚑ While running the skill</span>, the test AI met: '
                    + e("; ".join(v["run_problems"])) + ". The skill may not run as shipped on this computer.</p>")
@@ -707,6 +732,9 @@ def chapter(v, author):
     if v["untested"]:
         more.append("<h3>What the reviewer says is still untested</h3><ul class='plain'>"
                     + "".join(f"<li>{e(gap)}</li>" for gap in v["untested"]) + "</ul>")
+    if v["departures"]:
+        more.append("<h3>Where the skill departs from the reference, untested</h3><ul class='plain'>"
+                    + "".join(f"<li>{e(item)}</li>" for item in v["departures"]) + "</ul>")
     if v["limitations"]:
         more.append("<details><summary>Limits the planner recorded (technical)</summary><div class='inner'>"
                     "<ul class='plain'>" + "".join(f"<li>{e(item)}</li>" for item in v["limitations"])

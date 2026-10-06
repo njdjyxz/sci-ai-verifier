@@ -47,7 +47,13 @@ input files under `/task` (read-only) and the output fields, and writes its resu
 the design, an expected value or another task. Write the job as a user would ask: name
 the inputs, say what to find and what each output field means, with its unit and, for a
 text field, its allowed values. Do not tell the test AI which steps of the skill to
-follow, which result to expect, or which problem was planted.
+follow, which result to expect, or which problem was planted, nor give it a rule,
+threshold or order of steps the claim's sections supply: the task would then test applying
+a given rule, and the critique does not count it (`leaked`). Where a field needs a rule the
+sections do not give, such as how far a signal may stray from proportional, the job may
+state one; the critique names it in that task's `criterion_given`, and the report shows it.
+Run `2bef9e0d`'s tasks on spotting problems gave the test AI every deciding threshold, and
+one told it the order of averaging the skill prescribes.
 
 **Each task names the claim's sections it uses**, in `sections`. Python refuses a design
 whose tasks leave one of the claim's sections unused by every task. A design holds one to
@@ -66,6 +72,17 @@ such as `0.35`) or `absolute_tolerance`, both decimal strings; with both, the wi
 with neither the installed tolerance of 0.000001 applies. A tolerance comes from what the
 data allow: the reference solution must pass with it, and a plausible mistake (a unit off
 by 1,000, an inverted ratio, a log taken twice) must fail.
+
+**Where the skill departs from the reference.** When the skill's procedure, followed
+literally, gives a different result from the reference solution in a situation the claim
+covers, at least one task must put that situation in its input, with the difference outside
+the tolerance. A design whose inputs stay where the two agree, or whose tolerance admits
+both, hides the departure; missing the key there is the skill's failure, not unfairness to
+it. The critique lists a departure no task exposes, and the claim cannot settle at the
+proposed grade until a task does (`select_local_candidate` in `tool-contracts.md`). Run
+`2bef9e0d` loaded every lane equally in the tasks built on the skill's two-step
+normalization, which as written does not cancel unequal loading, and the skill's answers
+passed 2.4 to 5.5% off the key.
 
 **Advice is tested by doing.** Where the skill tells its user to catch a problem (a
 curve that never levels off, a saturated band, too few events), plant that problem in a
@@ -131,6 +148,16 @@ output's expected value, the value found and its verdict. Status follows the rul
 `local-contract.md` over every trial of every counting task, so one wrong result fails
 the claim, and the report shows which task and which field.
 
+**Passed on tolerance.** Python also compares each number that passed with the reference
+solution's result for the same task. When that result is not zero and they differ by more
+than 0.5% of it, the output's record keeps `reference_result` and `off_reference`, the
+difference as a fraction of that result, and the report marks the task as passing on
+tolerance only. Status and grade stay: the mark tells
+the reader the skill computed something other than the reference, inside a tolerance meant
+for honest variation. In run `f84c131c` every answer was within 0.18% of its reference
+result; in `2bef9e0d` the four tasks that hid a departure were 2.4 to 5.5% off, and every
+other task within 0.01%.
+
 **Run problems.** Python also reads each trial's tool output for a module or command the
 skill needed and the container lacked (`ModuleNotFoundError`, `command not found`) and
 records it on the trial. The report lists them per claim. A skill that cannot run as
@@ -141,8 +168,8 @@ shipped is a finding about the skill, and says nothing about whether its advice 
 `select_local_candidate` takes a task design as it takes any other: the planner proposes
 the ceiling Python computes, and a fresh critique session judges it. Its `coverage`
 justification says which tasks use each of the claim's sections and what their outputs
-check. The critique's objections, required revisions, coverage gaps and the tasks it
-does not count carry forward to the next round, without grades. A coverage gap is
+check. The critique's objections, required revisions, coverage gaps, departures and the
+tasks it does not count carry forward to the next round, without grades. A coverage gap is
 something the claim's sections say to do, check or conclude that no task tests; a critique
 that agrees with the proposal but lists any sends the claim back once, as the coverage
 return under `select_local_candidate` in `tool-contracts.md` says.
@@ -151,7 +178,8 @@ The critique sees the claim with the text of its sections, the design's generato
 solver code, each task's job, sections, arguments, files (names, sizes, the start of each
 text file), planted values, outputs with their tolerances and quotes, and the solver's
 results. Its rubric asks whether each expected value is right and independent of the
-skill, whether the tasks exercise the claim as a whole, whether the comparison is fair,
-whether a stronger grade was passed over, and whether earlier concerns are answered. Each
+skill, whether the tasks exercise the claim as a whole, whether the comparison is fair
+and exposes any departure of the skill from the reference solution, whether a stronger grade
+was passed over, and whether earlier concerns are answered. Each
 task gets one verdict: `counts`, `beyond_scope`, `leaked`, `duplicate` or `unsound`,
 defined in "Cases each grade requires" of `evidence-rubric.md`.

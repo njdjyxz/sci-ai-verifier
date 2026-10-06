@@ -24,16 +24,21 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # criteria; never insert or reorder: findings map to criteria by position. It replaced the question
 # critique, rubric v13, when question tests were retired on 2026-10-05; that rubric's history is in Git.
 # v2 restores v13's rule that a described search is judged by Python's search record; v3 lists what no
-# task tests in coverage_gaps, for the coverage return (tool-contracts.md).
-TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v3","criteria":[
+# task tests in coverage_gaps, for the coverage return (tool-contracts.md); v4 lists in departures where the
+# skill's own procedure departs from the reference solution with no task exposing it, names in criterion_given
+# a rule a job gives, and no longer calls a task unfair because following the skill misses its key: run
+# 2bef9e0d's design hid such a departure inside its tolerances, and its critique counted the tasks as fair.
+TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v4","criteria":[
         "Whether each task's expected values are right and independent of the skill: the generator implements "
         "evidence.generator.model_quote and plants what each output expects, each quote supports its output, and "
         "none rests on the skill's own text",
         "Whether the tasks exercise the claim as a whole: each does what a user of the claim's sections would do, "
         "uses the sections it names, and together they test what the claim states; rubric.coverage says how to "
         "list what they leave untested",
-        "Whether the comparison is fair: the tolerances, the output fields and the reference solution's results "
-        "show that a correct analysis following the skill passes and a plausible wrong one fails",
+        "Whether the comparison is fair and searching: the tolerances, the output fields and the reference "
+        "solution's results show that a correct analysis passes and a plausible wrong one fails, and some task "
+        "exposes each departure of the skill's own procedure from the reference solution; rubric.departures says "
+        "how to list one that none exposes",
         "Whether a stronger grade was available and was passed over, judging the searches the justification "
         "describes by python_checked.search_record, Python's record of what the planner ran, not by the description",
         "Whether the concerns listed under prior_objections are answered by this design"],
@@ -52,12 +57,14 @@ TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v3","criteria":[
         "expected value and a fair tolerance, without giving the answer away",
         "beyond_scope":"Asks for work or a conclusion the claim's sections never give, so a subject correctly "
         "following the skill could answer otherwise",
-        "leaked":"The job, a file name, a column name or the output fields give the answer away, or tell the subject "
-        "which problem was planted",
+        "leaked":"The job, a file name, a column name or the output fields give the answer away or tell the subject "
+        "which problem was planted, or the job gives a rule, threshold or order of steps the claim's sections "
+        "supply, so the task tests applying a given rule",
         "duplicate":"Turns on the same steps and the same kind of input as an earlier task in this design, so a subject "
         "that does one does the other and it adds no independent evidence. The reason names that task",
         "unsound":"An expected value or tolerance is wrong or unfair: the generator does not plant what the output "
-        "expects, a quote does not support it, or a correct analysis following the skill could miss it"},
+        "expects, a quote does not support it, or a correct analysis could miss it. A key the skill's own procedure "
+        "misses where it departs from the reference solution is not unfair; see rubric.departures"},
         "case_requirements":{"A":f"at least {TASK_DIRECT} counting tasks","B":f"at least {TASK_MINIMUM} counting tasks",
         "C":f"at least {TASK_MINIMUM} counting tasks","none":f"fewer than {TASK_MINIMUM} counting tasks",
         "enforcement":"Python recomputes the ceiling over the tasks you count and settles the weakest of that, "
@@ -85,6 +92,17 @@ TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v3","criteria":[
         "fetch that sought a source for it. Whatever your grade, list every untested item in coverage_gaps, each in "
         "one sentence naming its section and the task or search that would test it, and leave it empty when there "
         "is none. Listing a gap does not by itself lower your grade; judge that under criterion 2.",
+        "departures":"Follow the procedure the claim's sections give, literally, on each task's files and compare "
+        "it with solver_results. Where it gives a different result from the reference solution in a situation the "
+        "claim covers, and no task puts that situation in its input with the difference outside its tolerance, list "
+        "it in departures: the situation, what each gives, and the task that would expose it, and require that task "
+        "in required_revisions. A design whose inputs stay where the two agree, or whose tolerance admits both, hides "
+        "a departure. If both results are defensible readings of the claim, it is no departure; judge the key under "
+        "criterion 1. Python holds the grade below the proposal while any departure is listed, so do not also lower "
+        "your own grade for it. Leave departures empty when there is none.",
+        "criterion_given":"For each task, put in criterion_given the rule or threshold its job states that the "
+        "claim's sections do not supply, in a few words, such as how far a signal may stray from proportional, and "
+        "leave it empty when the job states none. A job stating a rule the sections do supply is leaked.",
         "output_fields":"Python reads each trial's results file itself: a number passes within its tolerance, a "
         "text when equal ignoring case and spaces, a boolean when equal, a set when it holds the same items in any "
         "order. A missing field or a value of the wrong type makes the trial invalid."}
@@ -134,11 +152,16 @@ def texts(count=None, maximum=8, description=None):
 def task_critique_schema(case_ids):
     """The one reply a task design's critique may give: a verdict for every task, keyed by its ID."""
     rejected = sorted(set(TASK_CRITIQUE_RUBRIC["case_verdicts"]) - {"counts"})
+    # Empty, or a rule in words: never a blank string.
+    given = {"type": "string", "maxLength": 600, "pattern": "^$|\\S",
+             "description": "The rule or threshold the job states that the claim's sections do not supply, "
+                            "following rubric.criterion_given; empty when it states none."}
     verdict = {"anyOf": [
-        strict({"verdict": exactly("counts"), "reason": text(4000), "replacement": exactly("")}),
+        strict({"verdict": exactly("counts"), "reason": text(4000), "replacement": exactly(""),
+                "criterion_given": given}),
         strict({"verdict": {"type": "string", "enum": rejected, "maxLength": 20}, "reason": text(4000),
                 "replacement": text(4000, "A task that would test the claim instead, following "
-                                          "rubric.case_replacement.")})]}
+                                          "rubric.case_replacement."), "criterion_given": given})]}
     return strict({
         "supported_grade": {"type": "string", "enum": list(TASK_CRITIQUE_RUBRIC["grades"]), "maxLength": 4,
                             "description": "The strongest grade this evidence actually supports."},
@@ -150,6 +173,8 @@ def task_critique_schema(case_ids):
                                                 "it is already justified."),
         "coverage_gaps": texts(description="What the claim's sections say to do, check or conclude that no task tests, "
                                            "as rubric.coverage asks; empty if there is none."),
+        "departures": texts(description="Where the skill's own procedure departs from the reference solution and no "
+                                        "task exposes it, as rubric.departures asks; empty if there is none."),
         "case_verdicts": strict({case_id: verdict for case_id in case_ids},
                                 "One verdict for every task in evidence.tasks, keyed by its case_id: counts with an "
                                 "empty replacement, or another key of rubric.case_verdicts with a replacement.")})

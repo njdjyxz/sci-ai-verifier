@@ -311,6 +311,29 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(record["case_ceiling"],"A")
         self.assertEqual(record["settled_ceiling"],"C")
 
+    def test_a_departure_holds_the_grade_one_below_the_proposal_it_judged(self):
+        """Run 2bef9e0d's critique worked out that the skill's two-step formula passed only inside the tolerance,
+        agreed with A, and listed it as a gap. A listed departure now holds the grade below the proposal, and
+        accepting the grade it settled at holds it no lower."""
+        from sci_ai_verifier.local_science import POLICY
+        candidate=design(4,ref="r")
+        verdicts=[{"case_id":str(i),"verdict":"counts","reason":"r","replacement":"","criterion_given":""}
+                  for i in range(4)]
+        critique={"supported_grade":"A","findings":["f"]*len(TASK_CRITIQUE_RUBRIC["criteria"]),"objections":[],
+                  "required_revisions":[],"departures":["Followed literally, the formula keeps the loading."],
+                  "case_verdicts":verdicts}
+        for proposed,held in (("A","B"),("B","C"),("C",None)):
+            record=audit(candidate,{"scope":"s"},{"max_subject_calls":64},{**self.selection,"target_grade":proposed},
+                         {"r":dict(RETRIEVED)},critique=critique)
+            self.assertEqual((record["settled_ceiling"],record["held_by_departures"]),(held,True))
+        accepted=audit(candidate,{"scope":"s"},{"max_subject_calls":64},{**self.selection,"target_grade":"B"},
+                       {"r":dict(RETRIEVED)},critique=critique,judged=False)
+        self.assertEqual((accepted["settled_ceiling"],accepted["held_by_departures"]),("B",False))
+        clean=audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,{"r":dict(RETRIEVED)},
+                    critique={**critique,"departures":[]})
+        self.assertEqual((clean["settled_ceiling"],clean["held_by_departures"]),("A",False))
+        self.assertIn("departures",POLICY)
+
 
 class IndependentSessionTests(unittest.TestCase):
     def test_documentary_response_requires_exact_packet_citations(self):
@@ -371,7 +394,8 @@ class IndependentSessionTests(unittest.TestCase):
     def valid_critique(self):
         return {"supported_grade":"B","findings":["f"]*len(TASK_CRITIQUE_RUBRIC["criteria"]),
                 "objections":[],"required_revisions":["Add tasks covering the rest of the scope."],"coverage_gaps":[],
-                "case_verdicts":{"c":{"verdict":"counts","reason":"in scope","replacement":""}}}
+                "departures":[],"case_verdicts":{"c":{"verdict":"counts","reason":"in scope","replacement":"",
+                                                     "criterion_given":""}}}
 
     def test_one_critique_session_is_asked_and_a_verdict_is_never_re_rolled(self):
         packet={"evidence":{"tasks":[{"case_id":"c"}]}}
