@@ -358,8 +358,10 @@ class FlowTests(unittest.TestCase):
         ref = self.start(subject, graded=True)
         data = self.qualify(ref, [task("t1", ["S1"]), task("t2", ["S2"], slope=4), task("t3", ["S1", "S2"], slope=8)])
         self.assertEqual(data["outcome"], "qualified_local", data["candidate"]["qualification_problems"])
-        # The reply names the programs by digest and shows the start of each file.
+        # The reply names the programs by digest, shows the start of each file, and keeps the runs short.
         self.assertIn("not repeated", data["candidate"]["solver"]["code"])
+        self.assertNotIn("stdout", data["candidate"]["task_receipts"]["generator_runs"][0])
+        self.assertNotIn("results", data["candidate"]["task_receipts"]["solver_runs"][0])
         self.assertTrue(data["candidate"]["cases"][0]["files"][0]["start"].startswith("dose,response"))
         key = data["candidate_ref"]
         with self.critic("A"):

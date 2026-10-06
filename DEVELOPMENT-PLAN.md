@@ -117,7 +117,13 @@ the planner, never told its deadline, gave its last claim no test with an hour l
 2026-10-01 entry addresses that. In `90c60cbe`, told, it tested all four. The 2026-10-02 entry
 sets a bar for changes, so that rules drawn from one run do not overfit.
 
-Automated suite: **448 tests, 446 passing and 2 skipped, none failing**. The one that used to
+**Task tests are built and not yet run live** (the 2026-10-05 entry, section 5, on branch
+`whole-skill-tests`). With a container configured, which is every run on this machine, a skill is
+split into claims that are groups of its whole sections, and each claim is tested by tasks that run
+the skill on input Python built: questions, calculated answers and generated evaluators are no longer
+used. One live test session and one live task critique worked; no live verifier run has used them.
+
+Automated suite: **469 tests, 467 passing and 2 skipped, none failing**. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
 Fixtures remain synthetic, reviewed registries remain empty, and nothing in the automated
@@ -1592,18 +1598,24 @@ either return fires; how many lowered grades are accepted at once; the time left
 ends each claim; grades, statuses and the trials the AI reader decided; run time against 7,200 s
 and subject calls against 128. It is finished when each has a recorded answer.
 
-## Claude: 2026-10-05 (an HTML page after every run; the final reviewer planned; a whole-skill test design agreed in outline)
+## Claude: 2026-10-05 (an HTML page after every run; the final reviewer planned; whole-skill task tests built)
 
 ### Current stage and status
 
-Version 0.7.0, local workflow, on `skill-environments`. Every completed run now gets one web page,
-made from its records, for the operator and the lab, unless the user asks for none (section 3). The
-agent that asked for the verification then writes the page's plain-language summaries into a notes
-file and redraws it. The page and its notes sit outside the run, and nothing the run grades changed.
-A final reviewer is planned, not built. The operator has decided what it reviews and what follows
-when it disputes a test (section 2). A new test design was agreed in outline and not built (section
-4): the whole skill is split into claims, and each claim is tested by running the skill on tasks
-whose answers come from outside it.
+Version 0.7.0, local workflow. `skill-environments` was merged into `main` and deleted, and the work
+since is on the new branch `whole-skill-tests`, which is the operator's to merge. Every completed run
+gets one web page, made from its records, for the operator and the lab, unless the user asks for
+none (section 3); the agent that asked for the verification writes its plain-language summaries. A
+final reviewer is planned, not built (section 2).
+
+The whole-skill test design (section 4) is **built** (section 5). A skill is split into claims that
+are groups of whole sections, nothing left out, and each claim is tested by tasks: the test AI gets
+the whole skill, input files and a job, and writes `results.json`, which Python checks against values
+it built into the files from a referenced model, or quoted from a reference. Python proves each task
+fair first by running the planner's own reference solution. With a container configured, question
+designs are refused. Checked by 19 new tests, by the container steps run live, and by one live test
+session and one live task critique, which both worked. **No live verifier run has used task tests.**
+Starting one needs the operator's go-ahead, a new Code session, and a look at the open questions.
 
 ### What has been done
 
@@ -1718,7 +1730,8 @@ long and very unreadable."
 - `src/` changed, so a run needs a session whose `serve-local` started after this commit.
 - Not verified: a live run that publishes the page, and an agent following the next step unprompted.
 
-**4. A new test design: test the whole skill by running it.** Discussed with the operator; not built.
+**4. A new test design: test the whole skill by running it.** Discussed with the operator; built the
+same day (section 5), where this outline's open choices are settled.
 - Why:
   - **Claims cover little of a skill.** Measured by the words of `SKILL.md` in sections that had a
     claim:
@@ -1809,6 +1822,95 @@ long and very unreadable."
   - **As shipped, the skill cannot run offline.** Its main tool, the ToolUniverse `tu` command, is
     not on the test computer, and its script needs numpy and scipy, which the skill does not declare.
 
+**5. The whole-skill task design, built.** The operator answered open questions 4 to 7: a task
+whose answer Python builds can reach A ("if its easy that python could build it, then it could do
+A"); drop the claim-only check for tasks; yes, every section of a claim must be used by a task; do
+nothing about cost for now. Then: "Merge the current branch into main, delete it and then start on
+a new branch and build all we have talked about, do everything by your recommendation if we haven't
+discussed about."
+- **Branches.** `main` fast-forwarded to `ba4eeb7` and pushed; `skill-environments` deleted locally
+  and on GitHub; new branch `whole-skill-tests`, pushed. The build is commit `08a4cb5` and the
+  commit carrying this entry.
+- **Contracts first**, in the same commit as the code:
+  - [`local-tasks.md`](skills/scientific-verifier/references/local-tasks.md), new and pinned for the
+    planner (9.8 KB), owns claims and task tests;
+  - [`local-contract.md`](skills/scientific-verifier/references/local-contract.md): "Claims" rewritten;
+    grade A's reference rule gains planted values; claim-only answers and the returns are for
+    question designs only; a task's subject input;
+  - [`evidence-rubric.md`](skills/scientific-verifier/references/evidence-rubric.md): "Cases each
+    grade requires" counts tasks (A at least 3 counting tasks, B and C at least 2) and gains the
+    verdict `unsound`. To keep the verification profile's bootstrap under its 200,000-byte budget, the
+    replay history behind the claim-only rule was cut from it; it is in the 2026-09-24 archive entry;
+  - `workflow.md`'s matrix and `qualify_local_tasks` in `tool-contracts.md`, together, with
+    `tasks_required`, `sections_incomplete` and `sections_unused`; `artifact-contracts.md` records;
+    `LOCAL-INSTALL.md` and `LOCAL-CONFIG.md`; `CLAUDE.md` lists `local-tasks.md` as authoritative.
+- **Claims.** `load_submitted_skill` numbers the sections of `SKILL.md` `S1`, `S2`, ... Each claim
+  names its sections, sections with nothing to test are set aside with a reason, and Python refuses
+  a manifest that leaves one out, holds one twice or names an unknown one. At most 12 claims, since
+  12 claims of 3 tasks and 3 trials use 108 of the 128 subject calls; the planner chooses the number.
+- **Tasks** (`qualify_local_tasks`, [`local_tasks.py`](src/sci_ai_verifier/local_tasks.py)). One to
+  six tasks, each with a job, the claim's sections it uses, and one to twelve output fields of type
+  number, text, boolean or set:
+  - the planner's generator, implementing a model quoted from a fetched reference, runs once per task
+    in the operator's image with no network, writes the input files and prints the planted values;
+    a planted text, boolean or set (which compound is more potent, whether a problem is present) also
+    quotes the rule it follows;
+  - an output may instead quote its value from a reference, and a task may take a fetched dataset as
+    an input file;
+  - the planner's reference solution runs on each task, with the input the test AI gets, and every
+    output must pass on its results, or the design is rejected naming each miss;
+  - every section of the claim must be used by some task;
+  - Python stores the files, and every trial gets the same bytes at `/task`, read-only.
+- **Trials.** The test AI gets the whole skill, never the claim, and writes `/work/results.json`.
+  Python reads it: a number within its tolerance (relative, absolute or 0.000001), a text or set
+  ignoring case and spacing, a boolean exactly. A wrong value fails the trial; a missing file or field
+  with nothing wrong is `invalid`. No AI reader reads a task. One wrong result fails the claim.
+  Python also records each module or command the trial's tools reported missing, as a finding.
+- **Grades and the critique.** A design whose answers are planted from a quoted model, or quoted
+  token-exactly, can reach A with 3 counting tasks and 3 trials. The critique gets its own rubric,
+  `local-task-critique-v1`, and the text of the claim's sections; it has no coverage list and no
+  verdict per earlier concern, and there are no claim-only answers and no coverage-gap or concern
+  returns for tasks. The question rubric, v13, is untouched, so its recorded replies stay exact.
+- **What no longer runs on this machine.** With a container configured, `qualify_local_candidate` and
+  `qualify_local_evaluator` are refused as `tasks_required`, so question designs, calculated answers
+  and generated evaluators go unused. Their code and contracts stay for a setup without a container
+  and for reading old runs; two integration tests exercise them with the rule switched off. A task
+  design cannot yet be exported to a catalog.
+- **Time and limits.** `__main__.py` accepts up to 10,800 s, and I re-registered the user-scope
+  connection with `--timeout 10800`, every other argument and the token placeholder unchanged
+  (checked in `~/.claude.json`). The default per-session limit rose from 120 to 600 s, and I changed
+  the operator's `.verifier/local-settings.json` to 600 likewise (the previous file is saved in the
+  scratchpad of session `c7991202`); a task session gets 40 turns instead of 24; the end-of-run
+  re-run budgets 5 minutes per task trial.
+- **The planner** is told to test by tasks (prompt step 3) and sees the operator image's packages
+  (numpy 2.5.3, pandas 3.0.6, RDKit, Pillow; no scipy), where generators and solvers run.
+- **Report and page.** `report-card.md` has a row per task trial naming each output that missed; the
+  HTML page has a task table (job, sections, checked outputs with tolerances, each try), a fold per
+  task (files, where each expected value came from, the solver's results, each try's outputs), the
+  generator's model and both programs, set-aside sections with their reasons, and run problems.
+- **Verification.**
+  - Suite 450 → 469 tests, 467 passing and 2 skipped. New tests check the output rules, the trial
+    status, each refusal of a design, a generator or solver fault named for the planner, the re-check
+    of a saved design from its records, a full claim through qualify, critique, execution and report,
+    a wrong result failing the claim, a missing results file, a critique lowering the ceiling, a
+    design for another claim's sections, the read-only mount, the page, and the export refusal.
+  - Live, no AI: in the operator's image a generator built a two-inhibitor plate (planted IC50s
+    100 and 1,000 nM, Hill 1, 4% noise) and a numpy-only four-parameter fit recovered 91 and 931 nM,
+    fold shift 10.2, in 3.5 s; the re-check from records passed. A subject container mounted the
+    plate read-only (a write was refused) and returned `results.json` as its only new file.
+  - Live, AI, about $0.66 in all: one test session (Opus 5, 69 s, $0.29) used the dose-response skill
+    on that plate, found neither scipy nor `tu`, wrote its own numpy fit and passed all four outputs
+    (IC50 92 and 941, fold shift 10.2, more potent A), with `missing Python module scipy` recorded.
+    One task critique (Opus 5, 107 s, $0.37) answered in its schema, counted the task and objected
+    with substance: the Hill slope the claim promises was not checked, a 35% tolerance with 3-fold
+    steps lets reading off the nearest concentration pass, and the noise made negative signals.
+- **Docker Desktop** would not start on this machine: its backend crashed renaming stale socket files
+  (`Docker\run\sailor-ingest.sock`, then `docker-secrets-engine\engine.sock`). I renamed both folders
+  aside (`run.stale-20261005`, `run.stale2-20261005`, `docker-secrets-engine.stale-20261005`; nothing
+  deleted) and it started.
+- **Not done:** no live verifier run; the final reviewer; catalog export of task designs; a version
+  bump. `src/` changed, so a run needs a Code session started after this commit.
+
 ### Decisions taken 2026-10-05
 
 - **The page is for the lab and the operator**, and may later be served from a web server (operator).
@@ -1830,7 +1932,26 @@ long and very unreadable."
   - a 3-hour limit;
   - claims are tested as wholes, by tasks whose output is checked.
 
-  Not built; the open questions below come first.
+  Built the same day (section 5).
+- **Operator, after section 4:** a task whose answer Python builds can reach A; drop the claim-only
+  check for tasks; every section of a claim must be used by a task; nothing about cost for now;
+  merge `skill-environments`, delete it, and build on a new branch.
+- **Proposed here and built (section 5):**
+  - sections numbered by Python, set-asides with reasons, at most 12 claims;
+  - a separate tool and module for task designs, with a generator and a reference solution, and the
+    four output types;
+  - planted judgments must quote the rule they follow;
+  - inputs read-only at `/task`, results in `/work/results.json`, read by Python with no AI reader;
+  - a wrong value fails a trial even when another field is missing;
+  - A needs 3 counting tasks, B and C 2;
+  - a separate critique rubric, leaving the question rubric and its recordings untouched;
+  - with a container, question designs, calculated answers and generated evaluators are refused;
+  - missing modules and commands recorded as findings; the operator image's packages shown;
+  - 600 s per session, 40 turns per task session, 5 minutes per task trial in the re-run budget;
+    the three-hour registration.
+- **Superseded today:** "one claim per section, at most five" and "tested fact by fact" (entries of
+  2026-09-29 to 2026-10-01) are retired; claim-only answers (2026-09-24) and the coverage-gap and
+  concern returns (2026-10-01) now apply to question designs only, which no longer run here.
 
 ### Open questions for the operator
 
@@ -1839,44 +1960,43 @@ long and very unreadable."
    re-run may use; and whether a re-run repeats the whole claim or only the disputed tests.
 3. Should the final reviewer, once built, write into the same notes, beside the calling agent's
    summaries?
-4. **What a task test earns.** Answers that Python builds into generated data from a referenced
-   model are a new kind of evidence. Should they reach A, as quoted answers scored by installed code
-   do?
-5. **What replaces the claim-only check for tasks?** Today it keeps a question inside its claim. A
-   reviewer judging whether a task needs only the claim's sections may do the same job.
-6. **Must every section be used by some task** (proposed in section 4), or is belonging to a claim
-   enough?
-7. **Cost:** make claims cheaper first, or let a run pause at the usage limit and continue in the
-   next window?
+4. to 7. Answered by the operator (section 5).
+8. **scipy in the operator's image.** Generators and solvers run there, and so do the test sessions of a
+   skill that declares nothing, such as dose-response. Without scipy that skill's own script cannot run,
+   which the run now records as a finding, and the live test AI fitted with numpy instead. Add scipy
+   (and other common scientific packages) to `images/rdkit/`? Recommended: not before the first live
+   task run, so the finding is seen as designed.
+9. **Retire the question path?** Questions, calculated answers and generated evaluators no longer run
+   with a container. Remove their code and contracts once task runs have worked live?
+10. **Status when a trial is invalid.** Under unanimity one wrong result already decides `fail`, but
+   the existing rule makes any invalid trial `inconclusive` first. Let a wrong result win, for both
+   designs? Recommended: yes, but it changes the status rule for questions too.
+11. **Version.** Bump to 0.8.0 when the task design is accepted?
 
 ### Urgent next steps, if any
 
-None. Committed and pushed on `skill-environments` with this entry.
+None for the code: committed and pushed on `whole-skill-tests` with this entry. Before the first
+live run with tasks, a prerequisite: start a **new** Code session, so that its `serve-local` runs this
+branch's code with the three-hour registration; a session started earlier keeps old code and 7,200 s.
 
 ### Suggested next move
 
-Move the verifier to the section 4 design, in steps that each show something real:
-1. Settle its open questions.
-2. Run the dose-response tasks once by hand.
-3. Write the contracts.
-4. Build.
-
-The final reviewer comes after, on the new tests. The HTML page and the agent's summaries are checked
-on whichever live run comes next.
+Run the verifier live on task tests, on a skill already run with questions, so the two designs can
+be compared: tooluniverse-dose-response first (8 sections, 5 earlier runs). Then decide open questions
+8 to 11, and merge `whole-skill-tests` once a run has worked. The final reviewer comes after, on the
+new tests.
 
 ### Recommended next action
 
-With the operator's go-ahead:
-1. Open `.verifier/reports/32e60bd6-aa9c-45a1-ac0a-50bd8cfd03a4.html` and `90c60cbe-…html`, and list
-   what to change.
-2. Settle open questions 4 to 7.
-3. Prototype the dose-response tasks offline, with no planner: Python makes the three plates and
-   checks them with its own fit, and fresh test sessions with the skill installed do each task three
-   times. It is finished when each task has a result, and the time and cost per task are measured.
-   The test image needs numpy and scipy for the skill's script to run at all.
-4. The next live run, whatever its skill, also records:
-   - whether `data.html_report` came back;
-   - whether the agent filled the notes and redrew the page without being asked;
-   - how readable its summaries are.
-
-   It must start from a new session, so that its `local_method_ref` is `79780cdb…`.
+With the operator's go-ahead, after their cleanup of `.verifier/` and a check of Docker and the usage
+window:
+1. Start a new Code session on `whole-skill-tests` and run `verify_skill` on
+   `D:\Su Lab\verifier-submissions\examples\tooluniverse-dose-response`.
+2. It is finished when the report and page exist, and the run shows:
+   - a manifest holding every section, with Related skills set aside with a reason;
+   - each claim tested by a qualified task design whose reference solution passed;
+   - the critique's verdicts per task, and whether it pushed for tighter tolerances;
+   - each trial's `results.json` read by Python, and `missing Python module scipy` among the run
+     problems;
+   - time and cost per claim, against the 4 claims and $30 of run `90c60cbe`.
+3. Record it in a new entry, with what to change before the next skill.

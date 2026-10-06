@@ -519,6 +519,16 @@ def reply_view(candidate, raw, preview=400, shown=3):
         if candidate.get(key):
             view[key] = {**candidate[key], "code": "(" + str(len(candidate[key]["code"])) + " characters, SHA256 "
                          + digest(candidate[key]["code"].encode("utf-8")) + "; not repeated)"}
+    # Each run's output is already in its task's planted values and solver results; the reply keeps only
+    # what says whether a program ran well, so a long design still fits a reply the planner can read.
+    receipts = candidate.get("task_receipts") or {}
+    view["task_receipts"] = {
+        **{key: receipts.get(key) for key in ("generator_sha256", "solver_sha256", "image_id")},
+        "generator_runs": [{"arguments": item["arguments"][:200], "exit_code": item["exit_code"],
+                            "stderr": item["stderr"], "files": item["files"]}
+                           for item in receipts.get("generator_runs") or []],
+        "solver_runs": [{"case_id": item["case_id"], "exit_code": item["exit_code"], "stderr": item["stderr"]}
+                        for item in receipts.get("solver_runs") or []]}
     return view
 
 
