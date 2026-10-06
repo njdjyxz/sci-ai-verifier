@@ -33,8 +33,9 @@ def main():
     if args.command in {"verify", "serve-local", "doctor"}:
         from .local_entry import PublicRuntime
         from .claude_runner import ClaudeCode
-        if not 1 <= args.timeout <= 7200:
-            parser.error("Timeout must be between 1 and 7200 seconds.")
+        # Three hours: claims now grow with a skill's length and each task runs the skill (local-tasks.md).
+        if not 1 <= args.timeout <= 10800:
+            parser.error("Timeout must be between 1 and 10800 seconds.")
         public = PublicRuntime(workspace=args.workspace, instructions=args.instructions, model=args.model,
                                auth=args.auth, executable=args.claude_executable, timeout=args.timeout,config_path=args.config)
         if args.command == "serve-local":

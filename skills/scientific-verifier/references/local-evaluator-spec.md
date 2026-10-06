@@ -1,7 +1,9 @@
 # Local evaluator specification
 
 `qualify_local_evaluator` takes `specification_json`, a JSON string with exactly
-these fields. This document is supplied to the planner in the pinned context.
+these fields. This document is supplied to the planner in the pinned context. A
+generated evaluator needs a container, and while one is configured the tool is refused
+as `tasks_required`: claims are then tested by tasks (`local-tasks.md`).
 
 | Field | Meaning |
 | --- | --- |

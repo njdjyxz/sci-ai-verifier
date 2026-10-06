@@ -35,26 +35,26 @@ this run are appended to this message -- read them before acting. get_verifier_c
 returns your current state, token and authorized path, and takes an optional `section` to
 re-read one pinned document or committed artifact if you lose this message.
 
-1. Read every submitted text file, then commit the claim manifest quoting only what you read:
-   at most five claims, each one behaviour broad enough for about six independent questions,
-   taken section by section as "Claims" in the local contract says.
+1. Read every submitted text file, then commit the claim manifest quoting only what you read.
+   Group the sections load_submitted_skill numbers into claims by purpose, every section in one
+   claim or set aside with a reason, as "Claims" in local-tasks.md says; a longer skill gets more
+   claims.
 2. For each claim, look up existing candidates first, then use WebSearch to find independent
-   primary references for each fact the claim states, and import them with the reference,
-   resource or asset tools. Python retrieves the bytes; your own summary of a source is not
-   evidence.
-3. Aim for the strongest evidence the claim allows: expected answers Python retrieved from an
-   independent source, scored by an installed comparison method. Test the claim fact by fact,
-   as "Claims" in the local contract says. Qualify a candidate, then call select_local_candidate
-   proposing exactly the ceiling Python reports for that design. Aiming lower is refused, and so
-   is claiming more. An independent critique session then judges whether the evidence really
-   fits the claim.
+   primary references: the model behind your test data, the right response to each problem you
+   plant, and any published dataset or value you use. Import them with the reference, resource
+   or asset tools. Python retrieves the bytes; your own summary of a source is not evidence.
+3. Test each claim by running the skill, as local-tasks.md says: qualify_local_tasks with tasks a
+   user of the claim's sections would do, input files your generator builds from a quoted model,
+   and a reference solution that passes every output, every section of the claim used by a task.
+   Without a container, use a design of questions instead ("Claims" in the local contract).
+   Then call select_local_candidate proposing exactly the ceiling Python reports for that
+   design. Aiming lower is refused, and so is claiming more. An independent critique session
+   then judges whether the evidence really tests the claim.
 4. If it returns local_grade_revision_required, revise: qualify a stronger design that answers
-   every required revision, case replacement and coverage gap, and propose its new ceiling.
-   Accept the grade the critique supported only when step 4 of "Negotiating the grade" allows
-   it; saving time is no reason. A return for coverage gaps or unanswered concerns comes after
-   a critique that agreed with your grade; accepting then needs a search first. Proposing
-   again on the same design is refused and wins nothing. Do not argue with the critique and do
-   not aim low to be safe.
+   every required revision and replacement, and propose its new ceiling. Accept the grade the
+   critique supported only when step 4 of "Negotiating the grade" allows it; saving time is no
+   reason. Proposing again on the same design is refused and wins nothing. Do not argue with
+   the critique and do not aim low to be safe.
 5. Execute the settled plan and follow the state Python returns. An execution that supports
    no grade moves to local_documentary, where an independent assessor judges cited sources.
 6. record_local_limitation is only for a cause you actually hit, and U is only for a genuine

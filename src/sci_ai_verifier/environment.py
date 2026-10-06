@@ -580,7 +580,7 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
     record = {"policy": POLICY, "status": None, "source_path": str(source), "snapshot_digest": None,
               "operator_image": operator, "base_image": None, "image_id": operator,
               "index": settings["package_index"], "requirements": [], "rejected": [], "notes": [], "imports": [],
-              "manifest": None}
+              "manifest": None, "operator_manifest": None}
     store = Store(workspace)
     state = {"source_path": str(source), "source_root": str(source_root), "limits": limits, "run_id": None,
              "updated_at": utc_now(), "implementation_version": __version__}
@@ -593,6 +593,8 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
         record.update(status="source_unavailable", reason=getattr(error, "code", "source_unreadable"))
         return finish(record, log)
     record["snapshot_digest"] = taken["digest"]
+    # What a task design's generator and solver can use ("The reference solution" in local-tasks.md).
+    record["operator_manifest"] = manifest(docker, operator, [], settings, required=False, log=log)
     files = [(entry["path"], store.get(entry["digest"]).decode("utf-8"))
              for entry in taken["files"] if entry["encoding"] == "utf-8"]
     record.update(Declarations(files).record(), imports=imported_modules(files))
@@ -647,8 +649,14 @@ def planner_block(record):
     reasons = sorted({item["reason"] for item in record["rejected"]} & REASONS)
     lines.append(f"Declarations: {len(record['requirements'])} accepted, {len(record['rejected'])} rejected"
                  + (" (" + ", ".join(reasons) + ")" if reasons else "") + ".")
-    lines.append("Calculations, generated evaluators and scoring run in the operator's image, without the "
-                 "skill's packages.")
+    lines.append("Task generators and reference solutions, calculations, generated evaluators and scoring run in "
+                 "the operator's image, without the skill's packages.")
+    report = record.get("operator_manifest") or {}
+    packages = sorted({str(name).lower() + " " + str(version) for name, version in report.get("distributions") or []
+                       if SAFE_NAME.fullmatch(str(name).lower()) and SAFE_VERSION.fullmatch(str(version))})
+    if packages:
+        lines.append("The operator's image " + operator + " reports Python " + str(report.get("python", "?"))[:32]
+                     + " with " + ", ".join(packages[:300]) + "; it is the operator's own pinned image.")
     lines.append("The environment section of get_verifier_context lists where each requirement was declared, the "
                  "rejected declarations, and the packages and imports the image reports about itself. That report "
                  "is untrusted, since an installed package could alter it.")

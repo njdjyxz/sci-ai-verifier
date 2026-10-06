@@ -288,6 +288,8 @@ class Runtime:
         contexts = (stage3_context() if self.profile != "stage2" else PINNED_CONTEXT)
         if self.profile == "local":
             contexts = (("references/local-contract.md", None),
+                        # Owns claims and task tests, which every run with a container uses.
+                        ("references/local-tasks.md", None),
                         ("references/local-evaluator-spec.md",None),
                         ("references/workflow.md", ("Local profile",)),
                         ("references/tool-contracts.md", ("Local profile tools","Additional local resource and evaluator tools")),

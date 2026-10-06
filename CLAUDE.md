@@ -29,6 +29,8 @@ A hosted multiuser/API product is a separate future deployment project.
 Version 0.7.0 implements the local workflow. One live run has completed it end to end
 (glycoengineering, 2026-09-16, four claims at evidence grade A). That is partial acceptance
 on the A-grade branch only; more skills must run before the design is treated as working.
+Task tests (`local-tasks.md`), built on 2026-10-05, replace question tests whenever a
+container is configured; no live verifier run has used them yet.
 Its enforceable behavior is
 documented in `skills/scientific-verifier/references/local-contract.md`.
 `verify` and `serve-local` provide one public action; Claude Code owns the planner
@@ -55,6 +57,7 @@ The authoritative documents, in dependency order:
 3. `skills/scientific-verifier/references/runtime-contract.md` — what the host process must do (tool array stability, refusals, parallel tool use).
 4. `skills/scientific-verifier/references/artifact-contracts.md`, `resource-policy.md`, `evidence-rubric.md`.
 5. `skills/scientific-verifier/references/local-contract.md` — the local profile's enforceable behavior. Authoritative, not a summary: when it disagrees with the code, one of them is a bug.
+6. `skills/scientific-verifier/references/local-tasks.md` — claims as groups of whole sections and the task tests that run the skill, used whenever a container is configured. Same standing as the local contract.
 
 If a change touches tool legality, edit the matrix in `workflow.md` and the tool's section in `tool-contracts.md` in the same commit. They are the two halves of one contract and drift between them is the most expensive error in this repo.
 

@@ -26,6 +26,10 @@ def export_bundle(store,candidate_refs,*,redistribution):
         candidate=store.get_json(key)
         if candidate.get("status")!="qualified_local":
             raise Fault("candidate_not_qualified","Only mechanically qualified candidates can be proposed.")
+        if candidate.get("method")=="task":
+            # Its generated files and programs have no requalification path on another machine yet
+            # (qualify_local_tasks in tool-contracts.md).
+            raise Fault("candidate_not_exportable","A task design cannot yet be exported to a catalog.")
         objects[key]=base64.b64encode(store.get(key)).decode()
         for ref in reference_refs(candidate):
             resource=store.get_json(ref)

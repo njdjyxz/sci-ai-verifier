@@ -341,6 +341,47 @@ def refusal_category(raw):
     return found[0]["category"] if found else None
 
 
+# What a trial's tool output says the container lacked ("Run problems" in local-tasks.md).
+MISSING_MODULE = re.compile(r"ModuleNotFoundError: No module named '([A-Za-z0-9_.]{1,100})'")
+MISSING_COMMAND = re.compile(r"(?m)(?:^|: )([A-Za-z0-9_.+-]{1,60}): (?:command )?not found$")
+MAX_RUN_PROBLEMS = 20
+
+
+def tool_result_texts(raw):
+    """The text of every tool result in a stream, with a command result's own output unpacked."""
+    for line in raw.splitlines():
+        try:
+            event = parse_json(line)
+        except (ValueError, UnicodeError, RecursionError):
+            continue
+        message = event.get("message") if isinstance(event, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            parts = block.get("content")
+            text = parts if isinstance(parts, str) else "\n".join(
+                part.get("text", "") for part in parts if isinstance(part, dict)) if isinstance(parts, list) else ""
+            try:
+                value = parse_json(text)
+            except (ValueError, UnicodeError, RecursionError):
+                value = None
+            data = value.get("data") if isinstance(value, dict) else None
+            if isinstance(data, dict):
+                yield "\n".join(str(data.get(key) or "") for key in ("stdout", "stderr"))
+            else:
+                yield text
+
+
+def run_problems(raw):
+    """Each module or command a trial's tools reported missing, named once, at most twenty."""
+    found = []
+    for text in tool_result_texts(raw):
+        found += ["missing Python module " + name for name in MISSING_MODULE.findall(text)]
+        found += ["missing command " + name for name in MISSING_COMMAND.findall(text)]
+    return sorted(set(found))[:MAX_RUN_PROBLEMS]
+
+
 def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
     try:
         events = [parse_json(line) for line in raw.splitlines() if line.strip()]
@@ -447,7 +488,7 @@ class ClaudeCode:
         return {"executable": executable, "version": match.group().decode(), "auth": self.auth,
                 "model_requested": self.model, "live_execution_tested": False}
 
-    def command(self, directory, session, *, plugin=None, mcp=None, controller=False, computational=False):
+    def command(self, directory, session, *, plugin=None, mcp=None, controller=False, computational=False, task=False):
         settings = {"disableAllHooks": True, "disableSkillShellExecution": True,
                     "claudeMdExcludes": ["**"], "autoMemoryEnabled": False, "enabledPlugins": {},
                     "permissions": {"defaultMode": "dontAsk"}}
@@ -455,7 +496,10 @@ class ClaudeCode:
                    "--session-id", session, "--model", self.model, "--no-session-persistence",
                    "--restricted", "--setting-sources", "", "--settings", canonical(settings).decode(),
                    "--strict-mcp-config", "--mcp-config", str(mcp) if mcp else '{"mcpServers":{}}',
-                   "--permission-mode", "dontAsk", "--max-turns", "100" if controller else "24" if computational else "8",
+                   # A task runs the skill on files and writes a results file, which takes more turns than
+                   # answering a question ("Tasks" in local-tasks.md).
+                   "--permission-mode", "dontAsk", "--max-turns",
+                   "100" if controller else "40" if task else "24" if computational else "8",
                    "--tools", "WebSearch" if controller else "Skill"]
         if self.auth == "api":
             command.append("--bare")
@@ -473,17 +517,22 @@ class ClaudeCode:
                         "Execute only the explicitly named submitted skill for the given input. Invoke it using the Skill tool before answering. Supporting text may be read only inside the current skill workspace. Return the skill's answer without commentary. No other skills or tools may be used."]
             if computational:
                 command[-1]+=" Use mcp__subject__run_command for all reads and script execution inside /work; submitted relative paths resolve there. You have no host shell, file access or network."
+            if task:
+                command[-1]+=" The input is a task: its input files are read-only under /task, and your answer is the results file it names, written as its answer_format says."
             else:
                 command[-1]+=" Use mcp__subject__read_submitted_file for supporting files, with paths relative to the skill root. Native file and shell tools are unavailable."
         return command
 
-    def observe(self, *, source, case_input, config, timeout_seconds):
+    def observe(self, *, source, case_input, config, timeout_seconds, task_files=None):
+        """One trial. `task_files`, by name, are a task's input files, mounted read-only at /task."""
         session = str(uuid4())
         # A cleanup race after a complete answer must not void the claim as subject_unavailable.
         with session_directory("sci-verifier-subject-", self.log) as temporary:
             directory = no_links(Path(temporary) / "workspace")
             prepare_workspace(directory)
             computational=bool(self.settings.get("sandbox_image"))
+            if task_files is not None and not computational:
+                raise Fault("sandbox_configuration_required", "A task trial needs the operator's pinned container image.")
             plugin, pins = stage_skill(directory, source, computational=computational)
             env = {**isolated_environment(Path(temporary) / "config", self.auth), **NO_SUBSTITUTION}
             for tool in self.settings["external_tools"].values():
@@ -493,7 +542,8 @@ class ClaudeCode:
             prompt = "Invoke the Skill tool with skill " + SUBJECT_SKILL + ". Then handle this frozen input:\n" + canonical(case_input).decode()
             from .sandbox import DockerSandbox
             trial_settings={**self.settings,"sandbox_image":self.subject_image} if self.subject_image else self.settings
-            manager=DockerSandbox(plugin/"skills/submitted",trial_settings,timeout=timeout_seconds+30,log=self.log) if computational else nullcontext()
+            manager=DockerSandbox(plugin/"skills/submitted",trial_settings,timeout=timeout_seconds+30,log=self.log,
+                                  inputs=task_files) if computational else nullcontext()
             with manager as sandbox:
                 binding=Path(temporary)/"binding.json"
                 log_binding={"workspace":str(self.log.directory.parents[2]),"attempt_id":self.log.attempt_id} if self.log else None
@@ -506,7 +556,8 @@ class ClaudeCode:
                 mcp=Path(temporary)/"mcp.json"
                 atomic_write(mcp,canonical({"mcpServers":{"subject":{"command":sys.executable,
                     "args":[str(Path(__file__).with_name("subject_server.py")),"--binding",str(binding)]}}}))
-                code, raw, _ = self.run(self.command(directory, session, plugin=plugin,mcp=mcp,computational=computational), role="subject", cwd=directory,
+                code, raw, _ = self.run(self.command(directory, session, plugin=plugin,mcp=mcp,computational=computational,
+                                                     task=task_files is not None), role="subject", cwd=directory,
                                            env=env, prompt=prompt, timeout=timeout_seconds)
                 artifacts=sandbox.collect() if sandbox and not code else []
                 loaded={pin["path"]:pin["loaded_sha256"] for pin in pins}
@@ -524,6 +575,8 @@ class ClaudeCode:
                 extra.append("mcp__subject__call_app")
             result = parse_events(raw, expected_session=session, subject=True,extra_tools=extra if computational else ("mcp__subject__read_submitted_file",))
             result["artifacts"]=artifacts
+            if computational:
+                result["run_problems"]=run_problems(raw)
             # Never retain an auth value echoed by a malfunctioning provider.
             serialized = canonical(result)
             if SECRET_BYTES.search(serialized) or any(env[key].encode() in serialized for key in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN") if key in env):

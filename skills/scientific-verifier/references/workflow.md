@@ -502,7 +502,7 @@ Claude Code owns the planner loop. This matrix specializes the broader target.
 | created | load_submitted_skill | source_ready |
 | source_ready | read_snapshot_file, commit_claim_manifest | source_ready or active (reporting if empty) |
 | active / local_lookup | list_local_candidates, record_local_limitation | local_discovery or terminal_operational |
-| active / local_discovery | fetch_local_reference, load_local_resource, fetch_local_asset, qualify_local_candidate, qualify_local_evaluator, select_local_candidate, assess_local_documentary, record_local_unverified, record_local_limitation | local_discovery, local_ready, terminal_result or terminal_operational |
+| active / local_discovery | fetch_local_reference, load_local_resource, fetch_local_asset, qualify_local_tasks, qualify_local_candidate, qualify_local_evaluator, select_local_candidate, assess_local_documentary, record_local_unverified, record_local_limitation | local_discovery, local_ready, terminal_result or terminal_operational |
 | active / local_ready | execute_local_claim | local_documentary, terminal_result or terminal_operational |
 | active / local_documentary | fetch_local_reference, load_local_resource, fetch_local_asset, assess_local_documentary, record_local_unverified, record_local_limitation | local_documentary, terminal_result or terminal_operational |
 | reporting | write_report_card | completed |
@@ -510,7 +510,9 @@ Claude Code owns the planner loop. This matrix specializes the broader target.
 
 Reporting becomes legal only after all accepted claims are terminal. Lookup and
 qualification do not execute the subject; qualification is mechanical, not a
-scientific grade. Recovery and cancellation retain the common host controls.
+scientific grade. While a container is configured, `qualify_local_candidate` and
+`qualify_local_evaluator` are refused as `tasks_required` and claims are tested by
+`qualify_local_tasks`. Recovery and cancellation retain the common host controls.
 
 `get_verifier_context` returns a header small enough to always arrive inline: the
 committed state, the current token, the authorized source path, the pinned
@@ -537,11 +539,12 @@ finish without doing the work:
 - `select_local_candidate` stays in `local_discovery` and returns
   `local_grade_revision_required` whenever the settled grade — the weakest of the
   proposal, the ceiling over the cases that count and the critique's own grade — is
-  below the proposal. A case counts when the critique counted it and the claim-only
-  answers `tool-contracts.md` describes did not miss its key. It also returns it when a
-  critique agrees with a proposal below A but names coverage gaps, once per claim, or
-  finds an earlier concern unanswered, while rounds remain: the returns of
-  `tool-contracts.md`. Repeating the call with a strengthened design or
+  below the proposal. A case counts when the critique counted it and, for a design of
+  questions, the claim-only answers `tool-contracts.md` describes did not miss its key.
+  For such a design it also returns it when a critique agrees with a proposal below A but
+  names coverage gaps, once per claim, or finds an earlier concern unanswered, while
+  rounds remain: the returns of `tool-contracts.md`. A task design (`local-tasks.md`)
+  has neither. Repeating the call with a strengthened design or
   the settled grade is the negotiation. After the installed round limit, or once the
   replacement rounds in `evidence-rubric.md` are spent and a critique still rejects
   cases, the settled grade is fixed and the claim reaches `local_ready`.

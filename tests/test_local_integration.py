@@ -240,7 +240,21 @@ class PublicationTests(unittest.TestCase):
         h.call("load_submitted_skill",source_path=str(h.source))
         h.snapshot=h.data["snapshot"]
         h.extract()
-        key=h.candidate()
+        # With a container, claims are tested by tasks ("Claims" in local-contract.md), and the
+        # generated-evaluator path below stays dormant; it is exercised with that rule switched off.
+        h.call("list_local_candidates",claim_id=h.claim_id)
+        refused=h.runtime.call("qualify_local_evaluator",{"run_id":h.data["run_id"],"state_token":h.data["state_token"],
+                                                          "claim_id":h.claim_id,"specification_json":"{}"})
+        self.assertEqual(refused["error"]["code"],"tasks_required")
+        h.data["state_token"]=refused["error"]["state_token"]
+        dormant=patch("sci_ai_verifier.local.tasks_required",return_value=False)
+        dormant.start()
+        self.addCleanup(dormant.stop)
+        with patch("sci_ai_verifier.local_candidates.fetch_public", return_value=(fixture.REFERENCE.encode(), fixture.REFERENCE)):
+            h.call("fetch_local_reference", claim_id=h.claim_id, url="https://example.org/reference", version="fixture-v1",
+                   license="Unknown; private analysis only")
+        h.reference_ref=h.data["reference_ref"]
+        key=h.candidate(lookup=False)
         original=h.runtime.store.get_json(key)
         spec={key:original[key] for key in ("name","scope","limitations","cases")}
         spec.update(method="python",code="print('test scorer is replaced, never executed')",absolute_tolerance="0",relative_tolerance="0",
@@ -644,6 +658,11 @@ class GradeNegotiationTests(unittest.TestCase):
         tool-contracts.md), through the published tools: keyed at qualification, re-checked from
         its receipts at selection, shown whole to the critique, graded A and reported."""
         h,runs=self.h,[]
+        # A calculation needs a container, and with one claims are tested by tasks ("Claims" in
+        # local-contract.md); this dormant path is exercised with that rule switched off.
+        dormant=patch("sci_ai_verifier.local.tasks_required",return_value=False)
+        dormant.start()
+        self.addCleanup(dormant.stop)
         key=self.build(3,name="calculated",sandbox_image="fixture-image")
 
         def calculate(code,inputs,settings,*,log=None):

@@ -18,7 +18,7 @@ Unknown settings are rejected so spelling mistakes cannot silently change access
 | `docker_executable` | Native Docker executable; only a local Linux engine is accepted |
 | `trial_count` | 3 fresh subject sessions per case |
 | `max_subject_calls` | 128 per verification |
-| `subject_timeout_seconds` | 120 per subject session |
+| `subject_timeout_seconds` | 600 per subject session: a task runs the skill on its files, which 120 s, the default before task tests, did not allow for |
 | `memory_mib`, `cpus`, `pids_limit` | 512 MiB, 1 CPU, 64 processes per container |
 | `workspace_mib` | 128 MiB writable trial workspace |
 | `max_file_bytes` | 4 MiB per artifact/resource |

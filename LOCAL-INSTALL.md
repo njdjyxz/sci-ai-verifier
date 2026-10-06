@@ -135,7 +135,7 @@ and its settings need changing, remove the old registration using the
 
 ```powershell
 $verifierClaude = (Get-Command claude.exe -ErrorAction Stop).Source
-claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5 --timeout 7200
+claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5 --timeout 10800
 ```
 
 Expect an **Added** message. The first line finds the installed Claude program;
@@ -174,13 +174,16 @@ now makes the same check itself before every run and stops with `model_unavailab
 if it fails, so a wrong pin no longer costs a run, only a few seconds; checking first
 still saves you the restart.
 
-`--timeout 7200` gives each verification two hours. Without it the limit is 30
+`--timeout 10800` gives each verification three hours. Without it the limit is 30
 minutes, which measurement shows is not enough: a five-claim skill took about 50
 minutes of real work, and an earlier run of the same skill was cut off mid-claim at
 the 30-minute default and produced only a partial report. Ninety minutes proved
-tight too: a six-claim run finished 8 seconds inside it. Accepted values are 1 to
-7200 seconds, so two hours is the most a verification can have. The timeout covers
-the whole attempt including setup.
+tight too: a six-claim run finished 8 seconds inside it. Since task tests, a skill is
+split into as many claims as its length needs and every task runs the skill, so the
+limit rose from two hours to three. Accepted values are 1 to 10800 seconds, so three
+hours is the most a verification can have. The timeout covers the whole attempt
+including setup. The 5-hour usage window of a subscription is the tighter limit: a
+four-claim run took about half of it.
 
 “MCP” is the connection that lets Claude call the verifier. This command follows
 Anthropic's [local tool setup](https://code.claude.com/docs/en/mcp#option-3-add-a-local-stdio-server)
@@ -314,7 +317,7 @@ available. They do not claim verification completed.
 | `local_grade_proposal_refused` with `below_evidence_ceiling` | The planner proposed a weaker grade than its evidence supports. Aiming low is refused for the same reason as overclaiming. |
 | `local_design_unchanged` or `local_grade_rounds_exhausted` | The planner re-proposed a grade on a design already critiqued, or spent its negotiation budget. Neither consumes a session; the claim settles or continues without one. |
 | `source_not_authorized` | The path given to the verifier is not the one you authorized for this run. Supply the exact folder you named when starting. |
-| `verification_timeout` | The attempt hit the registered timeout. If your connection was registered with less than step 5's `--timeout 7200`, re-register it with 7200, the maximum, then start a new verification. Saved evidence and a partial report are retained. |
+| `verification_timeout` | The attempt hit the registered timeout. If your connection was registered with less than step 5's `--timeout 10800`, re-register it with 10800, the maximum, then start a new verification. Saved evidence and a partial report are retained. |
 | `stronger_evidence_available` | The planner tried to conclude documentarily while holding a qualified candidate it had not run. It must run it or explain why it does not apply. |
 | `workflow_log_unavailable` | Check the data folder is writable and disk space is available; keep any existing attempt folder for diagnosis. |
 
@@ -340,15 +343,15 @@ allowance and does **not** validate the token with Claude or execute a live test
 Then, in the same window, replace the example skill path and run:
 
 ```powershell
-& "C:\Python314\python.exe" "D:\Su Lab\sci-ai-verifier\scripts\verify.py" verify "D:\My Skills\my-skill" --workspace "D:\Su Lab\sci-ai-verifier" --config "D:\Su Lab\sci-ai-verifier\.verifier\local-settings.json" --timeout 7200
+& "C:\Python314\python.exe" "D:\Su Lab\sci-ai-verifier\scripts\verify.py" verify "D:\My Skills\my-skill" --workspace "D:\Su Lab\sci-ai-verifier" --config "D:\Su Lab\sci-ai-verifier\.verifier\local-settings.json" --timeout 10800
 ```
 
 Press **Ctrl+C** to stop. Close PowerShell when finished; the token set above
 lasts only for that process and its children.
 
 Advanced options: `--model opus`, `--timeout <seconds>` and
-`--claude-executable "C:\path\to\claude.exe"`. The timeout accepts 1 to 7200 seconds
-and defaults to 1800, which is usually too short; `--timeout 7200` matches the
+`--claude-executable "C:\path\to\claude.exe"`. The timeout accepts 1 to 10800 seconds
+and defaults to 1800, which is usually too short; `--timeout 10800` matches the
 registered connection above. The default requested model is `opus`; receipts also
 record actual returned model IDs.
 
@@ -419,7 +422,8 @@ it no longer meets this guide's requirements.
    [Claude's connection-management documentation](https://code.claude.com/docs/en/mcp#managing-your-servers).
    A connection registered before this guide added `--timeout` still runs on the
    30-minute default, and one registered with the guide's earlier `--timeout 5400`
-   has 90 minutes; remove and re-add it to pick up the two-hour limit. Registered
+   or `--timeout 7200` has 90 minutes or two hours; remove and re-add it to pick up
+   the three-hour limit. Registered
    arguments are read when the connection starts, so restart Claude Desktop after
    changing them.
 4. If you created `.verifier\local-settings.json` with an earlier build, delete the

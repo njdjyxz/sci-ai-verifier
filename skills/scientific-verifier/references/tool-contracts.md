@@ -162,7 +162,7 @@ Successful data: manifest ID and accepted claims with Python-assigned claim IDs.
 
 Side effects: writes the run's claim manifest.
 
-Retryable conditions: missing fields, non-atomic or duplicate submissions identified structurally, a source path not present in the committed manifest, a source quote not present in the recorded content of the file the claim names, or more claims than the profile allows ("Claims" in `local-contract.md` for the local profile). Quote validation is per-claim against the named file's digest, so a claim quoting a bundled reference document is validated exactly as strictly as one quoting the top-level `SKILL.md`.
+Retryable conditions: missing fields, non-atomic or duplicate submissions identified structurally, a source path not present in the committed manifest, a source quote not present in the recorded content of the file the claim names, or more claims than the profile allows ("Claims" in `local-tasks.md` for the local profile). Quote validation is per-claim against the named file's digest, so a claim quoting a bundled reference document is validated exactly as strictly as one quoting the top-level `SKILL.md`.
 
 Fatal conditions: source-snapshot ID or digest mismatch, storage failure, or corrupted run state.
 
@@ -547,6 +547,12 @@ The Local profile matrix in workflow.md governs their legality. Every reply to t
 carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
 `local-contract.md` says.
 
+In this profile `load_submitted_skill` also returns `sections`: the sections of `SKILL.md`
+numbered `S1`, `S2`, ..., each with its heading, level, first line and word count, as
+"Claims" in `local-tasks.md` defines them. `commit_claim_manifest` takes each claim's
+`sections` and a `set_aside` list giving a `reason` for each section no claim holds; a
+section left out, held twice or unknown is refused as `sections_incomplete`, naming them.
+
 - `list_local_candidates`: in local_lookup, return immutable local candidate
   summaries for semantic matching, then enter local_discovery. Empty is normal.
 - `fetch_local_reference`: in local_discovery, retrieve a bounded public HTTPS
@@ -562,7 +568,9 @@ carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
   largest page text in run b0955d2f, 40,582 bytes in a 49,510-byte reply, reached its
   planner intact. The whole page is pinned, and quotes are checked against all of it.
 - `qualify_local_candidate`: in local_discovery, propose a name, scope, method,
-  limitations and at least three source-backed cases. Python checks provenance,
+  limitations and at least three source-backed cases. While a container is configured it
+  is refused as `tasks_required`, and the claim is tested by `qualify_local_tasks` below;
+  the rest of this entry is the design of questions used without one. Python checks provenance,
   answer form, controls and fixed comparison rules. Save qualified_local or
   rejected evidence. An expected answer must have exactly one correct answer under
   its comparison, or the case scores a paraphrase of a right answer as a wrong one
@@ -694,6 +702,22 @@ carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
   places is the usual choice. Without a pinned image a calculation is refused. The critique
   sees the program, the formula, each anchor with its output and each case's arguments;
   its rubric's `calculated_answers` says what it judges.
+- `qualify_local_tasks`: in local_discovery, propose a task design for the claim:
+  `name`, `scope`, `limitations`, an optional `generator` (`code`, `reference_ref`,
+  `model_quote`), a `solver` (`code`) and one to six `cases`, each a task with `case_id`,
+  `job`, `sections`, optional `arguments` and `reference_files`, one to twelve `outputs`
+  and `applicability`. "Tasks" and "Where expected values come from" in `local-tasks.md`
+  own what the fields mean. Python checks every quote against its pinned reference and
+  that the tasks together use every section of the claim, then runs the generator once
+  for each task with `arguments` and the solver once for each task, each in a new
+  container of the operator's image with no network, and checks every output against the
+  solver's results. It saves `qualified_local` or `rejected` with each problem named. The
+  candidate holds each task's files (name, stored object, size), planted values and
+  resolved expected values, the solver's results and the verdict of each output on them,
+  and the programs' digests and image; the reply shows the start of each text file.
+  Without a container the tool is refused as `sandbox_configuration_required`. Selection
+  re-checks a saved design against these records without running anything again. A task
+  design cannot yet be exported to a catalog.
 - `select_local_candidate`: in local_discovery, bind an exact qualified candidate
   and its resources to this claim, propose `target_grade` A, B or C, and justify it
   with `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
@@ -711,6 +735,11 @@ carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
   would read mentions an earlier review (step 3 of "Negotiating the grade" in
   `evidence-rubric.md`), with the `field` and `phrase` found, or `return_unsearched` (the
   returns below) — and spends no session.
+  A task design (`local-tasks.md`) is proposed the same way. It has no claim-only
+  answers and no returns; its tasks must use every section of this claim, or the
+  proposal is refused as `sections_unused`, which matters for a design found by lookup;
+  and its critique uses the task rubric that "Selecting and critiquing a task design"
+  there describes.
   Only a proposal that would start a critique is checked. A case's applicability and
   the design's scope and limitations are fixed at qualification, so a note there needs
   a revised candidate. A permitted proposal first measures what a subject knowing only
@@ -793,9 +822,10 @@ carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
   scientific finding; for a claim-only answer it leaves the case unmeasured, and for a
   reading it keeps Python's verdict. A critique
   holds `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string
-  per rubric criterion, in order), `objections`, `required_revisions` and `coverage_gaps`
+  per rubric criterion, in order), `objections`, `required_revisions` and, for a design of
+  questions only, `coverage_gaps`
   (each at most eight strings, empty when there are none), `prior_verdicts` (one entry for
-  each concern under `prior_objections`, in order, each holding a `verdict`, `answered`,
+  each concern under `prior_objections`, in order, for questions only, each holding a `verdict`, `answered`,
   `searched_no_source`, `unanswered` or `no_longer_applies`, and a `reason`), and `case_verdicts`: one entry for every case
   ID in the packet and no other, each holding a `verdict` (one of those defined in
   `evidence-rubric.md`), a `reason`, and a `replacement` that is empty for `counts` and
@@ -820,6 +850,10 @@ carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
   about it. Accuracy, consistency, comparison status and scientific status are
   computed over the audit's `counted_cases`; the result lists the others under
   `uncounted_cases` with their verdicts, and their observations stay in the receipts. No uncertain trial retries. Produce a result or operational record.
+  A task trial receives its task's files and job, and Python reads its
+  `/work/results.json` as "Reading a trial's results" in `local-tasks.md` says; no AI
+  reader reads it. Its score receipt holds each output's expected value, the value found
+  and that output's verdict, and the trial's `run_problems`.
   A provider safety refusal is recorded as `subject_refused`, naming the refusal
   category and, when Claude Code let another model answer, that model, whose answer is
   never used ("Subject boundary" in `local-contract.md` owns the one-model rule).
@@ -845,7 +879,8 @@ carries `attempt_seconds_remaining` in its `data` or `error`, as "Acceptance" in
   claim the rule covered carries `retry`, naming the first attempt's fault with that
   attempt's record, and either the re-run's outcome or the reason it was not re-run. A
   claim the fallback covered carries `fallback`, saying whether it was assessed or why
-  not; an assessed one's record is grade D with `fallback_for` naming the fault.
+  not; an assessed one's record is grade D with `fallback_for` naming the fault. The
+  report lists the sections set aside in the manifest, with their reasons.
 ## Additional local resource and evaluator tools
 
 Resource tools are legal in local_discovery/local_documentary; evaluator
@@ -862,7 +897,9 @@ token and claim binding. The workflow matrix is authoritative.
   Both tools keep a text preview of up to 128,000 characters with the resource, but
   their reply carries only as much of it as `fetch_local_reference` allows, flagged
   `text_truncated` with `text_bytes_total` when cut.
-- `qualify_local_evaluator`: accept a bounded JSON evaluator specification with
+- `qualify_local_evaluator`: refused as `tasks_required` while a container is
+  configured, as `qualify_local_candidate` is, and generated evaluators need one, so task
+  tests replace them. Otherwise: accept a bounded JSON evaluator specification with
   Python scoring code, source-backed cases and positive/negative/boundary/held-out
   controls. Run each control in a disposable pinned container. Store its inputs,
   outputs and code/image digests. Mechanical success does not grant scientific

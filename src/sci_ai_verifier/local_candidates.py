@@ -242,7 +242,11 @@ def at_precision(value, printed):
 
 
 def reference_refs(candidate):
-    """Every reference a candidate's answers rest on: its cases' and its calculation's anchors'."""
+    """Every reference a candidate's answers rest on: its cases' and its calculation's anchors', or a
+    task design's model, quotes and input files."""
+    if candidate.get("method") == "task":
+        from .local_tasks import reference_refs as task_refs
+        return task_refs(candidate)
     refs = [case["reference_ref"] for case in candidate["cases"] if case.get("reference_ref")]
     calculation = candidate.get("calculation")
     if calculation:
@@ -489,7 +493,8 @@ def candidates(store):
                 raise Fault("candidate_integrity", "A local candidate projection was changed.", fatal=True)
             candidate = store.get_json(path.stem)
             from .local_evaluators import METHOD_VERSION as PYTHON_VERSION
-            if candidate["status"] == "qualified_local" and candidate["method_version"] in {METHOD_VERSION,PYTHON_VERSION}:
+            from .local_tasks import METHOD_VERSION as TASK_VERSION
+            if candidate["status"] == "qualified_local" and candidate["method_version"] in {METHOD_VERSION,PYTHON_VERSION,TASK_VERSION}:
                 found.append({"candidate_ref": path.stem, "name": candidate["name"],
                               "scope": candidate["scope"], "method": candidate["method"],
                               "limitations": candidate["limitations"], "scientific_approval": "provisional"})

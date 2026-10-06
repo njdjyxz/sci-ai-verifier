@@ -23,9 +23,13 @@ STRONG_TRIALS = 3
 DIRECT_CASES = 5
 DIRECT_GENERATED = 2
 EXTERNAL_GENERATED = 1
+# A task design counts tasks, each running the skill and checked on every output ("Cases each grade
+# requires" in evidence-rubric.md, "Tasks").
+TASK_DIRECT = 3
+TASK_MINIMUM = 2
 # Reasons a design's case count gives; every other limiting reason is the reference's or the trials'.
 CASE_REASONS = {"insufficient_distinct_cases", "fewer_than_five_counting_cases", "no_generated_case",
-                "fewer_than_two_generated_cases"}
+                "fewer_than_two_generated_cases", "fewer_than_two_counting_tasks", "fewer_than_three_counting_tasks"}
 # Reasons that keep a reference out of A but still allow B.
 EXTERNAL_REASONS = {"expected_answers_not_independently_retrieved", "scoring_code_authored_by_planner"}
 # The subject produces the answer for these methods; `choice` only asks it to recognise one.
@@ -42,7 +46,7 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v7",
+    "id": "evidence-strength-v8",
     "minimum_cases": MINIMUM_CASES,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
@@ -53,6 +57,9 @@ POLICY = {
               "counted": "cases the independent critique gave the verdict counts and the claim-only answers did "
                          "not miss; before a critique, every case",
               "generated": "methods " + ", ".join(sorted(GENERATED_METHODS)) + "; choice is recognised"},
+    "tasks": {"A": TASK_DIRECT, "B": TASK_MINIMUM, "C": TASK_MINIMUM,
+              "counted": "tasks the independent critique gave the verdict counts; before a critique, every task",
+              "generated": "every task: the subject writes its outputs"},
     "proposal": "each round proposes the current evidence ceiling, or accepts the grade the "
                 "last critique of this exact design settled at",
     "grade_limits": "recorded over the cases the critique counted",
@@ -72,9 +79,11 @@ POLICY = {
             "completeness and status are recorded separately and none overwrites another",
     "ceiling": "strongest grade supported by recorded evidence facts, lowered by the independent critique",
     "grades": {
-        "A": "expected answers independently retrieved by Python, token-exact in their source or calculated "
-             "by Python from a formula that is after reproducing its quoted worked examples, scored by an "
-             "installed comparison method, three trials; five counting cases, two generated",
+        "A": "expected answers independently retrieved by Python, token-exact in their source, calculated "
+             "by Python from a formula that is after reproducing its quoted worked examples, or planted by Python "
+             "in task files from a model that is and recovered by the reference solution; scored by an installed "
+             "comparison method or a task's fixed checks, three trials; five counting cases, two generated, or "
+             "three counting tasks",
         "B": "expected answers from a pinned retrieved or operator-imported dataset, or scored by a "
              "control-tested generated evaluator; three trials; three counting cases, one generated",
         "C": "reproducible indirect comparison; traceability, independence or trial count is weaker; "
@@ -101,8 +110,10 @@ def weaker(first, second):
 def fingerprint(candidate):
     if candidate["method"] == "python":
         return candidate["specification_ref"]
-    # A calculation shapes the expected answers, so it is part of the design's identity.
-    keys = ("name", "scope", "method", "limitations", "cases", "absolute_tolerance", "method_version", "calculation")
+    # A calculation shapes the expected answers, and a task design's programs build and check them, so
+    # each is part of the design's identity.
+    keys = ("name", "scope", "method", "limitations", "cases", "absolute_tolerance", "method_version", "calculation",
+            "generator", "solver")
     return digest(canonical({key: candidate[key] for key in keys if key in candidate}))
 
 
@@ -138,6 +149,9 @@ def traceable(candidate, case):
     its quote, or calculated from a quoted formula whose program reproduced every quoted
     anchor (`qualify_local_candidate` in tool-contracts.md)."""
     from .local_candidates import case_method
+    if candidate["method"] == "task":
+        from .local_tasks import traceable as task_traceable
+        return task_traceable(candidate, case)
     if "arguments" in case:
         anchors = (candidate.get("calculation_receipts") or {}).get("anchors") or []
         return bool(anchors) and all(item["reproduced"] for item in anchors)
@@ -160,6 +174,8 @@ def answer_text(case):
 def answer_form(candidate, case):
     """`generated` when the subject must produce the answer, `recognised` when it picks one."""
     from .local_candidates import case_method
+    if candidate["method"] == "task":
+        return "generated"
     return "generated" if case_method(candidate, case) in GENERATED_METHODS else "recognised"
 
 
@@ -172,6 +188,10 @@ def case_grade(candidate, counted=None):
     with two open cases among its five.
     """
     cases = [case for case in candidate["cases"] if counted is None or case["case_id"] in counted]
+    if candidate["method"] == "task":
+        reasons = (["fewer_than_two_counting_tasks"] if len(cases) < TASK_MINIMUM else []) + (
+            ["fewer_than_three_counting_tasks"] if len(cases) < TASK_DIRECT else [])
+        return ("A" if len(cases) >= TASK_DIRECT else "B" if len(cases) >= TASK_MINIMUM else None), reasons
     generated = sum(answer_form(candidate, case) == "generated" for case in cases)
     reasons = []
     if len(cases) < MINIMUM_CASES:
@@ -200,7 +220,7 @@ def evidence_ceiling(candidate, references, trials, counted=None):
     # Names the *comparison*, not the subject. The subject of a local run is always a
     # fresh model session and is never deterministic; reading this as a statement about
     # the subject would wrongly make a single trial look sufficient.
-    comparison_deterministic = (candidate["method"] in {*TYPES, "mixed"}
+    comparison_deterministic = (candidate["method"] in {*TYPES, "mixed", "task"}
                                 or all(item["passed"] for item in candidate.get("controls_receipts", [])))
     reasons = []
     if any(origin not in pinned for origin in origins):
@@ -246,6 +266,9 @@ def size_limit(audit_record, candidate):
             or not set(audit_record.get("case_limits") or []) & CASE_REASONS):
         return None
     cases = [case for case in candidate["cases"] if case["case_id"] in audit_record["counted_cases"]]
+    if candidate["method"] == "task":
+        return {"source_supports": source, "settled": settled, "unit": "tasks", "counting": len(cases),
+                "generated": len(cases), "counting_needed": POLICY["tasks"][source], "generated_needed": 0}
     need = POLICY["cases"][source]
     return {"source_supports": source, "settled": settled, "counting": len(cases),
             "generated": sum(answer_form(candidate, case) == "generated" for case in cases),
@@ -319,8 +342,24 @@ def case_gap(candidate, counted, grade, supported):
     an open case it already had. Python holds the count, so it states it, and says when the
     critique's own grade is a limit as well.
     """
-    need = POLICY["cases"][grade]
     cases = [case for case in candidate["cases"] if counted is None or case["case_id"] in counted]
+    if candidate["method"] == "task":
+        need = POLICY["tasks"][grade]
+        more = max(0, need - len(cases))
+        critique_limits = weaker(grade, supported) != grade
+        if more:
+            summary = (grade + " needs at least " + str(need) + " counting tasks. This design has " + str(len(cases))
+                       + " counted: add at least " + str(more) + " more task" + ("" if more == 1 else "s") + ".")
+            if critique_limits:
+                summary += (" The critique's own grade is " + str(supported or "none")
+                            + ", so its objections need answering as well.")
+        else:
+            summary = ("This design's " + str(len(cases)) + " counted tasks meet " + grade + "'s requirement. The "
+                       "critique's own grade, " + str(supported or "none") + ", is what holds the settled grade "
+                       "down, so its objections are what to answer.")
+        return {"grade": grade, "tasks_required": need, "tasks_counted": len(cases), "tasks_needed": more,
+                "summary": summary}
+    need = POLICY["cases"][grade]
     generated = sum(answer_form(candidate, case) == "generated" for case in cases)
     more_generated = max(0, need["generated"] - generated)
     more = max(need["counting"] - len(cases), more_generated)
@@ -347,7 +386,7 @@ def case_gap(candidate, counted, grade, supported):
 def audit(candidate, claim, settings, selection, references, *, critique=None, rounds=1):
     """Freeze the plan, its evidence ceiling and the critique that settled the grade."""
     problems = []
-    if len(candidate["cases"]) < MINIMUM_CASES:
+    if len(candidate["cases"]) < (TASK_MINIMUM if candidate["method"] == "task" else MINIMUM_CASES):
         problems.append("insufficient_distinct_cases")
     if selection["trials_per_case"] * len(candidate["cases"]) > settings["max_subject_calls"]:
         problems.append("plan_exceeds_call_budget")
@@ -376,7 +415,8 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
     }
 
 
-def verdict_for(*, ceiling, synthetic, constant, usable_cases, evaluated, per_case, counts, trials):
+def verdict_for(*, ceiling, synthetic, constant, usable_cases, evaluated, per_case, counts, trials,
+                minimum=MINIMUM_CASES):
     """The ordered status rubric. Returns `(status, withheld_reason)`; first match wins.
 
     Status answers whether the claim holds, and is kept independent of the grade. Only a
@@ -394,7 +434,7 @@ def verdict_for(*, ceiling, synthetic, constant, usable_cases, evaluated, per_ca
         return None, "not_executed"
     if not constant:
         return None, "unattributable_observations"
-    if usable_cases < MINIMUM_CASES:
+    if usable_cases < minimum:
         return None, "incomplete_coverage"
     if counts["invalid"]:
         return "inconclusive", None
@@ -430,8 +470,12 @@ def reading_summary(observations, python_status, python_withheld, python_counts)
                                            "ratio": round(python_counts["pass"] / evaluated, 4) if evaluated else None}}}
 
 
-def decide(audit_record, observations, cases, trials, *, synthetic=False):
-    """Apply the installed policy to scored trials. The planner cannot change this outcome."""
+def decide(audit_record, observations, cases, trials, *, synthetic=False, method=None):
+    """Apply the installed policy to scored trials. The planner cannot change this outcome.
+
+    `method` is the design's: a task design needs fewer usable cases, and says where its values came from.
+    """
+    minimum = TASK_MINIMUM if method == "task" else MINIMUM_CASES
     planned = len(cases) * trials
     expected = {(case["case_id"], trial) for case in cases for trial in range(1, trials + 1)}
     obtained = [(row["case_id"], row["trial"]) for row in observations]
@@ -449,12 +493,13 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     evaluated = len(observations)
     status, withheld = verdict_for(ceiling=ceiling, synthetic=synthetic, constant=constant,
                                    usable_cases=len(per_case), evaluated=evaluated,
-                                   per_case=per_case, counts=counts, trials=trials)
+                                   per_case=per_case, counts=counts, trials=trials, minimum=minimum)
     # The same rule over Python's reader alone, so a reader can see what the AI reader changed.
     python_cases, python_counts = tallies(observations, cases, trials, "python_status")
     python_status, python_withheld = verdict_for(ceiling=ceiling, synthetic=synthetic, constant=constant,
                                                  usable_cases=len(python_cases), evaluated=evaluated,
-                                                 per_case=python_cases, counts=python_counts, trials=trials)
+                                                 per_case=python_cases, counts=python_counts, trials=trials,
+                                                 minimum=minimum)
     readings = reading_summary(observations, python_status, python_withheld, python_counts)
     # Two lists, never merged: a reader must be able to tell a weak reference from a
     # wobbling skill without reading the raw trials.
@@ -475,7 +520,7 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     if readings["changed"]:
         execution_reasons.append("trials_decided_by_ai_reader")
     unanimous = sum(1 for row in per_case if row["agreement"] == 1)
-    calculated = sum("arguments" in case for case in cases)
+    calculated = sum("arguments" in case for case in cases) if method != "task" else 0
     sourced = ("a reference Python retrieved." if audit_record["evidence_ceiling"] == "A"
                else "a pinned source, not produced by AI.")
     return {
@@ -504,7 +549,8 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
         "case_agreement": per_case, "observed_model_ids": models, "reading_summary": readings,
         "ai_involvement": {
             "orchestration": True,
-            "evidence_generation": "The planner selected the cases; every expected answer is quoted from " + sourced
+            "evidence_generation": task_generation(cases, sourced) if method == "task" else
+                                   "The planner selected the cases; every expected answer is quoted from " + sourced
                                    if not calculated else
                                    "The planner selected the cases and wrote the program that calculated "
                                    + str(calculated) + " of the " + str(len(cases)) + " counted expected answers from "
@@ -521,3 +567,18 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
                        + str(python_status or "withheld (" + str(python_withheld) + ")") + ".",
         },
     }
+
+
+def task_generation(cases, sourced):
+    """What a task design's expected values rest on, for the result's AI-involvement disclosure."""
+    outputs = [output for case in cases for output in case["outputs"]]
+    planted = sum(output.get("source") == "planted" for output in outputs)
+    text = ("The planner designed the tasks, wrote the generator that built their input files and the reference "
+            "solution that checked them, and chose the tolerances. ")
+    if planted:
+        text += (str(planted) + " of the " + str(len(outputs)) + " checked values were planted by Python, which ran "
+                 "that generator on a model quoted from " + sourced[:-1] + "; a planted judgment, such as whether a "
+                 "problem is present, also quotes the rule it follows. ")
+    if planted < len(outputs):
+        text += ("The other values are" if planted else "Every expected value is") + " quoted from " + sourced
+    return text.strip()

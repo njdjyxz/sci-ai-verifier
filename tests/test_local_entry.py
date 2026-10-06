@@ -118,7 +118,10 @@ class EntryTests(unittest.TestCase):
                     context = tool("get_verifier_context", {"run_id": run_id})
                     loaded = tool("load_submitted_skill", {"run_id": run_id, "state_token": context["state_token"], "source_path": str(skill)})
                     committed = tool("commit_claim_manifest", {"run_id": run_id, "state_token": loaded["state_token"],
-                         "snapshot_id": loaded["snapshot"]["id"], "snapshot_digest": loaded["snapshot"]["digest"], "claims": []})
+                         "snapshot_id": loaded["snapshot"]["id"], "snapshot_digest": loaded["snapshot"]["digest"], "claims": [],
+                         # No claims, so every section is set aside ("Claims" in local-tasks.md).
+                         "set_aside": [{"section": item["section"], "reason": "No scientific claims."}
+                                       for item in loaded["sections"]]})
                     completed = tool("write_report_card", {"run_id": run_id, "state_token": committed["state_token"]})
                     self.assertTrue(completed["verification_complete"])
                 finally:

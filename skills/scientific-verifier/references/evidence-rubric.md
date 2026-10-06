@@ -54,7 +54,7 @@ This section owns the number and kind of cases each execution grade needs. Other
 
 Test it by answering the case from the claim alone, as a subject who knows nothing else would: if another option, `none of these` included, is as defensible as the key, the case is `beyond_scope`. That is the usual result when the key is a narrower special case of what the claim says, or the documented behaviour of a sibling setting or level the claim never names. In run 3b3f3c94 a claim that two settings "prevent partial-ring fragments" was tested with what the atom-level setting documents, "results cannot include lone ring atoms". A subject applying the skill found no option saying partial rings, answered `none of these`, and the claim was reported as failing.
 
-Python measures this test rather than asking the critique to imagine it. Before the critique, fresh sessions that see only the claim's statement and expected behaviour answer each case twice, and a case counts only when every answer reaches its key. A case they answer otherwise does not count, whatever the critique says. Readers applying a claim faithfully can split, and a split is itself the sign that the claim does not settle the case. Replayed on the pinned model, critiques counted the lone-ring case every time once its word cue was gone, and counted `84e90683`'s ring cases in two reviews of four. Sessions given only the claim missed each of those keys in at least one of two answers, answering `none of these` or `2` as the failing subjects had, and reached the key of every fair question they were given.
+Python measures this test rather than asking the critique to imagine it. Before the critique, fresh sessions that see only the claim's statement and expected behaviour answer each case twice, and a case counts only when every answer reaches its key. A case they answer otherwise does not count, whatever the critique says. Readers applying a claim faithfully can split, and a split is itself the sign that the claim does not settle the case.
 
 *Not given away.* A case whose question already contains its answer — the function name in the stem, or an option that repeats the stem's own words — measures reading, not the claim.
 
@@ -82,6 +82,8 @@ A critique's objections and verdicts must agree. A case it objects to because it
 | B | at least 3 | at least 1 |
 | C | at least 3 | any, including none |
 | fewer than 3 counting cases | no execution grade | — |
+
+**Tasks.** A task design (`local-tasks.md`) counts tasks: A needs at least 3 counting tasks, B and C at least 2, and fewer than 2 support no execution grade. Every task is generated. Its verdicts are those above without `naming`, plus `unsound`: an expected value or tolerance that is wrong, or that a correct analysis could miss. It has no claim-only answers.
 
 Before a critique runs, Python assumes every case counts, and that sets the ceiling the planner proposes. After the critique, Python recomputes the ceiling over the counting cases only. The settled grade is the weakest of the proposal, that recomputed ceiling, and the critique's own supported grade. The critique reconsiders the whole design, not only the case count, so its supported grade can be lower still. A rejected case is never a fixed one-step penalty. The grade's limiting reasons are recorded over the counting cases, so a grade lowered by rejections says so.
 

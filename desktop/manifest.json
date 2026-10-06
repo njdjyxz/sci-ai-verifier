@@ -184,6 +184,10 @@
       "description": "Internal local verification operation: qualify local candidate. Follow the pinned local contract and current claim state. Never grants scientific approval."
     },
     {
+      "name": "qualify_local_tasks",
+      "description": "Internal local verification operation: qualify local tasks. Follow the pinned local contract and current claim state. Never grants scientific approval."
+    },
+    {
       "name": "select_local_candidate",
       "description": "Internal local verification operation: select local candidate. Follow the pinned local contract and current claim state. Never grants scientific approval."
     },

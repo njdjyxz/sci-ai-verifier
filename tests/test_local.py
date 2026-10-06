@@ -18,6 +18,8 @@ from sci_ai_verifier.mcp import Server
 
 ROOT = Path(__file__).resolve().parents[1]
 QUOTE = "The skill returns a plain decimal for each reference-table query."
+# Two sections, so a manifest can hold two claims ("Claims" in local-tasks.md).
+SKILL = QUOTE + "\n\n## Notes\nThe skill also documents its decimal output.\n"
 REFERENCE = "Independent fixture reference: alpha is 1.0, beta is 2.0, gamma is 3.0, zeta is 4.0, eta is 5.0."
 # Three rows suffice for C; grade A needs five counting cases, per evidence-rubric.md.
 ROWS = ("alpha", "beta", "gamma")
@@ -58,7 +60,7 @@ class LocalTests(unittest.TestCase):
         self.base = Path(temp.name)
         self.source = self.base / "source"
         self.source.mkdir()
-        (self.source / "SKILL.md").write_text(QUOTE, encoding="utf-8")
+        (self.source / "SKILL.md").write_text(SKILL, encoding="utf-8")
         self.subject = Subject()
         self.runtime = Runtime(self.base / "data", self.source, ROOT / "skills/scientific-verifier",
                                profile="local", subject_adapter=self.subject)
@@ -73,10 +75,15 @@ class LocalTests(unittest.TestCase):
         return self.data
 
     def extract(self, count=1):
+        # Every section goes in one claim, the last claim taking the rest; with no claim, all are set aside.
+        from sci_ai_verifier.claims import skill_sections
+        names = [item["section"] for item in skill_sections(self.runtime.store, self.snapshot)]
+        groups = [names[i:i + 1] if i < count - 1 else names[i:] for i in range(count)]
         self.call("commit_claim_manifest", snapshot_id=self.snapshot["id"], snapshot_digest=self.snapshot["digest"],
                   claims=[{"statement": QUOTE if i == 0 else "The skill returns a decimal.", "scope": "Reference-table queries",
                            "expected_behavior": "Plain decimal", "source_path": "SKILL.md", "source_quote": QUOTE,
-                           "report_note": "Synthetic acceptance"} for i in range(count)])
+                           "report_note": "Synthetic acceptance", "sections": groups[i]} for i in range(count)],
+                  set_aside=[] if count else [{"section": name, "reason": "Synthetic: nothing to test."} for name in names])
         self.claims = self.data["manifest"]["claims"]
         self.claim_id = self.claims[0]["claim_id"] if self.claims else None
 
@@ -848,59 +855,101 @@ class LocalTests(unittest.TestCase):
 
 
 class ClaimScopeTests(unittest.TestCase):
-    """"Claims" in local-contract.md: one behaviour per claim, section by section, at most five."""
+    """"Claims" in local-tasks.md: each claim a group of whole sections, nothing left out, at most twelve."""
 
     def setUp(self):
         self.h = LocalTests()
         self.h.setUp()
         self.addCleanup(self.h.doCleanups)
 
-    def claims(self, count):
+    def claims(self, groups):
         return [{"statement": "The skill returns decimal number %d." % index, "scope": "Reference-table queries",
                  "expected_behavior": "Plain decimal", "source_path": "SKILL.md", "source_quote": QUOTE,
-                 "report_note": "Synthetic acceptance"} for index in range(count)]
+                 "report_note": "Synthetic acceptance", "sections": group} for index, group in enumerate(groups)]
 
-    def test_a_local_manifest_holds_at_most_five_claims(self):
-        from sci_ai_verifier.local import CLAIM_LIMIT_MESSAGE, MAX_CLAIMS
+    def commit(self, h, claims, set_aside=()):
+        return h.runtime.call("commit_claim_manifest", {
+            "run_id": h.data["run_id"], "state_token": h.data["state_token"], "snapshot_id": h.snapshot["id"],
+            "snapshot_digest": h.snapshot["digest"], "claims": claims, "set_aside": list(set_aside)})
+
+    def test_load_numbers_the_sections_a_manifest_must_hold(self):
+        loaded = self.h.data  # load_submitted_skill's reply, from setUp
+        self.assertEqual([(item["section"], item["heading"], item["level"], item["words"]) for item in loaded["sections"]],
+                         [("S1", "(before the first heading)", 0, 11), ("S2", "Notes", 2, 7)])
+
+    def test_every_section_goes_in_exactly_one_claim_or_is_set_aside(self):
         h = self.h
-        arguments = {"run_id": h.data["run_id"], "state_token": h.data["state_token"],
-                     "snapshot_id": h.snapshot["id"], "snapshot_digest": h.snapshot["digest"]}
-        refused = h.runtime.call("commit_claim_manifest", {**arguments, "claims": self.claims(MAX_CLAIMS + 1)})
-        self.assertEqual(refused["status"], "retryable")
+        for claims, aside, named in (
+                (self.claims([["S1"]]), [], "left out: S2 'Notes'"),
+                (self.claims([["S1", "S2"], ["S2"]]), [], "in more than one place: S2"),
+                (self.claims([["S1"]]), [{"section": "S2", "reason": "x"}, {"section": "S9", "reason": "x"}],
+                 "unknown: S9"),
+                (self.claims([["S1", "S1", "S2"]]), [], "names one of its sections twice")):
+            with self.subTest(named=named):
+                refused = self.commit(h, claims, aside)
+                self.assertEqual(refused["status"], "retryable", refused)
+                self.assertEqual(refused["error"]["code"], "sections_incomplete")
+                self.assertIn(named, refused["error"]["message"])
+                h.data["state_token"] = refused["error"]["state_token"]
+        accepted = self.commit(h, self.claims([["S1"]]), [{"section": "S2", "reason": "Notes only restate S1."}])
+        self.assertEqual(accepted["status"], "ok", accepted)
+        manifest = accepted["data"]["manifest"]
+        self.assertEqual(manifest["claims"][0]["sections"], ["S1"])
+        self.assertEqual(manifest["set_aside"], [{"section": "S2", "reason": "Notes only restate S1."}])
+        self.assertEqual([item["section"] for item in manifest["sections"]], ["S1", "S2"])
+
+    def test_a_local_manifest_holds_at_most_twelve_claims(self):
+        from sci_ai_verifier.local import CLAIM_LIMIT_MESSAGE, MAX_CLAIMS
+        self.assertEqual(MAX_CLAIMS, 12)
+        h = self.h
+        # A skill of thirteen sections, so thirteen claims can each hold one.
+        (h.source / "SKILL.md").write_text(QUOTE + "".join("\n\n## Part %d\nText %d." % (n, n) for n in range(12)),
+                                           encoding="utf-8")
+        h.data = h.runtime.call("start_verifier_run", {"source_path": str(h.source)})["data"]
+        h.call("load_submitted_skill", source_path=str(h.source))
+        h.snapshot = h.data["snapshot"]
+        self.assertEqual(len(h.data["sections"]), 13)
+        refused = self.commit(h, self.claims([["S%d" % n] for n in range(1, 14)]))
         self.assertEqual((refused["error"]["code"], refused["error"]["message"]), ("too_many_claims", CLAIM_LIMIT_MESSAGE))
         h.data["state_token"] = refused["error"]["state_token"]
-        h.call("commit_claim_manifest", **{key: value for key, value in arguments.items() if key not in ("run_id", "state_token")},
-               claims=self.claims(MAX_CLAIMS))
-        self.assertEqual(h.data["manifest"]["count"], 5)
+        accepted = self.commit(h, self.claims([["S%d" % n] for n in range(1, 13)]),
+                               [{"section": "S13", "reason": "Synthetic: nothing to test."}])
+        self.assertEqual(accepted["data"]["manifest"]["count"], 12)
 
     def test_the_local_planner_is_told_the_claim_scope_and_other_profiles_keep_theirs(self):
         from sci_ai_verifier.local_entry import BoundRuntime, PLANNER_PROMPT
         from sci_ai_verifier.tools import DEFINITIONS
         local = next(item for item in BoundRuntime.definitions if item["name"] == "commit_claim_manifest")
-        self.assertIn("one behaviour", local["description"])
-        self.assertIn("at most 5", local["description"])
+        self.assertIn("group of whole sections", local["description"])
+        self.assertIn("at most 12", local["description"])
+        self.assertIn("set_aside", local["inputSchema"]["properties"])
+        self.assertIn("sections", local["inputSchema"]["properties"]["claims"]["items"]["properties"])
         shared = next(item for item in DEFINITIONS if item["name"] == "commit_claim_manifest")
         self.assertIn("atomic", shared["description"])
+        self.assertNotIn("set_aside", shared["inputSchema"]["properties"])
         pinned = dict(self.h.runtime._instruction_blocks())["tool-definitions"]
         self.assertIn(json.dumps(local["description"])[1:-1], pinned)
-        self.assertIn("at most five claims", PLANNER_PROMPT)
+        self.assertIn("every section in one", " ".join(PLANNER_PROMPT.split()))
 
-    def test_the_local_planner_is_told_to_test_fact_by_fact_and_revise_before_accepting(self):
-        """Run fbd49132's planner left facts of every claim untested, searched for none of one
-        claim's missing gotchas, and accepted B twice with rounds left and the missing cases named."""
+    def test_the_local_planner_is_told_to_test_by_tasks_and_revise_before_accepting(self):
+        """Claims covered 13% of the Western-blot skill's words, and run 90c60cbe's tries never ran the
+        skill's own script, so each claim is now tested by tasks that run the skill."""
         from sci_ai_verifier.local_entry import PLANNER_PROMPT
         prompt = " ".join(PLANNER_PROMPT.split())
-        self.assertIn("for each fact the claim states", prompt)
-        self.assertIn("fact by fact", prompt)
+        self.assertIn("qualify_local_tasks", prompt)
+        self.assertIn("Test each claim by running the skill", prompt)
         self.assertIn("answers every required revision", prompt)
         self.assertIn('"Negotiating the grade"', prompt)
-        self.assertNotIn("two moves", prompt)
+        self.assertNotIn("fact by fact", prompt)
         pinned = dict(self.h.runtime._instruction_blocks())
-        self.assertIn("**Tested fact by fact.**", pinned["references/local-contract.md"])
-        self.assertIn("**Quoted whole.**", pinned["references/local-contract.md"])
+        self.assertIn("**A claim is a group of whole sections**", pinned["references/local-tasks.md"])
+        self.assertIn("## The reference solution", pinned["references/local-tasks.md"])
+        self.assertNotIn("**Tested fact by fact.**", pinned["references/local-contract.md"])
+        self.assertNotIn("At most five", pinned["references/local-contract.md"])
+        self.assertIn("**Tasks.**", pinned["references/evidence-rubric.md"])
         self.assertIn("**Revise before accepting.**", pinned["references/evidence-rubric.md"])
         self.assertIn("saving run time is no reason", pinned["references/evidence-rubric.md"])
-        self.assertIn("goes through the claim's facts", pinned["references/tool-contracts.md"])
+        self.assertIn("`qualify_local_tasks`", pinned["references/tool-contracts.md"])
 
     def test_a_skill_file_s_sections_are_its_headings_outside_code(self):
         from sci_ai_verifier.claims import sections
@@ -915,6 +964,7 @@ class ClaimScopeTests(unittest.TestCase):
                          ["Title"])
 
     def test_a_reference_file_belongs_to_the_first_section_that_names_it(self):
+        """How a manifest from before claims named their sections is read."""
         from sci_ai_verifier.claims import section_coverage
         skill = ("# Skill\n## Models\nSee references/cox.md for Cox models.\n## Metrics\nUse the C-index.\n"
                  "## Other\nNothing testable.\n## Reference files\n- references/cox.md\n")
@@ -930,17 +980,28 @@ class ClaimScopeTests(unittest.TestCase):
         self.assertEqual(coverage["sections"][0]["files"], ["references/cox.md"])
         self.assertIsNone(section_coverage({"README.md": "x"}, claims))
 
-    def test_the_report_says_which_sections_the_claims_cover(self):
+    def test_the_report_says_which_sections_the_claims_hold_and_which_are_set_aside(self):
         h = self.h
         h.ready()
         h.call("execute_local_claim", claim_id=h.claim_id)
         h.call("write_report_card")
         report = h.data["report"]
         self.assertEqual(report["coverage"]["uncovered"], [])
-        self.assertEqual(report["claims"][0]["sections"], ["(before the first heading)"])
+        self.assertEqual(report["claims"][0]["sections"], ["(before the first heading)", "Notes"])
         markdown = Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
-        self.assertIn("Skill sections: the claims cover 1 of the 1 sections of SKILL.md.", markdown)
-        self.assertIn("Skill section: (before the first heading)", markdown)
+        self.assertIn("Skill sections: the claims hold 2 of the 2 sections of SKILL.md.", markdown)
+        self.assertIn("Skill section: (before the first heading); Notes", markdown)
+        # With no claim, every section is set aside, and the report says why.
+        h.data = h.runtime.call("start_verifier_run", {"source_path": str(h.source)})["data"]
+        h.call("load_submitted_skill", source_path=str(h.source))
+        h.snapshot = h.data["snapshot"]
+        h.extract(0)
+        h.call("write_report_card")
+        aside = h.data["report"]["coverage"]["set_aside"]
+        self.assertEqual([(item["section"], item["reason"]) for item in aside],
+                         [("S1", "Synthetic: nothing to test."), ("S2", "Synthetic: nothing to test.")])
+        self.assertIn("set aside: S1 (before the first heading) (Synthetic: nothing to test.)",
+                      Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
 
 
 class ReportAxisTests(unittest.TestCase):

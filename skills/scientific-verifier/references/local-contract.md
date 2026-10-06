@@ -1,4 +1,4 @@
-# Local profile: implementation 0.7.0
+# Local profile: implementation 0.7.0, with task tests
 
 ## Computational execution and operator settings
 
@@ -113,7 +113,9 @@ record.
 **What the planner sees.** The planner's pinned instructions gain one block. The
 verifier renders it only from values it checked itself: the image digests, the status,
 package names and versions from the lock, counts, reason codes and the index host. The
-block also says that nothing can be installed during the run. The full record is the
+block also says that nothing can be installed during the run, and lists the packages the
+operator's own image reports, since task generators and reference solutions run there and
+no skill can alter that image. The full record is the
 `environment` section of `get_verifier_context`. It includes where each declaration was
 found, the text of rejected commands, and the packages and imports the built image
 reports. That last part is untrusted, because an installed package could alter it. The
@@ -132,10 +134,12 @@ ceiling, or a grade the last critique of the same design supported, may be propo
 both overclaiming and aiming low are refused before any session is spent:
 
 - **A** needs every expected answer quoted token-exactly from reference bytes Python
-  itself retrieved over public HTTPS, or calculated by Python from a formula so quoted
+  itself retrieved over public HTTPS, calculated by Python from a formula so quoted
   after reproducing worked examples so quoted, as `qualify_local_candidate` in
-  `tool-contracts.md` specifies; scored by an installed comparison method, with at
-  least three trials of this model subject.
+  `tool-contracts.md` specifies, or planted by Python in a task's files from a model so
+  quoted, with the reference solution recovering it (`local-tasks.md`); scored by an
+  installed comparison method or a task's fixed checks, with at least three trials of
+  this model subject.
 - **B** allows an operator-imported pinned dataset, or a generated Python evaluator
   whose controls all pass, with the same trial minimum. A planner-authored scorer
   cannot reach A, because direct validation excludes AI judgment in scoring. A
@@ -154,7 +158,7 @@ The ceiling is the weaker of the two. The local planner receives that section an
 "Negotiating the grade" pinned with its other instructions, since its session cannot
 read files.
 
-First, Python measures what `beyond_scope` describes, a rule *No more* in
+For a design of questions, Python first measures what `beyond_scope` describes, a rule *No more* in
 `evidence-rubric.md` owns and `select_local_candidate` in `tool-contracts.md` specifies.
 Fresh no-tool sessions that see only the claim answer each case twice, and a case any
 answer misses does not count. The critique judging that design never sees those
@@ -189,11 +193,14 @@ now refused before its critique starts. It sees every case, each with its ID and
 strongest grade the evidence actually supports plus one verdict per case. The settled
 ceiling is the weakest of the proposal, Python's ceiling recomputed over the cases the
 critique counted and the claim-only answers did not miss, and that critique's grade.
+A task design's critique also sees the text of the claim's sections, judges earlier
+concerns in its findings rather than one by one, and lists no facts: `local-tasks.md`
+says what it receives.
 
 When the settled grade is below the proposal, the planner revises before it accepts, as
 step 4 of "Negotiating the grade" in `evidence-rubric.md` says: a stronger design and its
 new ceiling earn another round, and accepting the grade that design settled at settles
-immediately without another session. A critique that agrees with a proposal below A but
+immediately without another session. For a design of questions, a critique that agrees with a proposal below A but
 names coverage gaps, or finds an earlier concern unanswered, returns the claim, and its
 grade is accepted only after a new search (the returns under `select_local_candidate` in
 `tool-contracts.md`).
@@ -294,7 +301,7 @@ and the answer form each one requires are enumerated in `tool-contracts.md` unde
 `qualify_local_candidate`, which owns that list; do not restate it here.
 The planner extracts source-grounded claims, as "Claims" below describes, searches for
 independent primary references with WebSearch, and proposes known-answer cases in one of
-those forms.
+those forms, or tasks (`local-tasks.md`).
 Python retrieves public HTTPS reference bytes itself; agent-authored quotes or
 search summaries alone cannot qualify a candidate. Reference quotes must occur in
 retrieved material, and so must every expected value except one Python calculated from
@@ -315,50 +322,18 @@ claim-local limitations. Every accepted claim must be accounted for.
 
 ## Claims
 
-The planner extracts the claims; Python checks their quotes, never their meaning. The
-earlier profiles ask for atomic claims, which made local claims too small to test. Since
-per-case verdicts began, 24 of 41 graded claims settled below the grade their source
-supported only because they had too few independent cases, and critiques rejected 17
-cases as restatements of another. A local claim is therefore sized to its tests:
+The planner extracts the claims; Python checks their quotes and their sections, never
+their meaning. A claim is a group of whole sections of `SKILL.md`, and every section is in
+one claim or set aside with a reason, as "Claims" in `local-tasks.md` says; that section
+owns the rule and its limit. With a container configured, each claim is tested by tasks
+that run the skill on generated or fetched input (`local-tasks.md`). Without one nothing
+can run, so a claim is tested by a design of questions under `qualify_local_candidate` in
+`tool-contracts.md`: its cases spread over the facts the claim states, each fact a source
+can key getting a case before any fact gets a second, and its `coverage` justification
+records which case tests each fact. Python refuses a design of questions, and a generated
+evaluator, while a container is configured (`tasks_required`).
 
-- **One behaviour.** A claim is one behaviour the skill tells its user to rely on: a
-  procedure step, a documented rule, or one function's behaviour. It states every fact
-  the skill gives about that behaviour, so that about six independent questions can test
-  it: the five an A needs, plus a spare ("Cases each grade requires" in
-  `evidence-rubric.md`). A behaviour too small for that joins the neighbouring behaviour
-  it serves. Unrelated behaviours never share a claim, and no claim summarises the whole
-  skill.
-- **Quoted whole.** A claim's quote carries every fact its statement states, because
-  Python checks only that the quote occurs. When Python refuses a quote, correct its
-  characters against the file; a shorter quote needs a shorter statement. In `fbd49132` a
-  doubled space got one claim's quote refused, the retry cut it from five quoted gotchas to
-  two, and the statement kept all five.
-- **Section by section.** A section is the text under one heading of `SKILL.md`, down to
-  the next heading of any level; a reference file belongs to the first section that
-  names it. List the sections that promise a testable behaviour. Take one claim from each
-  of them, preferring what the skill tells its user to do and conclude over facts about a
-  library it calls, in the skill's order.
-- **At most five.** Broader claims need more trials, and a run of six narrower claims
-  ended 8 seconds before its deadline, so a manifest holds at most five claims and
-  Python refuses a larger one. When more sections qualify, keep those whose behaviour the
-  skill's workflow depends on most.
-
-**Tested fact by fact.** A claim's facts are the rules, values, thresholds, steps and
-reasons its statement gives, and its cases spread over them: each fact a source can key
-gets a case before any fact gets a second, since a second case on a tested fact is usually
-a `duplicate`. Search for an independent source for each fact before leaving it untested,
-and keep the spare case "Cases each grade requires" in `evidence-rubric.md` asks for. When
-a claim states more facts than the run's subject-call budget has cases for, test the ones
-the skill's user relies on most. The `coverage` justification of `select_local_candidate`
-in `tool-contracts.md` records which case tests each fact, and the critique checks each
-search it describes against Python's search record: a search the record does not show was
-not made. In `fbd49132` every claim
-settled with facts untested: one claim's three cases reached two of its five gotchas with
-no search made for the other three, and two claims settled at B although their critiques
-named the missing cases and the rounds to add them remained.
-
-The report lists the sections no claim covers, and says when only its number of
-independent cases held a claim below the grade its source supports.
+The report lists each claim's sections, and the sections set aside with their reasons.
 
 ## Legal operations
 
@@ -415,7 +390,9 @@ third itself.
 No reference answer, candidate, evaluator file, verifier conversation or arbitrary
 planner instruction is included in subject input. Subject input is the frozen
 case input, the answer-format line Python writes from the case's answer type, and the
-pinned skill. A process deadline and output ceiling are
+pinned skill. A task's input is its job, the paths of its files, mounted read-only at
+`/task`, and its output fields; the trial's results come back in `/work/results.json`
+(`local-tasks.md`). A process deadline and output ceiling are
 enforced; timeout/cancellation terminates the process tree. A trial that reaches its
 deadline is `claude_timeout`, and its record names the case, the trial and the
 `subject_timeout_seconds` it reached. That limit is this verifier's setting, not a
@@ -432,7 +409,7 @@ The first attempt's record and receipts stay in the report beside the retry's. A
 is not retried, and the report says why, when its plan settled no execution grade (the
 documentary step after it needs the planner), when the subject-call budget cannot
 cover it, or when less time remains before the attempt deadline than one minute per
-trial plus five for the report. A claim the re-run does not clear, or that is not
+trial, five per task trial, plus five for the report. A claim the re-run does not clear, or that is not
 re-run, then receives the fallback documentary assessment described under
 "Independent documentary path".
 

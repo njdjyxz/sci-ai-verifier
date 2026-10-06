@@ -22,11 +22,13 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "report_html.py"
 TYPES = {"numeric": "number", "exact": "exact token", "term": "word or phrase", "choice": "multiple choice",
          "expression": "formula", "list": "list, in order", "set": "list, any order"}
 NOT_COUNTED = {"leaked": "the question gives the answer away", "duplicate": "it repeats another test",
-               "beyond_scope": "the claim alone does not settle it", "naming": "it only asks what something is called"}
+               "beyond_scope": "the claim alone does not settle it", "naming": "it only asks what something is called",
+               "unsound": "its expected value or tolerance is not right"}
 OUTCOMES = {"local_plan_fixed": "plan fixed", "local_grade_revision_required": "sent back to revise",
             "local_grade_proposal_refused": "refused before review"}
 REFUSALS = {"prior_review_in_packet": "its notes mentioned an earlier review",
-            "return_unsearched": "accepted with no new search", "local_design_unchanged": "the same design again"}
+            "return_unsearched": "accepted with no new search", "local_design_unchanged": "the same design again",
+            "sections_unused": "its tasks did not use this claim's sections"}
 HOST = {"managed_host_configuration_is_trusted": "The verifier trusts the computer and the settings it runs on.",
         "local_container_execution": "The tests ran in a container on one local computer.",
         "evidence_grade_is_an_evidence_strength_indicator_not_an_endorsement":
@@ -37,7 +39,7 @@ GUIDE = ("Fill in the empty fields below in plain words and short sentences, for
          "skill. Do not quote the skill. skill.name: a short plain name. skill.summary: 3 to 5 sentences on what "
          "the skill does. For each claim: title, 2 to 5 words; says, 2 to 4 sentences on what the claim says; "
          "summary, 2 to 4 sentences on how it did, naming any test that failed or did not count and any fact left "
-         "untested. For each test: asks, the question in one short plain sentence; review, only if you checked a "
+         "untested. For each test: asks, the question or task in one short plain sentence; review, only if you checked a "
          "failed or odd test, saying whether the question, the key or the skill was at fault. cautions: short "
          "sentences the reader should know. by: your name; author: who wrote this text, and when. Leave every "
          "other field as it is, then run the render command to update the page.")
@@ -196,7 +198,8 @@ def claim_view(run, number, claim, notes):
         rounds.append({"proposed": event["request"]["arguments"].get("target_grade"),
                        "reviewer": judged.get("supported_grade"), "outcome": outcome,
                        "not_counted": sum(v.get("verdict") != "counts" for v in judged.get("case_verdicts") or []),
-                       "untested": len(judged.get("coverage_gaps") or []) if judged else None})
+                       # A task critique lists no facts, so it has no untested count to show.
+                       "untested": len(judged["coverage_gaps"]) if "coverage_gaps" in judged else None})
     for part in (claim.get("documentary_assessment"), (claim.get("fallback") or {}).get("assessment")):
         if isinstance(part, dict):
             sessions.add(part.get("session_id"))
@@ -209,6 +212,10 @@ def claim_view(run, number, claim, notes):
     tests = []
     for index, (case_id, rows) in enumerate(trials.items(), 1):
         case = designed.get(case_id, {})
+        if candidate.get("method") == "task":
+            tests.append(task_view(index, case_id, rows, case, verdicts.get(case_id, {}), dropped.get(case_id),
+                                   (note.get("tests") or {}).get(case_id) or {}, claim.get("references") or {}))
+            continue
         method = case.get("method") if candidate.get("method") == "mixed" else candidate.get("method")
         verdict = verdicts.get(case_id, {})
         counted = any(row.get("counted") for row in rows)
@@ -233,7 +240,13 @@ def claim_view(run, number, claim, notes):
 
     accuracy, consistency = record.get("accuracy"), record.get("consistency")
     counted_trials = [row for test in tests if test["counted"] for row in test["trials"]]
+    generator = candidate.get("generator") if candidate.get("method") == "task" else None
     return {
+        "tasks": candidate.get("method") == "task",
+        "design": {"generator": generator, "solver": candidate.get("solver"),
+                   "model_url": ((claim.get("references") or {}).get((generator or {}).get("reference_ref")) or {}).get("url")}
+        if candidate.get("method") == "task" else None,
+        "run_problems": sorted({item for test in tests for row in test["trials"] for item in row.get("run_problems") or []}),
         "number": number, "id": claim_id, "claim": claim["claim"], "note": note, "record": record,
         "title": note.get("title") or (claim.get("sections") or [f"Claim {number}"])[0],
         "sections": claim.get("sections") or [], "grade": record.get("evidence_grade"),
@@ -250,6 +263,49 @@ def claim_view(run, number, claim, notes):
         "cost": sum(run.costs.get(s) or 0 for s in sessions) if sessions else None,
         "references": claim.get("references") or {}, "limitations": record.get("limitations") or [],
         "documentary": claim.get("documentary_assessment"), "fault": record.get("fault")}
+
+
+def task_view(index, case_id, rows, case, verdict, dropped, written, references):
+    """One task of a task design, as its table row and fold show it ("Tasks" in local-tasks.md)."""
+    counted = any(row.get("counted") for row in rows)
+    reason = dropped or (verdict if verdict.get("verdict") not in (None, "counts") else {})
+    outputs = []
+    for output in case.get("outputs") or []:
+        source = references.get(output.get("reference_ref")) or {}
+        outputs.append({**output, "url": source.get("url"), "version": source.get("version")})
+    return {"kind": "task", "number": index, "case_id": case_id, "method": "task", "options": [],
+            "asks": written.get("asks"), "review": written.get("review"), "question": rows[0].get("input", ""),
+            "expected": rows[0].get("expected") or {}, "outputs": outputs, "files": rows[0].get("files") or [],
+            "sections": rows[0].get("sections") or [], "planted": case.get("planted"),
+            "solver_results": case.get("solver_results"), "why": rows[0].get("applicability"),
+            "trials": rows, "counted": counted,
+            "not_counted": NOT_COUNTED.get(reason.get("verdict"), reason.get("verdict")) if not counted else None,
+            "verdict": verdict, "dropped": dropped, "probe": [], "probe_reached": None, "unit": None,
+            "quote": None, "reference": {}, "calculated": None,
+            "passed": sum(row.get("comparison_status") == "pass" for row in rows), "by_reader": 0}
+
+
+def shown(output, value):
+    """An expected or found value as a reader reads it: a number bare, anything else as JSON."""
+    if output.get("type") == "number" and isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def tolerance_text(output):
+    parts = []
+    if output.get("relative_tolerance"):
+        parts.append("±" + str(round(float(output["relative_tolerance"]) * 100, 4)).rstrip("0").rstrip(".") + "%")
+    if output.get("absolute_tolerance"):
+        parts.append("±" + output["absolute_tolerance"])
+    return " or ".join(parts) if parts else ("exact" if output.get("type") == "number" else "")
+
+
+def misses(row):
+    """What one try got wrong: each output that did not pass, or why no results were read."""
+    wrong = [item["field"] + (": " + json.dumps(item["found"], ensure_ascii=False) if item.get("present") else ": missing")
+             for item in row.get("outputs") or [] if item.get("status") != "pass"]
+    return "; ".join(wrong) or row.get("results_problem") or ""
 
 
 def views(run, notes):
@@ -422,7 +478,7 @@ def summary_table(claims, run):
             str(v["by_reader"]) if v["tests"] else "–",
             e(", ".join(f'{r["proposed"]}→{r["reviewer"] or "–"}' for r in v["rounds"] if r["reviewer"]) or "–"),
             f'{v["looked"]["searches"]} · {v["looked"]["fetches"]}' if v["looked"] else "–",
-            str(len(v["untested"])) if v["tests"] else "–", minutes(v["seconds"]), money(v["cost"])])
+            str(len(v["untested"])) if v["tests"] and not v["tasks"] else "–", minutes(v["seconds"]), money(v["cost"])])
     matched = sum(v["accuracy"]["matched"] for v in claims if v["accuracy"])
     evaluated = sum(v["accuracy"]["evaluated"] for v in claims if v["accuracy"])
     rows.append(["All claims", "", "", f"{matched} of {evaluated}", "",
@@ -444,7 +500,70 @@ def summary_table(claims, run):
     return "".join(out)
 
 
+def task_table(v):
+    """One row per task: what it asks, what Python checks, and each try's result."""
+    head = ["#", "What the task asks", "Sections", "Checked outputs", "Tries", "Right", "Counted?"]
+    out = ['<div class="wrap"><table><thead><tr>'] + [f"<th>{e(h)}</th>" for h in head] + ["</tr></thead><tbody>"]
+    for t in v["tests"]:
+        checked = "<br>".join(f'{e(o["field"])} = {e(shown(o, o.get("expected")))}'
+                              + (f' <span class="dim">{e(tolerance_text(o))}</span>' if tolerance_text(o) else "")
+                              for o in t["outputs"])
+        tries = "".join(f'<span class="ans {"ok" if row.get("comparison_status") == "pass" else "bad"}" '
+                        f'title="{e(misses(row))}">{e(row.get("comparison_status"))}'
+                        f'{(": " + e(misses(row))) if misses(row) else ""}</span>' for row in t["trials"])
+        out.append(f'<tr><td class="n">{t["number"]}</td><td>{e(t["asks"] or gist(t["question"]))}'
+                   f'<div class="id">{e(t["case_id"])}</div></td><td>{e(", ".join(t["sections"]))}</td>'
+                   f'<td>{checked}</td><td>{tries}</td><td class="n">{t["passed"]} of {len(t["trials"])}</td>'
+                   f'<td>{e(counted_text(t)[:1].upper() + counted_text(t)[1:])}</td></tr>')
+        if t["review"]:
+            out.append(f'<tr class="review"><td></td><td colspan="6"><span class="flag">⚑ Our check:</span> '
+                       f'{e(t["review"])}</td></tr>')
+    out.append("</tbody></table></div>")
+    return "".join(out)
+
+
+def task_details(t):
+    rows = [("The job", f'<div class="question">{e(t["question"])}</div>')]
+    if t["files"]:
+        rows.append(("Input files", e(", ".join(f'{item["name"]} ({item["bytes"]:,} bytes)' for item in t["files"]))
+                     + '<div class="dim">The same bytes went to every try, read-only.</div>'))
+    checked = []
+    for o in t["outputs"]:
+        where = ("planted by Python's run of the generator" if o.get("source") == "planted"
+                 else "quoted from " + link(o.get("url"), o.get("version") or o.get("url")))
+        quote = f'<blockquote>{e(o.get("source_quote"))}</blockquote>' if o.get("source_quote") else ""
+        if o.get("source") == "planted" and o.get("source_quote"):
+            where += ", following the rule quoted from " + link(o.get("url"), o.get("version") or o.get("url"))
+        checked.append(f'<li><b>{e(o["field"])}</b> = {e(shown(o, o.get("expected")))} '
+                       f'<span class="dim">{e(tolerance_text(o))}</span><div class="dim">{where}</div>{quote}</li>')
+    rows.append(("What Python checks", "<ul class='plain'>" + "".join(checked) + "</ul>"))
+    if t["solver_results"] is not None:
+        rows.append(("Reference solution's results", f'<pre>{e(json.dumps(t["solver_results"], ensure_ascii=False, indent=1))}</pre>'))
+    if t["why"]:
+        rows.append(("Why this task", e(t["why"])))
+    if t["verdict"]:
+        rows.append(("Reviewer AI said", f'<b>{e(t["verdict"].get("verdict"))}</b> — {e(t["verdict"].get("reason"))}'))
+    tries = []
+    for row in t["trials"]:
+        found = "".join(f'<tr><td>{e(item["field"])}</td><td>{e(shown(item, item.get("expected")))}</td>'
+                        f'<td>{e(json.dumps(item.get("found"), ensure_ascii=False)) if item.get("present") else "missing"}</td>'
+                        f'<td>{chip(item.get("status"))}</td></tr>' for item in row.get("outputs") or [])
+        problems = row.get("run_problems") or []
+        tries.append(f'<div class="try"><b>Try {e(row.get("trial"))}</b> · {chip(row.get("comparison_status"))}'
+                     + (f'<div class="dim">{e(row["results_problem"])}</div>' if row.get("results_problem") else "")
+                     + (f'<div class="dim">Run problems: {e("; ".join(problems))}</div>' if problems else "")
+                     + (f"<div class='wrap'><table><thead><tr><th>Output</th><th>Expected</th><th>Found</th>"
+                        f"<th>Verdict</th></tr></thead><tbody>{found}</tbody></table></div>" if found else "")
+                     + f'<pre>{e(row.get("observed"))}</pre></div>')
+    body = "".join(f"<dt>{e(k)}</dt><dd>{val}</dd>" for k, val in rows)
+    state = "counted" if t["counted"] else "not counted"
+    return (f'<details><summary>Task {t["number"]} · {e(t["case_id"])} · right {t["passed"]} of {len(t["trials"])}'
+            f' · {state}</summary><div class="inner"><dl>{body}</dl>{"".join(tries)}</div></details>')
+
+
 def tests_table(v):
+    if v["tasks"]:
+        return task_table(v)
     head = ["#", "What the test asks", "Answer type", "Expected answer", "Answers (each try)", "Right",
             "Counted?", "Claim-only check"]
     out = ['<div class="wrap"><table><thead><tr>'] + [f"<th>{e(h)}</th>" for h in head] + ["</tr></thead><tbody>"]
@@ -469,6 +588,8 @@ def tests_table(v):
 
 
 def test_details(t):
+    if t.get("kind") == "task":
+        return task_details(t)
     rows = [("Full question", f'<div class="question">{e(t["question"])}</div>')]
     if t["method"]:
         rows.append(("Answer format", e(instruction(t["method"], t.get("unit")))))
@@ -530,8 +651,13 @@ def chapter(v, author):
     out.append('<div class="stats">' + "".join(stats) + "</div>")
     if v["fault"]:
         out.append(f'<p><span class="flag">⚑ Stopped by a fault:</span> {e(v["fault"])}</p>')
+    if v["run_problems"]:
+        out.append('<p><span class="flag">⚑ While running the skill</span>, the test AI met: '
+                   + e("; ".join(v["run_problems"])) + ". The skill may not run as shipped on this computer.</p>")
     if v["tests"]:
-        out.append("<h3>The tests</h3>" + tests_table(v))
+        out.append(("<h3>The tasks</h3><p class='dim'>Each task gives fresh AI sessions input files and a job. They "
+                    "follow the skill and write their results, and Python checks every output.</p>" if v["tasks"]
+                    else "<h3>The tests</h3>") + tests_table(v))
     elif v["documentary"]:
         assessment = v["documentary"].get("assessment") or {}
         out.append("<h3>No tests ran</h3><p>An AI assessor read the cited sources instead. Its result: "
@@ -539,7 +665,20 @@ def chapter(v, author):
     more = [f"<details><summary>The full claim, as the planner wrote it</summary><div class='inner'>"
             f"<p>{e(claim.get('statement'))}</p></div></details>"]
     if v["tests"]:
-        more.append("<h3>Each test</h3>" + "".join(test_details(t) for t in v["tests"]))
+        more.append(("<h3>Each task</h3>" if v["tasks"] else "<h3>Each test</h3>")
+                    + "".join(test_details(t) for t in v["tests"]))
+    if v["design"]:
+        design = v["design"]
+        if design["generator"]:
+            more.append("<h3>How the input files were made</h3><p>Python ran the planner's generator, which "
+                        "implements this model, quoted from " + link(design["model_url"]) + ":</p><blockquote>"
+                        + e(design["generator"].get("model_quote")) + "</blockquote>"
+                        "<details><summary>The generator's code</summary><div class='inner'><pre>"
+                        + e(design["generator"].get("code")) + "</pre></div></details>")
+        if design["solver"]:
+            more.append("<details><summary>The reference solution's code</summary><div class='inner'><p class='dim'>"
+                        "Python ran it on every task before any try; every output passed on its results.</p><pre>"
+                        + e(design["solver"].get("code")) + "</pre></div></details>")
     if v["documentary"]:
         assessment = v["documentary"].get("assessment") or {}
         cited = []
@@ -635,7 +774,8 @@ def page(run, notes):
     section_rows = "".join(
         f'<tr><td>{"&nbsp;" * 4 * max(0, (s.get("level") or 1) - 1)}{e(s.get("heading"))}</td><td>'
         + (", ".join(f'<a href="#claim-{numbers[c]}">Claim {numbers[c]}</a>' for c in s.get("claims") or [] if c in numbers)
-           or '<span class="dim">not tested</span>') + "</td></tr>" for s in sections)
+           or (f'<span class="dim">set aside: {e(s["set_aside"])}</span>' if s.get("set_aside")
+               else '<span class="dim">not tested</span>')) + "</td></tr>" for s in sections)
     body = paragraphs(skill.get("summary")) if skill.get("summary") else ""
     out.append('<section id="skill"><h2>The skill in plain words</h2>'
                + (written("About the skill", body, author) if body else
@@ -650,9 +790,17 @@ def page(run, notes):
 
     cautions = notes.get("cautions") or []
     recorded = []
-    untested = [s.get("heading") for s in sections if not s.get("claims")]
+    untested = [s.get("heading") for s in sections if not s.get("claims") and not s.get("set_aside")]
     if untested:
         recorded.append(f"{len(untested)} of {len(sections)} sections of the skill had no claim: " + "; ".join(untested) + ".")
+    aside = [s for s in sections if s.get("set_aside")]
+    if aside:
+        recorded.append(f"{len(aside)} of {len(sections)} sections were set aside as having nothing to test: "
+                        + "; ".join(f'{s.get("heading")} ({s["set_aside"]})' for s in aside) + ".")
+    problems = sorted({item for v in claims for item in v["run_problems"]})
+    if problems:
+        recorded.append("While running the skill, the test AI met: " + "; ".join(problems)
+                        + ". A skill that cannot run as shipped is a finding about the skill.")
     environment = report.get("environment") or {}
     if environment.get("imports_unavailable_reported_by_image"):
         recorded.append("The test computer did not have these Python packages: "
@@ -668,20 +816,28 @@ def page(run, notes):
                + "<h3>From the run's records</h3><ul class='plain'>" + "".join(f"<li>{e(r)}</li>" for r in recorded)
                + "</ul></section>")
 
+    tasks = any(v["tasks"] for v in claims)
     out.append('<section id="how"><h2>How to read this report</h2><dl class="legend">'
-               "<dt>Claim</dt><dd>One thing the skill says it does. Each claim comes from one section of the skill.</dd>"
-               "<dt>Test</dt><dd>A question with an answer key taken from an outside source, not from the skill. "
-               "Fresh AI sessions answer it 3 times while using the skill.</dd>"
+               + ("<dt>Claim</dt><dd>A part of the skill that serves one purpose: a group of its sections. Together the "
+                  "claims hold every section, except those set aside as having nothing to test.</dd>"
+                  "<dt>Task</dt><dd>Input files and a job, as a user of the skill would give. Fresh AI sessions do it 3 "
+                  "times while using the skill and write their results. Python checks each output against a value it "
+                  "built into the files, or one taken from an outside source, never from the skill.</dd>"
+                  if tasks else
+                  "<dt>Claim</dt><dd>One thing the skill says it does. Each claim comes from one section of the skill.</dd>"
+                  "<dt>Test</dt><dd>A question with an answer key taken from an outside source, not from the skill. "
+                  "Fresh AI sessions answer it 3 times while using the skill.</dd>") +
                "<dt>Grade A–D</dt><dd>How strong the tests and their answer keys are. A is the strongest. It is set "
                "before the tests run, and it is not an approval of the skill.</dd>"
                "<dt>Status</dt><dd>pass: every counted answer was right. fail: at least one was wrong. "
                "inconclusive: the evidence could not decide.</dd>"
                "<dt>Counted</dt><dd>Only tests the reviewer AI accepted count toward the status. The others still "
                "ran and are shown.</dd>"
-               "<dt>Claim-only check</dt><dd>Two fresh AI sessions answer each test from the claim alone, without the "
-               "skill. If they miss the key, the claim does not settle the test, so it cannot count.</dd>"
-               "<dt>AI reader</dt><dd>When Python's strict check marks an answer wrong, a second AI reads it again and "
-               "can accept a right answer written another way.</dd>"
+               + ("" if tasks else
+                  "<dt>Claim-only check</dt><dd>Two fresh AI sessions answer each test from the claim alone, without the "
+                  "skill. If they miss the key, the claim does not settle the test, so it cannot count.</dd>"
+                  "<dt>AI reader</dt><dd>When Python's strict check marks an answer wrong, a second AI reads it again and "
+                  "can accept a right answer written another way.</dd>") +
                "<dt>✎ text</dt><dd>" + e(notes.get("author") or "Written after the run") + ", to explain the "
                "results. It is not part of the scored record.</dd></dl></section>")
     out.append(f"<footer>Made from the records of run {e(run.id)}. Report card: "
@@ -704,8 +860,11 @@ def skeleton(run):
             "result": " · ".join(result), "left_untested": v["untested"],
             "title": "", "says": [], "summary": [],
             "tests": {t["case_id"]: {
-                "question": t["question"], "expected": expected_text(t),
-                "answers": [answer_text(t, row.get("observed")) for row in t["trials"]],
+                "question": t["question"],
+                "expected": ({o["field"]: shown(o, o.get("expected")) for o in t["outputs"]} if t.get("kind") == "task"
+                             else expected_text(t)),
+                "answers": [(row.get("comparison_status") or "") + (": " + misses(row) if misses(row) else "")
+                            if t.get("kind") == "task" else answer_text(t, row.get("observed")) for row in t["trials"]],
                 "right": f'{t["passed"]} of {len(t["trials"])}', "counted": counted_text(t),
                 "asks": "", "review": ""} for t in v["tests"]}}
     sections = [s.get("heading") for s in ((run.report.get("coverage") or {}).get("sections")) or []]

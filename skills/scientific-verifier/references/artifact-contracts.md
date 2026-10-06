@@ -413,13 +413,27 @@ environment" in `local-contract.md`, with these fields:
 - for `built`, the `build_key`, `build_record_ref` and `lock` (digest, and per wheel its name,
   version, file, SHA256 and size);
 - `manifest`, the packages and unavailable imports the built image reported about itself,
-  marked `reported_by_image` because it is untrusted.
+  marked `reported_by_image` because it is untrusted;
+- `operator_manifest`, the packages the operator's image reports, where task generators and
+  reference solutions run.
+
+A local manifest carries `sections`, every section of `SKILL.md` with its ID, heading,
+level, first line and word count, and `set_aside`, each section no claim holds with its
+`reason`; each claim carries the IDs of its `sections` ("Claims" in `local-tasks.md`). A
+task design's candidate (`method` `task`, `method_version` `local-task-comparison-1`) holds
+its `generator` and `solver`; per task its `files` (name, `object_ref`, bytes), `planted`
+values, `outputs` with their resolved `expected` values, the solver's `solver_results` and
+`solver_checks`; and `task_receipts` with the programs' digests, the image and each run's
+exit code. A task trial's score receipt holds `outputs`: each field's expected value,
+tolerance, the value found and its verdict, with `results_found` and the trial's
+`run_problems`.
 
 The report card carries `environment_ref` and an `environment` summary, and
 report-card.md opens with an Environment line. It also carries `coverage`: each section of
-`SKILL.md` ("Claims" in `local-contract.md`) with its heading, level, line, the files it
-names and the claims that cover it, and the sections no claim covers, which report-card.md
-lists near the top. Each claim row carries the `sections` it covers and, when only its
+`SKILL.md` with its heading, level, line, the files it names, the claims that hold it and,
+for a section set aside, its reason, and the sections no claim holds, which report-card.md
+lists near the top. A manifest from before sections were named gets the claims whose quote
+starts in each section instead. Each claim row carries the `sections` it holds and, when only its
 number of independent cases held it below its source's grade, `size_limited`: the grade the
 source supports and the counting and generated cases it had and needed. A run whose subject image was built lists
 `skill_packages_from_configured_index` among its host limitations. A plan audit records the proposed grade, the evidence

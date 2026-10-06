@@ -40,9 +40,16 @@ def local_endpoint(value):
     return isinstance(value,str) and bool(re.fullmatch(r"npipe:/+(?:\.|localhost)/pipe/[A-Za-z0-9_.-]+",value) or value.startswith("unix:///"))
 
 
+# Where a task's input files appear, read-only, in every container that works on the task
+# ("Tasks" in local-tasks.md).
+TASK_ROOT = "/task"
+
+
 class DockerSandbox:
-    def __init__(self, source, settings, *, timeout=120, log=None, process=None):
+    def __init__(self, source, settings, *, timeout=120, log=None, process=None, inputs=None):
         self.source, self.settings = no_links(source), settings
+        # A task's input files, by plain name: mounted read-only at TASK_ROOT, never copied into /work.
+        self.inputs = dict(inputs or {})
         self.timeout, self.log, self.process = timeout, log, process or run_process
         self.name = "sci-verifier-"+uuid4().hex
         self.docker, self.endpoint, self.image = None, None, None
@@ -122,7 +129,22 @@ class DockerSandbox:
             self.staging.cleanup()
             self.staging=None
             raise
-        if "," in str(self.source):
+        mounts=["--mount",f"type=bind,source={self.source},target=/submission,readonly"]
+        if self.inputs:
+            task=Path(self.staging.name)/"task"
+            task.mkdir(mode=0o755)
+            try:
+                for name,raw in sorted(self.inputs.items()):
+                    if not valid_relative(name) or "/" in name or not isinstance(raw,bytes):
+                        raise Fault("sandbox_source_invalid","Task input files need plain names and bytes.")
+                    atomic_write(task/name,raw)
+                    (task/name).chmod(0o644)
+            except BaseException:
+                self.staging.cleanup()
+                self.staging=None
+                raise
+            mounts+=["--mount",f"type=bind,source={task},target={TASK_ROOT},readonly"]
+        if "," in self.staging.name:
             self.staging.cleanup()
             self.staging=None
             raise Fault("sandbox_path_invalid", "Use a temporary source path without commas.")
@@ -134,8 +156,7 @@ class DockerSandbox:
               "--memory-swap",str(self.settings["memory_mib"])+"m","--cpus",str(self.settings["cpus"]),
               "--pids-limit",str(self.settings["pids_limit"]),
               "--tmpfs",f'/work:rw,nosuid,nodev,size={self.settings["workspace_mib"]}m,mode=1777',
-              "--tmpfs","/tmp:rw,nosuid,nodev,size=32m,mode=1777","--workdir","/work",
-              "--mount",f"type=bind,source={self.source},target=/submission,readonly",
+              "--tmpfs","/tmp:rw,nosuid,nodev,size=32m,mode=1777","--workdir","/work",*mounts,
               "--entrypoint","python3",self.image,"-c",f"import time; time.sleep({self.timeout})"]
         # The name is ours even if the client loses the create response. Cleanup uses
         # this unpredictable name only; daemon-side lifetime also bounds orphaned work.

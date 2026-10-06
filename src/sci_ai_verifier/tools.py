@@ -148,8 +148,17 @@ SCHEMAS.update(local_schemas(BASE, obj, string))
 DESCRIPTIONS.update({name: "Internal local verification operation: " + name.replace("_", " ") +
                      ". Follow the pinned local contract and current claim state. Never grants scientific approval."
                      for name in LOCAL_OPERATIONS})
-# The local planner sizes its claims by "Claims" in local-contract.md, so its manifest tool says so.
+# The local planner groups sections into claims by "Claims" in local-tasks.md, so its manifest tool
+# says so and takes the sections each claim holds and those set aside.
 LOCAL_DESCRIPTIONS = {"commit_claim_manifest": local_claim_description}
+LOCAL_SCHEMAS = {"commit_claim_manifest": obj({
+    **BASE, **PARENT,
+    "claims": {"type": "array", "maxItems": 100,
+               "items": obj({**{key: string(16000, 0 if key == "report_note" else 1) for key in FIELDS},
+                             "sections": {"type": "array", "minItems": 1, "maxItems": 200, "items": string(10)}})},
+    "set_aside": {"type": "array", "maxItems": 200,
+                  "items": obj({"section": string(10), "reason": string(2000)})},
+}, [*BASE, *PARENT, "claims"])}
 DEFINITIONS = [
     # No tool is read-only: every one of them can write the journal or repair a projection.
     {"name": name, "description": DESCRIPTIONS[name], "inputSchema": schema,
@@ -159,9 +168,16 @@ DEFINITIONS = [
 
 
 def local_definitions(names):
-    """The tool definitions a local planner is given: the shared ones, with its own descriptions."""
-    return [{**item, "description": LOCAL_DESCRIPTIONS.get(item["name"], item["description"])}
+    """The tool definitions a local planner is given: the shared ones, with its own descriptions
+    and, where its contract differs, its own input schema."""
+    return [{**item, "description": LOCAL_DESCRIPTIONS.get(item["name"], item["description"]),
+             "inputSchema": LOCAL_SCHEMAS.get(item["name"], item["inputSchema"])}
             for item in DEFINITIONS if item["name"] in names]
+
+
+def schema_for(state, name):
+    """The input schema a call is validated against in this run's profile."""
+    return LOCAL_SCHEMAS.get(name, SCHEMAS[name]) if state["profile"] == "local" else SCHEMAS[name]
 
 
 # Named explicitly: a positional slice of this tuple used to decide dispatch, so
@@ -286,7 +302,7 @@ class Dispatcher:
                     raise Fault("step_limit", "The workflow request limit is exhausted.", fatal=True)
                 if illegal:
                     raise Fault("illegal_transition", "Use a legal tool with the latest returned state token.")
-                validate(arguments, SCHEMAS[name])
+                validate(arguments, schema_for(state, name))
                 result = self._execute(name, arguments, state)
             except Fault as error:
                 fault = error
@@ -366,6 +382,10 @@ class Dispatcher:
             self._receipt(state, payload)
             data = {"outcome": "source_snapshotted", "snapshot": source,
                     "untrusted_payload": payload}
+            if state["profile"] == "local":
+                # What a local manifest must account for ("Claims" in local-tasks.md).
+                from .claims import skill_sections
+                data["sections"] = skill_sections(self.store, source)
         else:
             source = verified_snapshot(self.store, state, arguments["snapshot_id"],
                                        arguments["snapshot_digest"])
@@ -380,7 +400,8 @@ class Dispatcher:
                     from .local import CLAIM_LIMIT_MESSAGE
                     raise Fault("too_many_claims", CLAIM_LIMIT_MESSAGE if state["profile"] == "local"
                                 else "The run claim limit was exceeded.", ["claims"])
-                manifest = build_manifest(self.store, state, source, arguments["claims"])
+                manifest = build_manifest(self.store, state, source, arguments["claims"],
+                                          arguments.get("set_aside", []) if state["profile"] == "local" else None)
                 state["manifest_ref"] = self.store.put_json(manifest)
                 keep_object(state, state["manifest_ref"])
                 state["claim_states"] = {c["claim_id"]: "demo_planning" if state["profile"] == "demo" else "routing"

@@ -261,7 +261,8 @@ class BuildTests(unittest.TestCase):
         record = self.prepare()
         self.assertEqual((record["status"], record["image_id"], record["base_image"], record["operator_image"]),
                          ("built", BUILT, BASE, IMAGE))
-        self.assertEqual(self.networks(), ["bridge", "none", "none"])  # resolver, installer, manifest
+        # The operator image's own report, then the resolver, the installer and the built image's report.
+        self.assertEqual(self.networks(), ["none", "bridge", "none", "none"])
         resolver = next(args for args in self.runs() if "bridge" in args)
         self.assertEqual(resolver[resolver.index("--entrypoint") + 2], BASE)  # the plain base, not sandbox_image
         self.assertIn(RESOLVE, resolver)

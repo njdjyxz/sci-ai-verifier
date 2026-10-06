@@ -13,7 +13,9 @@ DEFAULTS = {"schema_version": 1, "sandbox_image": None, "docker_executable": "do
             "workspace_mib": 128, "max_file_bytes": 4*1024*1024,
             "max_artifact_bytes": 16*1024*1024, "max_artifacts": 200,
             "trial_count": 3, "max_subject_calls": 128,
-            "subject_timeout_seconds": 120, "allowed_reference_hosts": [],
+            # A task runs the skill on its files and writes a results file ("Tasks" in local-tasks.md);
+            # 120 s fitted a question's answer and is too short for that.
+            "subject_timeout_seconds": 600, "allowed_reference_hosts": [],
             "allowed_subject_hosts": [], "external_tools": {}, "resources": {},
             "documentary_assessment": True, "catalogs": [], "minimum_grade": None,
             "package_index": None, "environment_base_image": None,
