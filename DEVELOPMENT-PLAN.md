@@ -1592,7 +1592,7 @@ either return fires; how many lowered grades are accepted at once; the time left
 ends each claim; grades, statuses and the trials the AI reader decided; run time against 7,200 s
 and subject calls against 128. It is finished when each has a recorded answer.
 
-## Claude: 2026-10-05 (an HTML page after every run, summarized by the calling agent; the final reviewer planned)
+## Claude: 2026-10-05 (an HTML page after every run; the final reviewer planned; a whole-skill test design agreed in outline)
 
 ### Current stage and status
 
@@ -1601,7 +1601,9 @@ made from its records, for the operator and the lab, unless the user asks for no
 agent that asked for the verification then writes the page's plain-language summaries into a notes
 file and redraws it. The page and its notes sit outside the run, and nothing the run grades changed.
 A final reviewer is planned, not built. The operator has decided what it reviews and what follows
-when it disputes a test (section 2).
+when it disputes a test (section 2). A new test design was agreed in outline and not built (section
+4): the whole skill is split into claims, and each claim is tested by running the skill on tasks
+whose answers come from outside it.
 
 ### What has been done
 
@@ -1716,6 +1718,97 @@ long and very unreadable."
 - `src/` changed, so a run needs a session whose `serve-local` started after this commit.
 - Not verified: a live run that publishes the page, and an agent following the next step unprompted.
 
+**4. A new test design: test the whole skill by running it.** Discussed with the operator; not built.
+- Why:
+  - **Claims cover little of a skill.** Measured by the words of `SKILL.md` in sections that had a
+    claim:
+    - western-blot-quantification `32e60bd6`: 13% (333 of 2,558 words; 4 of 30 sections);
+    - scikit-survival `d3892f6c`: 31% (565 of 1,810; 5 of 14);
+    - tooluniverse-dose-response `90c60cbe`: 73% (567 of 772; 4 of 8).
+
+    The Western-blot skill's untested parts include Common Pitfalls (415 words), the Decision
+    Framework (342), Best Practices (179) and the workflow steps for image processing, measurement,
+    fold change and visualization. A claim's six or so tests and eighteen tries went as readily to a
+    one-paragraph rule or a single formula as to a long section.
+  - **Tests rarely run the skill.** In `90c60cbe` 10 of 78 tries used the sandbox, mostly for
+    arithmetic, and none ran the skill's fitting script (no scipy). Most tests ask whether the skill
+    states a fact correctly.
+  - The operator: "our ultimate goal is to test if the 'whole' skill works, we are not try to debug
+    the skill." The narrow-claim pattern shows on two skills, so this meets the 2026-10-02 bar.
+- Decided by the operator:
+  - the planner groups the whole skill into claims by topic, and Python checks that nothing is left
+    out;
+  - the number of claims grows with the skill's length, the planner choosing it, and the time limit
+    rises to 3 hours;
+  - a claim is tested as a whole, not section by section;
+  - a test gives the test AI a task and checks the output: "giving an input to step 1, and check if
+    the output by step 5 works".
+- Proposed here, for the build:
+  - **Claims.** A claim is a group of whole sections. A section with nothing to test (Metadata,
+    References, an empty parent heading) is set aside with a reason, and the page lists it. Python
+    refuses a manifest that leaves any section neither in a claim nor set aside.
+  - **Tests are tasks:** input files, a job in plain words and a fixed output format, such as
+    `results.json`. The test AI gets the whole skill, not the claim's text; the claim only decides
+    which task is set. Each test names the sections it uses, and Python refuses a design that leaves
+    a section of the claim unused.
+  - **Expected answers come from outside the skill.** Where a model exists, Python builds the answer
+    into generated data, from parameters the planner chooses, by running the planner's generator
+    program in the sandbox and storing the files and the built-in values. The model must come from a
+    fetched reference, never from the skill, as calculated answers already require. References stay
+    the source for:
+    - the model behind every generator;
+    - the right response to a planted problem;
+    - real datasets with published results;
+    - facts and guidance with nothing to compute.
+  - **Advice is tested by doing.** A planted problem, such as a curve that never levels off or
+    U-shaped data, must be flagged. Each such input also holds a clean case that must not be flagged.
+  - **Fair tests.** Every try gets the same input. Before a test is used, Python solves it with its
+    own reference method and refuses it unless the built-in answer comes back within the tolerance.
+  - **Status.** One wrong result fails the claim, and the page shows which task failed.
+  - **The test computer must have what the skill needs.** A skill that cannot run as shipped is a
+    finding, recorded as such.
+- **Retired by this design:**
+  - one claim per section, and the five-claim cap;
+  - fact-by-fact coverage and the critique's coverage list;
+  - the coverage-gap and concern returns.
+
+  The claim-only check needs rethinking (open question 5).
+- **Budget.** About 3 tasks per claim, 3 tries each: 9 test sessions per claim, against 18 or more
+  today, though each runs longer.
+  - The time limit: `__main__.py` accepts at most 7,200 s, so 3 hours needs a code change and
+    re-registering with `--timeout 10800`.
+  - The real limit is the 5-hour usage window, about 15% per claim today (`32e60bd6`: 4 claims,
+    63%). More claims need cheaper claims first; pausing at the limit and continuing is the fallback.
+- **The dose-response sketch.** `dose_sim.py` in scratchpad `c7991202…`: 2,000 simulated plates per
+  case, fitted with scipy the way the skill's script does.
+  - **Claim 1, "Fit an experiment and compare potency"** (When to use this, Steps 1–3).
+    - Test 1's plate:
+      - inhibitors A (built-in IC50 100 nM) and B (1,000 nM), Hill slope 1;
+      - ten concentrations from 1.5 nM to 30 µM, three wells each;
+      - vehicle and blank wells, with noise of 4% of the signal window.
+    - The test AI writes `results.json`. Python checks:
+      - each IC50 within ±35% of its built-in value;
+      - the fold shift 10 ± 45%;
+      - `more_potent` is A;
+      - the Hill slope between 0.7 and 1.4;
+      - no flags.
+    - A correct analysis passes on 99.1% of plates (96.0% at ±25% for the IC50s and ±35% for the
+      fold shift).
+    - Common mistakes fail by far:
+      - log10 concentrations fed to the fitter report about 2 nM for 100;
+      - an inverted ratio gives 0.1 for 10;
+      - µM gives 0.1 for 100.
+  - **Claim 2, "Warn when the data can't give a clean IC50"** (Step 4, Honest limitations).
+    - Test 2 plants C's IC50 above the tested range, and it must be flagged `incomplete_curve`. The
+      skill's own script flags it on 90% of plates when the IC50 is 3× the top concentration and on
+      60% at 10×; its fitted IC50 ranges from 10⁻¹⁵⁷ to 10¹⁰ nM.
+    - Test 3 gives E a U-shape, and it must be flagged `biphasic`. The skill says such data will look
+      poor, with a low r², but the fit kept r² ≥ 0.90 on every plate, with a bump of 25% or 45%
+      above control. An AI that trusts the skill's r² sign would miss it.
+  - Set aside: Related skills.
+  - **As shipped, the skill cannot run offline.** Its main tool, the ToolUniverse `tu` command, is
+    not on the test computer, and its script needs numpy and scipy, which the skill does not declare.
+
 ### Decisions taken 2026-10-05
 
 - **The page is for the lab and the operator**, and may later be served from a web server (operator).
@@ -1731,6 +1824,13 @@ long and very unreadable."
   - the agent fills a template beside the page, and a page that fails never changes a run.
 - Superseded the same day: "a view made by a script, not yet a run artifact, so no contract changes".
   Runs now make the page, and the public interface sentence in `local-contract.md` changed.
+- **Test the whole skill by running it** (operator, section 4):
+  - the planner groups the whole skill into claims, and Python checks that nothing is left out;
+  - the number of claims grows with the skill's length;
+  - a 3-hour limit;
+  - claims are tested as wholes, by tasks whose output is checked.
+
+  Not built; the open questions below come first.
 
 ### Open questions for the operator
 
@@ -1739,6 +1839,15 @@ long and very unreadable."
    re-run may use; and whether a re-run repeats the whole claim or only the disputed tests.
 3. Should the final reviewer, once built, write into the same notes, beside the calling agent's
    summaries?
+4. **What a task test earns.** Answers that Python builds into generated data from a referenced
+   model are a new kind of evidence. Should they reach A, as quoted answers scored by installed code
+   do?
+5. **What replaces the claim-only check for tasks?** Today it keeps a question inside its claim. A
+   reviewer judging whether a task needs only the claim's sections may do the same job.
+6. **Must every section be used by some task** (proposed in section 4), or is belonging to a claim
+   enough?
+7. **Cost:** make claims cheaper first, or let a run pause at the usage limit and continue in the
+   next window?
 
 ### Urgent next steps, if any
 
@@ -1746,21 +1855,28 @@ None. Committed and pushed on `skill-environments` with this entry.
 
 ### Suggested next move
 
-Run a skill other than dose-response, as the 2026-10-02 entry asked, so that a live run publishes
-its page and the calling agent writes the summaries. Then build the final reviewer as an offline
-step over the kept runs, before it joins the workflow.
+Move the verifier to the section 4 design, in steps that each show something real:
+1. Settle its open questions.
+2. Run the dose-response tasks once by hand.
+3. Write the contracts.
+4. Build.
+
+The final reviewer comes after, on the new tests. The HTML page and the agent's summaries are checked
+on whichever live run comes next.
 
 ### Recommended next action
 
 With the operator's go-ahead:
 1. Open `.verifier/reports/32e60bd6-aa9c-45a1-ac0a-50bd8cfd03a4.html` and `90c60cbe-…html`, and list
    what to change.
-2. Run the next skill from a new session, as the 2026-10-02 entry's next action says; its runs'
-   `local_method_ref` is then `79780cdb…`. Record:
+2. Settle open questions 4 to 7.
+3. Prototype the dose-response tasks offline, with no planner: Python makes the three plates and
+   checks them with its own fit, and fresh test sessions with the skill installed do each task three
+   times. It is finished when each task has a result, and the time and cost per task are measured.
+   The test image needs numpy and scipy for the skill's script to run at all.
+4. The next live run, whatever its skill, also records:
    - whether `data.html_report` came back;
    - whether the agent filled the notes and redrew the page without being asked;
    - how readable its summaries are.
-3. Then build the final reviewer offline. It is finished when, run over the kept runs, it:
-   - flags `dr1_agonist_measure` as a question fault;
-   - writes its findings into the run's notes file, where the page shows them;
-   - leaves the kept runs' true passes alone.
+
+   It must start from a new session, so that its `local_method_ref` is `79780cdb…`.
