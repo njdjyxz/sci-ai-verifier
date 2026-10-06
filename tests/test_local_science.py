@@ -370,7 +370,7 @@ class IndependentSessionTests(unittest.TestCase):
 
     def valid_critique(self):
         return {"supported_grade":"B","findings":["f"]*len(TASK_CRITIQUE_RUBRIC["criteria"]),
-                "objections":[],"required_revisions":["Add tasks covering the rest of the scope."],
+                "objections":[],"required_revisions":["Add tasks covering the rest of the scope."],"coverage_gaps":[],
                 "case_verdicts":{"c":{"verdict":"counts","reason":"in scope","replacement":""}}}
 
     def test_one_critique_session_is_asked_and_a_verdict_is_never_re_rolled(self):

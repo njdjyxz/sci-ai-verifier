@@ -14,7 +14,7 @@ code, so it is the only test data here that can actually falsify the parser.
 
 | File | Role | Source | What it captures |
 | --- | --- | --- | --- |
-| `critic-task-structured.jsonl` | critic | live check, 2026-10-05 | No verifier run has produced a task packet yet, so this packet was built by today's code from a live check: three two-inhibitor plates that the live check's generator wrote and its reference solution passed in the operator's image, on sections S2 to S5 of the real dose-response skill, with the check's fixture reference page and a claim and justification written for the recording. `claude-opus-5` judged it under rubric `local-task-critique-v2` in 133 s for $0.49: B, all three tasks counted, five objections (the Hill slope never scored, one plate layout, normalization not exercised, a tolerance an interpolation passes, a fixture reference). Its first reply put the task verdicts beside the other fields instead of under `case_verdicts`; refused and resent |
+| `critic-task-structured.jsonl` | critic | live replay, 2026-10-06 | Run `f84c131c` claim 3's critique packet, the first real task packet, with the live rubric `local-task-critique-v3` in place of v2. `claude-opus-5` judged it in 195 s for $0.70: A, all four tasks counted, three objections, and five coverage gaps (the slope labels, the r-squared rule, the bottom plateau, the in-range IC50 check and the fold-shift caveat of the section), which the coverage return acts on. Its first reply added a stray `paramete r_name` key; refused and resent. The live-check recording it replaces is in Git history |
 | `critic-structured.jsonl` | critic | live replay, 2026-10-01 | Run `d416f79d`'s pIC50 critique under the question rubric v13, retired with question tests on 2026-10-05. Kept only as live evidence of Claude Code's correction loop: its first reply added a stray `StructuredOutput` key, which the schema refused, and the session resent it. Its packet and the earlier recordings are in Git history |
 | `assessor-structured.jsonl` | assessor | live replay, 2026-09-28 | Run `a392ea65`'s documentary packet answered through the reply schema: `inconclusive` with six exact packet citations, accepted first time |
 | `claim-probe-structured.jsonl` | claim-only | live replay, 2026-09-28 | Run `d416f79d`'s `pic50-one-nanomolar` case answered from its claim alone, a check retired with question tests. Kept, like the critique, for the correction loop: its first reply added a stray `a` key; refused and resent |
@@ -51,8 +51,7 @@ model's answer, which was scored as the pinned model's.
   it or keeping an old reader to accept it. The two recordings kept only for the
   correction loop are the exception: their schemas were retired, so nothing
   checks their replies.
-- Add new recordings from real sessions only: a run, a live replay of a real
-  run's packet, or, while no run has produced one, a packet today's code built
-  from a live check. Note the source above.
+- Add new recordings from real sessions only, a run or a live replay of a real
+  run's packet, with the source noted above.
 - Recordings are scanned for credential-like bytes by
   `test_recorded_replies.py` before any other assertion runs.

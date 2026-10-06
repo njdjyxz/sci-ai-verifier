@@ -33,7 +33,7 @@ RECORDED = ROOT / "tests/recorded"
 # recording maps to the key its refused reply added. The question critique and the claim-only answer
 # were given schemas retired with question tests on 2026-10-05; they stay as more live evidence of
 # Claude Code's correction loop, which every structured session relies on.
-STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "two_inhibitors",
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "paramete r_name",
                          "critic-structured.jsonl": "StructuredOutput", "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
@@ -152,19 +152,22 @@ class RecordedReplyTests(unittest.TestCase):
                                 and citation["quote"] in item["quote"] for item in sent["evidence"]))
 
     def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
-        """A three-task design that today's code qualified in the operator's image, judged by the pinned model
-        under the live rubric: B, every task counted, with five objections it could name. Its first reply put
-        the verdicts beside the other fields instead of under case_verdicts, and was refused and resent."""
+        """Run f84c131c's claim 3 packet, the first real task packet, judged by the pinned model under the live
+        rubric: A, every task counted, and five rules of the claim's section that no task tests, which the
+        coverage return acts on. Its first reply added a stray key and was refused and resent."""
         raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
         self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
         value = validate_task_critique(parse_events(raw, expected_session=session_of(raw))["structured_output"],
                                        case_ids)
-        self.assertEqual(value["supported_grade"], "B")
+        self.assertEqual(value["supported_grade"], "A")
         self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
         self.assertEqual({item["verdict"] for item in value["case_verdicts"]}, {"counts"})
         self.assertEqual(len(value["findings"]), len(TASK_CRITIQUE_RUBRIC["criteria"]))
-        self.assertEqual(len(value["objections"]), 5)
+        # It agrees with the proposal and lists what no task tests: a coverage return (tool-contracts.md).
+        self.assertEqual(sent["proposed_grade"], "A")
+        self.assertEqual(len(value["coverage_gaps"]), 5)
+        self.assertTrue(any("r^2" in gap for gap in value["coverage_gaps"]))
 
     def test_task_critique_end_to_end_over_a_replayed_recording(self):
         """critique_tasks with only the child process replaced: the recorded packet is exactly what it sends,
@@ -178,7 +181,7 @@ class RecordedReplyTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
             value = critique_tasks(ClaudeCode(auth="subscription", process=replay), sent)
-        self.assertEqual((value["supported_grade"], value["rubric_ref"]), ("B", TASK_CRITIQUE_REF))
+        self.assertEqual((value["supported_grade"], value["rubric_ref"]), ("A", TASK_CRITIQUE_REF))
         self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
         self.assertEqual((json.loads(seen["prompt"]), seen["timeout"]), (sent, CRITIC_TIMEOUT_SECONDS))
         command = seen["command"]
@@ -355,7 +358,7 @@ class TaskCritiqueShapeTests(unittest.TestCase):
 
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
-                "objections": [], "required_revisions": [],
+                "objections": [], "required_revisions": [], "coverage_gaps": [],
                 "case_verdicts": {"t1": self.verdict(), "t2": self.verdict("leaked", "Name the columns plainly.")},
                 **changes}
 
@@ -428,7 +431,10 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
         """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
         from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
-        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v2")
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v3")
+        # Whatever the grade, what no task tests is listed, for the coverage return (tool-contracts.md).
+        self.assertIn("coverage_gaps", TASK_CRITIQUE_RUBRIC["coverage"])
+        self.assertIn("Whatever your grade", TASK_CRITIQUE_RUBRIC["coverage"])
         # A described search is judged by what Python recorded the planner running ("Critique" in local-contract.md).
         self.assertIn("python_checked.search_record", TASK_CRITIQUE_RUBRIC["criteria"][3])
         owner = (ROOT / "skills/scientific-verifier/references/evidence-rubric.md").read_text(encoding="utf-8")

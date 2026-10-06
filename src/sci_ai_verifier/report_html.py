@@ -199,7 +199,7 @@ def claim_view(run, number, claim, notes):
         rounds.append({"proposed": event["request"]["arguments"].get("target_grade"),
                        "reviewer": judged.get("supported_grade"), "outcome": outcome,
                        "not_counted": sum(v.get("verdict") != "counts" for v in judged.get("case_verdicts") or []),
-                       # A task critique lists no facts, so it has no untested count to show.
+                       # A critique from before coverage gaps were listed has no count to show.
                        "untested": len(judged["coverage_gaps"]) if "coverage_gaps" in judged else None})
     for part in (claim.get("documentary_assessment"), (claim.get("fallback") or {}).get("assessment")):
         if isinstance(part, dict):
@@ -259,7 +259,7 @@ def claim_view(run, number, claim, notes):
         "by_reader": sum(row.get("comparison_status") == "pass" and row.get("python_status") != "pass"
                          for row in counted_trials),
         "rounds": rounds, "looked": looked,
-        "untested": critique.get("coverage_gaps") or [], "findings": critique.get("findings") or [],
+        "untested": critique.get("coverage_gaps"), "findings": critique.get("findings") or [],
         "seconds": (max(stamps) - min(stamps)).total_seconds() if len(stamps) > 1 else None,
         "cost": sum(run.costs.get(s) or 0 for s in sessions) if sessions else None,
         "references": claim.get("references") or {}, "limitations": record.get("limitations") or [],
@@ -463,7 +463,7 @@ def summary_table(claims, run):
             ("AI reader", "Answers passed only because the AI reader accepted them"),
             ("Rounds", "Each grading round: the planner's grade, then the reviewer's"),
             ("Search · fetch", "Web searches and pages fetched for this claim"),
-            ("Untested", "Facts of the claim the reviewer says no test covered"),
+            ("Untested", "Parts of the claim the reviewer says no test covered"),
             ("Time", "Time spent on this claim"), ("Cost", "Cost of this claim's AI sessions, planner not included")]
     numeric = {3, 5, 6, 7, 9, 10, 11, 12}
     rows = []
@@ -479,7 +479,8 @@ def summary_table(claims, run):
             str(v["by_reader"]) if v["tests"] else "–",
             e(", ".join(f'{r["proposed"]}→{r["reviewer"] or "–"}' for r in v["rounds"] if r["reviewer"]) or "–"),
             f'{v["looked"]["searches"]} · {v["looked"]["fetches"]}' if v["looked"] else "–",
-            str(len(v["untested"])) if v["tests"] and not v["tasks"] else "–", minutes(v["seconds"]), money(v["cost"])])
+            str(len(v["untested"])) if v["tests"] and v["untested"] is not None else "–", minutes(v["seconds"]),
+            money(v["cost"])])
     matched = sum(v["accuracy"]["matched"] for v in claims if v["accuracy"])
     evaluated = sum(v["accuracy"]["evaluated"] for v in claims if v["accuracy"])
     rows.append(["All claims", "", "", f"{matched} of {evaluated}", "",
@@ -496,8 +497,8 @@ def summary_table(claims, run):
         out.append("</tr>")
     out.append("</tbody></table></div><p class='dim'>Right: counted answers that were right. Tests and trials: "
                "counted, of all run. AI reader: passes that rested on the AI reader. Rounds: the planner's grade → the "
-               "reviewer's, for each round. Search · fetch: web searches and pages fetched. Untested: facts no test "
-               "covered. Cost: the claim's own AI sessions; the planner is counted only in the total.</p>")
+               "reviewer's, for each round. Search · fetch: web searches and pages fetched. Untested: parts of the "
+               "claim no test covered. Cost: the claim's own AI sessions; the planner is counted only in the total.</p>")
     return "".join(out)
 
 
@@ -701,7 +702,7 @@ def chapter(v, author):
         more.append("<h3>Grading rounds</h3><p class='dim'>The planner proposes a grade. A reviewer AI that never saw the "
                     "planning may lower it, and the planner can revise.</p><div class='wrap'><table><thead><tr>"
                     "<th class='n'>Round</th><th>Planner proposed</th><th>Reviewer said</th><th>Outcome</th>"
-                    "<th class='n'>Tests not counted</th><th class='n'>Facts left untested</th></tr></thead>"
+                    "<th class='n'>Tests not counted</th><th class='n'>Left untested</th></tr></thead>"
                     f"<tbody>{rows}</tbody></table></div>")
     if v["untested"]:
         more.append("<h3>What the reviewer says is still untested</h3><ul class='plain'>"

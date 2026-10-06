@@ -398,6 +398,92 @@ class GradeNegotiationTests(unittest.TestCase):
         # The rubric tells the critique to judge a described search by this record.
         self.assertIn("python_checked.search_record",self.packets[0]["rubric"]["criteria"][3])
 
+    def agreeing(self,supported,gaps=()):
+        """A critique that agrees with the proposal, naming `gaps` as coverage_gaps."""
+        def run(adapter,packet):
+            self.packets.append(packet)
+            return critic_reply(packet,supported,coverage_gaps=gaps)
+        return run
+
+    def planner_log(self):
+        """A workflow log on the subject adapter, with the planner already working on this claim."""
+        from sci_ai_verifier.runlog import WorkflowLog
+        log=WorkflowLog(self.h.base)
+        self.h.subject.log=log
+        self.planner(log,{"type":"tool_use","id":"use-0","name":"mcp__verifier_internal__list_local_candidates",
+                          "input":{"claim_id":self.h.claim_id}})
+        return log
+
+    def planner(self,log,*blocks):
+        log.emit("claude_event",role="planner",session_id="planner-session",
+                 payload={"type":"assistant","message":{"content":list(blocks)}})
+
+    GAP="The r-squared threshold of Step 3 is untested: no task gives a poor fit, so add one that must be flagged."
+
+    def test_an_agreeing_critique_that_names_gaps_sends_the_claim_back_once_even_at_a(self):
+        """Run f84c131c: four critiques agreed with A while naming untested parts of every claim, and the
+        question-era return, which skipped A, would not have asked the planner anything."""
+        h=self.h
+        log=self.planner_log()
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.agreeing("A",[self.GAP])):
+            h.select(self.key,target_grade="A")
+            self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            self.assertEqual((h.data["settled_grade"],h.data["coverage_gaps"]),("A",[self.GAP]))
+            self.assertIn("once per claim",h.data["message"])
+            self.assertEqual(h.data["claim_states"][h.claim_id],"local_discovery")
+            # Accepting A at once is the planner saying it searched; Python's record says it did not.
+            h.select(self.key,target_grade="A")
+            self.assertEqual((h.data["outcome"],h.data["reason"]),("local_grade_proposal_refused","return_unsearched"))
+            self.assertEqual(h.data["coverage_gaps"],[self.GAP])
+            self.assertEqual(len(self.packets),1,"a refused acceptance spends no session")
+            # One search for this claim since the return, and the same grade is accepted with no new session.
+            self.planner(log,{"type":"tool_use","id":"use-1","name":"WebSearch",
+                              "input":{"query":"dose-response r-squared acceptance threshold"}})
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        self.assertEqual(h.data["audit"]["settled_ceiling"],"A")
+        self.assertEqual(len(self.packets),1)
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        h.call("write_report_card")
+        report=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Returned once for coverage gaps: the critique in round 1",report)
+        self.assertIn("Coverage gap: "+self.GAP,report)
+
+    def test_the_gap_return_comes_once_and_the_next_design_is_judged_as_usual(self):
+        h=self.h
+        four=h.candidate(lookup=False,rows=fixture.ROWS+("zeta",),name="Fixture table, four rows")
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.agreeing("A",[self.GAP])):
+            h.select(self.key,target_grade="A")
+            self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            h.select(four,target_grade="A")
+        # A revised design that still leaves a gap is fixed: the return comes once per claim.
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        # Its critique was told what the earlier one found untested, to check the revision against it.
+        self.assertIn("An earlier version left untested: "+self.GAP,self.packets[1]["prior_objections"])
+
+    def test_with_no_workflow_log_the_returned_grade_is_accepted_unchecked(self):
+        """No log means no record to check, so Python cannot refuse on it."""
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.agreeing("A",[self.GAP])):
+            h.select(self.key,target_grade="A")
+            self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        self.assertFalse(self.packets[0]["python_checked"]["search_record"]["recorded"])
+
+    def test_no_return_without_gaps_or_below_an_agreeing_grade(self):
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.agreeing("A")):
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        # A critique below the proposal sends the claim back as it always did, carrying its gaps.
+        key=self.build(3,name="lower")
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.agreeing("B",[self.GAP])):
+            h.select(key,target_grade="A")
+        self.assertEqual((h.data["outcome"],h.data["settled_grade"]),("local_grade_revision_required","B"))
+        self.assertEqual(h.data["coverage_gaps"],[self.GAP])
+        self.assertNotIn("message",h.data)
+
     def test_a_wrong_skill_earns_the_same_grade_with_a_failing_verdict(self):
         h=self.h
         h.subject.mode="wrong"

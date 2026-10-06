@@ -23,13 +23,15 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # The critique of a task design ("Selecting and critiquing a task design" in local-tasks.md). Append new
 # criteria; never insert or reorder: findings map to criteria by position. It replaced the question
 # critique, rubric v13, when question tests were retired on 2026-10-05; that rubric's history is in Git.
-# v2 restores v13's rule that a described search is judged by Python's search record.
-TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v2","criteria":[
+# v2 restores v13's rule that a described search is judged by Python's search record; v3 lists what no
+# task tests in coverage_gaps, for the coverage return (tool-contracts.md).
+TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v3","criteria":[
         "Whether each task's expected values are right and independent of the skill: the generator implements "
         "evidence.generator.model_quote and plants what each output expects, each quote supports its output, and "
         "none rests on the skill's own text",
         "Whether the tasks exercise the claim as a whole: each does what a user of the claim's sections would do, "
-        "uses the sections it names, and together they test what the claim states",
+        "uses the sections it names, and together they test what the claim states; rubric.coverage says how to "
+        "list what they leave untested",
         "Whether the comparison is fair: the tolerances, the output fields and the reference solution's results "
         "show that a correct analysis following the skill passes and a plausible wrong one fails",
         "Whether a stronger grade was available and was passed over, judging the searches the justification "
@@ -77,6 +79,12 @@ TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v2","criteria":[
         "every output passed on its results, shown as solver_results. Judge whether it is a genuine analysis of the "
         "files: one that reads the arguments, hard-codes planted values or skips the analysis proves nothing about "
         "whether the task can be done.",
+        "coverage":"Give criterion 2's finding as a brief list of what the claim's sections tell a user to do, check "
+        "or conclude, each with the task that tests it or marked untested. For an untested item, say whether a "
+        "reference in evidence.references bears on it, and whether python_checked.search_record shows a search or "
+        "fetch that sought a source for it. Whatever your grade, list every untested item in coverage_gaps, each in "
+        "one sentence naming its section and the task or search that would test it, and leave it empty when there "
+        "is none. Listing a gap does not by itself lower your grade; judge that under criterion 2.",
         "output_fields":"Python reads each trial's results file itself: a number passes within its tolerance, a "
         "text when equal ignoring case and spaces, a boolean when equal, a set when it holds the same items in any "
         "order. A missing field or a value of the wrong type makes the trial invalid."}
@@ -140,6 +148,8 @@ def task_critique_schema(case_ids):
         "objections": texts(description="Specific defects you can name; empty if there are none."),
         "required_revisions": texts(description="Each a change that would justify the proposed grade; empty if "
                                                 "it is already justified."),
+        "coverage_gaps": texts(description="What the claim's sections say to do, check or conclude that no task tests, "
+                                           "as rubric.coverage asks; empty if there is none."),
         "case_verdicts": strict({case_id: verdict for case_id in case_ids},
                                 "One verdict for every task in evidence.tasks, keyed by its case_id: counts with an "
                                 "empty replacement, or another key of rubric.case_verdicts with a replacement.")})

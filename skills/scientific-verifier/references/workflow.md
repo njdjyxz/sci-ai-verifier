@@ -537,8 +537,10 @@ finish without doing the work:
 - `select_local_candidate` stays in `local_discovery` and returns
   `local_grade_revision_required` whenever the settled grade — the weakest of the
   proposal, the ceiling over the tasks that count and the critique's own grade — is
-  below the proposal. A task counts when the critique counted it. Repeating the call with a strengthened design or
-  the settled grade is the negotiation. After the installed round limit, or once the
+  below the proposal, and once per claim when a critique that agrees with the proposal lists
+  coverage gaps (the coverage return in `tool-contracts.md`). A task counts when the critique
+  counted it. Repeating the call with a strengthened design or the settled grade is the
+  negotiation. After the installed round limit, or once the
   replacement rounds in `evidence-rubric.md` are spent and a critique still rejects
   cases, the settled grade is fixed and the claim reaches `local_ready`.
 - `assess_local_documentary` and `record_local_unverified` require the claim's

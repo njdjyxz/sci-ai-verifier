@@ -2110,7 +2110,7 @@ window:
    - time and cost per claim, against the 4 claims and $30 of run `90c60cbe`.
 3. Record it in a new entry, with what to change before the next skill.
 
-## Claude: 2026-10-06 (run f84c131c, the first with task tests; a reviewed command table for ToolUniverse's `tu`)
+## Claude: 2026-10-06 (run f84c131c, the first with task tests; a reviewed command table for ToolUniverse's `tu`; the coverage return for tasks)
 
 ### Current stage and status
 
@@ -2120,7 +2120,8 @@ settled at grade A with status pass, and 48 of 48 trials passed. That is a secon
 A branch working under tasks. It does not show full coverage: each reviewer named parts of its
 claim that no task tested, and the data were nearly noise-free. The verifier now installs
 ToolUniverse's `tu`, which the run lacked, through a reviewed command table. That table was checked
-live but no run has used it yet.
+live but no run has used it yet. A critique that agrees with a grade, A included, but lists untested
+parts of the claim now sends the claim back once (section 7).
 
 ### What has been done
 
@@ -2207,10 +2208,53 @@ then `*.stale2-20261006`; nothing deleted) brought the engine back.
 - Sizes: the verification bootstrap is 194,947 of 200,000 bytes; stage 2 118,018 of 120,000;
   `local-contract.md` 35,020 of 40,960.
 
+**7. The coverage return for tasks.** The operator: "add the coverage return for tasks", and yes to
+re-recording the critique from one of `f84c131c`'s real packets.
+- **Contracts first.**
+  - `select_local_candidate` in
+    [`tool-contracts.md`](skills/scientific-verifier/references/tool-contracts.md) owns the rule:
+    **The coverage return**, the refusal `return_unsearched`, and `coverage_gaps` in the critique's
+    reply.
+  - `workflow.md`'s transition text moves with it.
+  - `local-tasks.md`, step 4 of "Negotiating the grade" in `evidence-rubric.md`,
+    `artifact-contracts.md` and `local-contract.md` point at it.
+- **The rubric, v3.** The critique lists in `coverage_gaps`, whatever its grade, what the claim's
+  sections say to do, check or conclude that no task tests, each with the task or search that would
+  test it. The reply schema requires the field.
+- **The return.**
+  - A critique that agrees with the proposal (the settled grade equals it) and lists gaps sends the
+    claim back once per claim, **at every grade, A included**. The question-era return skipped A, so
+    it would have asked nothing in `f84c131c`, where every claim was A.
+  - Accepting the same design afterwards needs a search or fetch for the claim in Python's record
+    made since the return, or it is refused as `return_unsearched`; with no workflow log nothing is
+    checked.
+  - A revised design is critiqued as usual and never returned for gaps again; its critique sees
+    "An earlier version left untested: …" among the carried concerns.
+- **Report and page.** `report-card.md` gains "Coverage gap:" lines and "Returned once for coverage
+  gaps". The page now shows the untested count and list for task claims too.
+- **The re-recording.** Run `f84c131c` claim 3's stored packet, with v3 in place of v2, judged by
+  `claude-opus-5` in 195 s for $0.70.
+  - A, all four tasks counted, three objections, and five coverage gaps: the slope labels, the
+    r-squared rule, the bottom plateau, the in-range IC50 check and the fold-shift caveat. Under the
+    new rule that claim would have come back once.
+  - Its first reply added a stray `paramete r_name` key, which Claude Code refused, and the session
+    resent it.
+  - It replaces the live-check recording, so `tests/recorded/README.md` drops the live-check
+    exception.
+- **Verification.**
+  - 4 new tests: the return at A with the search check; once per claim; no log; no gaps, or a grade
+    below the proposal.
+  - Suite 383 → 387 tests, 385 passing and 2 skipped. The verification bootstrap is 195,150 of
+    200,000 bytes.
+
 ### Decisions taken 2026-10-06
 
 - **Operator:** run the `tu` check, and add `tu` if it passes. Done.
-- **Proposed here and built:**
+- **Operator:** add the coverage return for tasks, and re-record the critique from a real packet.
+  Done (section 7).
+- **Proposed here and built:** the return applies at every grade, A included, unlike the
+  question-era return, which skipped A.
+- **Proposed here and built (section 3):**
   - commands are read from shell or unmarked fenced blocks of Markdown only;
   - an unlisted command is never installed, and a trial that needs it records it as a run problem;
   - the image probe reports missing commands;
@@ -2218,22 +2262,18 @@ then `*.stale2-20261006`; nothing deleted) brought the engine back.
 
 ### Open questions for the operator
 
-1. **A coverage return for tasks.** When a critique agrees with the grade but lists untested
-   rules, send the claim back once to add tasks? Recommended: yes. It is backed by this run and by
-   the question-era runs of this skill. Rough cost: $1–2 and about 10 minutes for each claim sent
-   back.
+1. Answered by the operator (section 7).
 2. **The skill's own thresholds.** Leave them untested and listed, as now, or test them as "the skill
    follows its own rule" at a grade below A, since the expected values would come from the skill?
-3. **Re-record the critique from a real run.** `f84c131c`'s critique packets are the first real task
-   packets. Replace the live-check recording with one of them, about $0.50? Recommended: yes, the
-   next time the rubric changes.
+3. Answered by the operator (section 7).
 4. **Merge `whole-skill-tests`** now that a task run has worked? The merge is the operator's.
 5. The 2026-10-05 entry's open questions on the final reviewer stand.
 
 ### Urgent next steps, if any
 
 None. Before the next run, start a **new** Code session, since `src/` changed, and check Docker
-first.
+first. Expect a few more critique rounds per run now: each claim whose critique lists gaps comes
+back once.
 
 ### Suggested next move
 
@@ -2245,6 +2285,7 @@ under questions motivated the whole-skill design.
 
 With the operator's go-ahead, after a usage and Docker check:
 1. Start a new Code session and run `verify_skill` on western-blot-quantification.
-2. It is finished when the report exists and shows, per claim, what its critique named as
-   untested.
-3. Compare those gaps with `f84c131c`'s, then decide open question 1.
+2. It is finished when the report exists and shows, per claim, its coverage gaps, whether the
+   claim came back for them, and what the planner did: new tasks, or a recorded search and
+   acceptance.
+3. Compare the claims' untested parts with `f84c131c`'s, and the run's time and cost with its.

@@ -141,8 +141,11 @@ shipped is a finding about the skill, and says nothing about whether its advice 
 `select_local_candidate` takes a task design as it takes any other: the planner proposes
 the ceiling Python computes, and a fresh critique session judges it. Its `coverage`
 justification says which tasks use each of the claim's sections and what their outputs
-check. The critique's objections, required revisions and the tasks it does not count
-carry forward to the next round, without grades.
+check. The critique's objections, required revisions, coverage gaps and the tasks it
+does not count carry forward to the next round, without grades. A coverage gap is
+something the claim's sections say to do, check or conclude that no task tests; a critique
+that agrees with the proposal but lists any sends the claim back once, as the coverage
+return under `select_local_candidate` in `tool-contracts.md` says.
 
 The critique sees the claim with the text of its sections, the design's generator and
 solver code, each task's job, sections, arguments, files (names, sizes, the start of each
