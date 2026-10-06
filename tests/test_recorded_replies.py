@@ -18,9 +18,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import NO_SUBSTITUTION, ClaudeCode, parse_events, refusal_category
-from sci_ai_verifier.common import Fault, canonical, validate
+from sci_ai_verifier.common import Fault, canonical, digest, validate
 from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, REPLY_TOOL, TASK_CRITIQUE_REF, TASK_CRITIQUE_RUBRIC,
-                                         critique_tasks, task_critique_schema, validate_assessment)
+                                         critique_tasks, task_critique_schema, validate_assessment,
+                                         validate_task_critique)
 from sci_ai_verifier.local_candidates import SECRET_BYTES
 from sci_ai_verifier.local_config import load_configuration
 from test_claude_runner import IMAGE, FakeSandbox
@@ -29,11 +30,11 @@ ROOT = Path(__file__).resolve().parents[1]
 RECORDED = ROOT / "tests/recorded"
 # The verifier's own sessions answering through their reply schemas, captured live through the
 # code that reads them. Where the first reply broke the schema and the session corrected it, the
-# recording maps to the key its refused reply added. The critique and the claim-only answer were
-# given schemas retired with question tests on 2026-10-05; they stay as the live evidence of
+# recording maps to the key its refused reply added. The question critique and the claim-only answer
+# were given schemas retired with question tests on 2026-10-05; they stay as more live evidence of
 # Claude Code's correction loop, which every structured session relies on.
-STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-structured.jsonl": "StructuredOutput",
-                         "claim-probe-structured.jsonl": "a"}
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "two_inhibitors",
+                         "critic-structured.jsonl": "StructuredOutput", "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
                     "subject-refusal-fallback.jsonl", "subject-refusal-recovered.jsonl"]
@@ -59,8 +60,8 @@ def probe_stream(command, model="claude-opus-5", text="OK"):
 
 
 def structured_stream(command, value, model="claude-opus-5"):
-    """A minimal accepted structured reply. Hand-written: no live session has answered the task
-    critique's schema through this code yet."""
+    """A minimal accepted structured reply. Hand-written, for a shape the recorded task critique does not
+    show: a critique supporting no grade."""
     session = command[command.index("--session-id") + 1]
     events = [{"type": "assistant", "session_id": session, "message": {"model": model, "role": "assistant", "content": [
                   {"type": "tool_use", "id": "reply-1", "name": REPLY_TOOL, "input": value}]}},
@@ -149,6 +150,40 @@ class RecordedReplyTests(unittest.TestCase):
         for citation in value["citations"]:
             self.assertTrue(any(citation["reference_ref"] == item["reference_ref"]
                                 and citation["quote"] in item["quote"] for item in sent["evidence"]))
+
+    def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
+        """A three-task design that today's code qualified in the operator's image, judged by the pinned model
+        under the live rubric: B, every task counted, with five objections it could name. Its first reply put
+        the verdicts beside the other fields instead of under case_verdicts, and was refused and resent."""
+        raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
+        self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
+        case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
+        value = validate_task_critique(parse_events(raw, expected_session=session_of(raw))["structured_output"],
+                                       case_ids)
+        self.assertEqual(value["supported_grade"], "B")
+        self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
+        self.assertEqual({item["verdict"] for item in value["case_verdicts"]}, {"counts"})
+        self.assertEqual(len(value["findings"]), len(TASK_CRITIQUE_RUBRIC["criteria"]))
+        self.assertEqual(len(value["objections"]), 5)
+
+    def test_task_critique_end_to_end_over_a_replayed_recording(self):
+        """critique_tasks with only the child process replaced: the recorded packet is exactly what it sends,
+        under the schema and deadline it sets."""
+        raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
+        seen = {}
+
+        def replay(command, **kwargs):
+            seen.update(command=command, prompt=kwargs["prompt"], timeout=kwargs["timeout"])
+            return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+            value = critique_tasks(ClaudeCode(auth="subscription", process=replay), sent)
+        self.assertEqual((value["supported_grade"], value["rubric_ref"]), ("B", TASK_CRITIQUE_REF))
+        self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
+        self.assertEqual((json.loads(seen["prompt"]), seen["timeout"]), (sent, CRITIC_TIMEOUT_SECONDS))
+        command = seen["command"]
+        case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
+        self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), task_critique_schema(case_ids))
 
     def test_a_recorded_safety_refusal_is_named_and_not_a_crash(self):
         """A provider refusal is its own operational outcome, never a scientific result."""

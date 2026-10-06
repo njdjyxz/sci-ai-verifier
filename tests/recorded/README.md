@@ -14,6 +14,7 @@ code, so it is the only test data here that can actually falsify the parser.
 
 | File | Role | Source | What it captures |
 | --- | --- | --- | --- |
+| `critic-task-structured.jsonl` | critic | live check, 2026-10-05 | No verifier run has produced a task packet yet, so this packet was built by today's code from a live check: three two-inhibitor plates that the live check's generator wrote and its reference solution passed in the operator's image, on sections S2 to S5 of the real dose-response skill, with the check's fixture reference page and a claim and justification written for the recording. `claude-opus-5` judged it under rubric `local-task-critique-v2` in 133 s for $0.49: B, all three tasks counted, five objections (the Hill slope never scored, one plate layout, normalization not exercised, a tolerance an interpolation passes, a fixture reference). Its first reply put the task verdicts beside the other fields instead of under `case_verdicts`; refused and resent |
 | `critic-structured.jsonl` | critic | live replay, 2026-10-01 | Run `d416f79d`'s pIC50 critique under the question rubric v13, retired with question tests on 2026-10-05. Kept only as live evidence of Claude Code's correction loop: its first reply added a stray `StructuredOutput` key, which the schema refused, and the session resent it. Its packet and the earlier recordings are in Git history |
 | `assessor-structured.jsonl` | assessor | live replay, 2026-09-28 | Run `a392ea65`'s documentary packet answered through the reply schema: `inconclusive` with six exact packet citations, accepted first time |
 | `claim-probe-structured.jsonl` | claim-only | live replay, 2026-09-28 | Run `d416f79d`'s `pic50-one-nanomolar` case answered from its claim alone, a check retired with question tests. Kept, like the critique, for the correction loop: its first reply added a stray `a` key; refused and resent |
@@ -22,10 +23,8 @@ code, so it is the only test data here that can actually falsify the parser.
 | `subject-refusal-fallback.jsonl` | subject | `3dc02567` | Opus 5 refused an R-group question after the skill loaded; a `model_refusal_fallback` event, then `claude-opus-4-8` wrote the answer `R1` and the session succeeded |
 | `subject-refusal-recovered.jsonl` | subject | `3dc02567` | The same case: `model_refusal_no_fallback`, a `<synthetic>` refusal notice, then `claude-opus-5` answered `R1` itself |
 
-`assessor-packet.json` is the exact packet the assessor was given, so its reply can be
-checked against the bytes it actually saw. No live session has answered the task critique's
-schema through this code yet, so `test_recorded_replies.py` checks that schema with a
-hand-written reply until one is recorded.
+`assessor-packet.json` and `critic-task-packet.json` are the exact packets those sessions
+were given, so each reply can be checked against the bytes it actually saw.
 
 Each recording is here because the code got it wrong, or to prove the fix. Until
 2026-09-28 the verifier's own sessions answered in free text, and Python learned
@@ -52,7 +51,8 @@ model's answer, which was scored as the pinned model's.
   it or keeping an old reader to accept it. The two recordings kept only for the
   correction loop are the exception: their schemas were retired, so nothing
   checks their replies.
-- Add new recordings from real sessions only, a run or a live replay of a real
-  run's packet, with the source noted above.
+- Add new recordings from real sessions only: a run, a live replay of a real
+  run's packet, or, while no run has produced one, a packet today's code built
+  from a live check. Note the source above.
 - Recordings are scanned for credential-like bytes by
   `test_recorded_replies.py` before any other assertion runs.

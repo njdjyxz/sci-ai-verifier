@@ -86,7 +86,7 @@ UTF-8 text without NUL is normalized from CRLF/CR to LF; undecodable known text 
 
 ## Stage 3 dependency: independently released catalog
 
-The implemented routing profile and independently released catalog protocol now live in [stage3-contract.md](stage3-contract.md); bounded execution and reporting are defined in [verification-contract.md](verification-contract.md), and the separate general demonstration is in [demo-contract.md](demo-contract.md). Stage 2 itself still performs no registry lookup, download or publication. Existing Stage 2 records retain their original pinned instructions and checkpoint. The 0.5.0 reader supports schema-1 runs written by 0.2.0, 0.3.0, 0.4.0 and 0.5.0; unsupported writers are rejected without migration.
+The implemented routing profile and independently released catalog protocol now live in [stage3-contract.md](stage3-contract.md); bounded execution and reporting are defined in [verification-contract.md](verification-contract.md), and the separate general demonstration is in [demo-contract.md](demo-contract.md). Stage 2 itself still performs no registry lookup, download or publication. Existing Stage 2 records retain their original pinned instructions and checkpoint. Each reader names the writers it accepts (`SUPPORTED_IMPLEMENTATION_VERSIONS` in `storage.py`); unsupported writers are rejected without migration.
 
 ## MCP compatibility target
 

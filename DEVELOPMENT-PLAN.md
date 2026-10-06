@@ -122,10 +122,11 @@ sets a bar for changes, so that rules drawn from one run do not overfit.
 `whole-skill-tests`). A skill is split into claims that are groups of its whole sections, and each
 claim is tested by tasks that run the skill on input Python built. Questions, calculated answers,
 generated evaluators, the claim-only check and the AI reader were removed on 2026-10-05, as version
-0.8.0; what they did is recorded above and in the archive. One live test session and one live task
-critique worked; no live verifier run has used task tests.
+0.8.0; what they did is recorded above and in the archive. One live test session and two live task
+critiques worked, and the second critique's stream is recorded as a test; no live verifier run has used
+task tests.
 
-Automated suite: **378 tests, 376 passing and 2 skipped, none failing**, after the question tests
+Automated suite: **380 tests, 378 passing and 2 skipped, none failing**, after the question tests
 were removed. The one that used to
 fail only on this machine traced to 25 leftover temporary folders holding files past Windows'
 260-character path limit. The folders are gone and removal now uses the long-path form.
@@ -1601,7 +1602,7 @@ either return fires; how many lowered grades are accepted at once; the time left
 ends each claim; grades, statuses and the trials the AI reader decided; run time against 7,200 s
 and subject calls against 128. It is finished when each has a recorded answer.
 
-## Claude: 2026-10-05 (an HTML page after every run; the final reviewer planned; whole-skill task tests built; question tests removed, 0.8.0)
+## Claude: 2026-10-05 (an HTML page after every run; the final reviewer planned; whole-skill task tests built; question tests removed, 0.8.0; a recorded task critique)
 
 ### Current stage and status
 
@@ -1975,7 +1976,45 @@ power and add scipy", "Yes" to removing the question tests, "yes" to a wrong res
     34,540 of 40,960.
 - **Not verified live:** a verifier run with tasks; the import table on a live skill. No real reply
   to the task critique's schema is recorded, so `test_recorded_replies.py` checks that schema with a
-  hand-written one.
+  hand-written one. Superseded by section 7.
+
+**7. A recorded task critique, and room in the stage 2 bootstrap.** The operator answered open
+questions 12 and 13: "yes, record it" and "trim a pinned document".
+- **The recording.**
+  - No verifier run has produced a task packet, so the packet comes from a live check. Today's code
+    qualified three two-inhibitor plates in the operator's image in 17 s. The plates came from the
+    live check's generator, and its reference solution passed all twelve outputs. The design used
+    sections S2 to S5 of the real dose-response skill.
+  - Python computed the ceiling, A with no limits, and `critique_packet` built the 22,776-byte
+    packet. The reference page, claim and justification were written for the check.
+  - One `claude-opus-5` session judged it under rubric v2, in 133 s for $0.49. It supported B,
+    counted all three tasks, and named five objections: the Hill slope the claim promises is never
+    scored; there is one plate layout; normalization is not exercised; a 35% tolerance lets an
+    interpolation pass; the reference is a fixture.
+  - Its first reply put the task verdicts beside the other fields instead of under `case_verdicts`.
+    Claude Code refused it, and the session resent it.
+  - The stream (`tests/recorded/critic-task-structured.jsonl`, 71,948 bytes) and the packet are in
+    `tests/recorded/`, with no credential bytes. The script is `record_task_critique.py` in
+    scratchpad `c7991202…`.
+  - New tests: the reply answers its own packet under the live rubric's digest, and `critique_tasks`
+    replayed over it sends that packet, schema and deadline. A change to the task rubric now needs a
+    new recording.
+  - `tests/recorded/README.md` allows a live check's packet while no run has produced one.
+- **The trim.** `SKILL.md`, pinned in the stage 2, stage 3, verification and demo bootstraps, went
+  from 11,227 to 9,635 bytes. Where it restated a rule, it now names the owner:
+  - "Session bootstrap and trust classes" in `workflow.md`;
+  - "Negotiating the grade" in `evidence-rubric.md`;
+  - `stage2-contract.md`;
+  - `workflow.md`'s plan requirements.
+
+  Its claim that the local profile "does not execute proposed code" was false and is corrected.
+- **Bootstrap sizes.** Stage 2 is now 118,018 of 120,000 bytes (1,982 spare, from 396), and
+  verification 194,805 of 200,000.
+- **Also fixed:**
+  - `stage2-contract.md` said "The 0.5.0 reader supports … 0.2.0 … 0.5.0". It now points at
+    `SUPPORTED_IMPLEMENTATION_VERSIONS`.
+  - `CLAUDE.md` said tasks are used "whenever a container is configured".
+- **Verification:** suite 380 tests, 378 passing and 2 skipped.
 
 ### Decisions taken 2026-10-05
 
@@ -2024,6 +2063,8 @@ power and add scipy", "Yes" to removing the question tests, "yes" to a wrong res
 - **Proposed here and built (section 6):** the import table, with nothing guessed outside it; refusing
   an oversized critique packet; exporting task designs with their files, and qualifying them again on
   import.
+- **Operator, after section 6 (section 7):** record a real task critique; trim a pinned document
+  rather than raise the stage 2 budget.
 - **Superseded in section 6:** section 5's "the question rubric, v13, is untouched", "question designs
   … are refused as `tasks_required`; their code and contracts stay", "a task design cannot yet be
   exported", the image without scipy, and open question 8's recommendation to wait for a live run.
@@ -2037,11 +2078,10 @@ power and add scipy", "Yes" to removing the question tests, "yes" to a wrong res
    summaries?
 4. to 7. Answered by the operator (section 5).
 8. to 11. Answered by the operator (section 6).
-12. **A recorded task critique.** No real reply to the task critique's schema is recorded. Replay one
-   real packet through the pinned model, about $0.40, and keep its stream in `tests/recorded/`?
-   Recommended: yes, before or with the first live task run.
-13. **The stage 2 bootstrap has 396 bytes spare.** The next edit to a document it pins fails its budget
-   test. Trim a pinned document, or raise the budget, which bounds what the stage 2 app receives?
+12. and 13. Answered by the operator (section 7).
+14. **Re-record from a real run?** The recorded critique's packet came from a live check, with a fixture
+   reference and a claim written for it. Replace it with the first real run's packet, about $0.50?
+   Recommended: yes, after that run, unless the rubric has not changed and the recording still passes.
 
 ### Urgent next steps, if any
 

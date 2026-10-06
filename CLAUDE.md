@@ -58,7 +58,7 @@ The authoritative documents, in dependency order:
 3. `skills/scientific-verifier/references/runtime-contract.md` — what the host process must do (tool array stability, refusals, parallel tool use).
 4. `skills/scientific-verifier/references/artifact-contracts.md`, `resource-policy.md`, `evidence-rubric.md`.
 5. `skills/scientific-verifier/references/local-contract.md` — the local profile's enforceable behavior. Authoritative, not a summary: when it disagrees with the code, one of them is a bug.
-6. `skills/scientific-verifier/references/local-tasks.md` — claims as groups of whole sections and the task tests that run the skill, used whenever a container is configured. Same standing as the local contract.
+6. `skills/scientific-verifier/references/local-tasks.md` — claims as groups of whole sections and the task tests that run the skill. Same standing as the local contract.
 
 If a change touches tool legality, edit the matrix in `workflow.md` and the tool's section in `tool-contracts.md` in the same commit. They are the two halves of one contract and drift between them is the most expensive error in this repo.
 
