@@ -540,7 +540,7 @@ finish without doing the work:
   the proposal while the critique lists a departure — is below the proposal, and once per
   claim when a critique that agrees with the proposal lists coverage gaps (the coverage
   return and departures in `tool-contracts.md`). A task counts when the critique
-  counted it. Repeating the call with a strengthened design or the settled grade is the
+  answered no to every question about it. Repeating the call with a strengthened design or the settled grade is the
   negotiation. After the installed round limit, or once the
   replacement rounds in `evidence-rubric.md` are spent and a critique still rejects
   cases, the settled grade is fixed and the claim reaches `local_ready`.

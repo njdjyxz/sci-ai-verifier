@@ -436,7 +436,8 @@ number of independent tasks held it below its source's grade, `size_limited`: th
 source supports and the counting tasks it had and needed. A run whose subject image was built lists
 `skill_packages_from_configured_index` among its host limitations. A plan audit records the proposed grade, the evidence
 ceiling Python computed with its limiting reasons, the independent critique with its
-per-case verdicts (each with its `criterion_given`), coverage gaps and departures, the
+answers per task, the verdicts Python derived from them (each with its `criterion_given`),
+coverage gaps and departures, the
 `counted_cases` and the `case_ceiling` recomputed over them, the round number and the
 settled ceiling; a coverage return is recorded once per claim, with its round and the
 design it returned; `negotiation_refs` retains every round's audit,

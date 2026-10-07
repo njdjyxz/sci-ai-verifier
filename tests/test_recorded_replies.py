@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sci_ai_verifier.claude_runner import NO_SUBSTITUTION, ClaudeCode, parse_events, refusal_category
 from sci_ai_verifier.common import Fault, canonical, digest, validate
 from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, REPLY_TOOL, TASK_CRITIQUE_REF, TASK_CRITIQUE_RUBRIC,
-                                         critique_tasks, task_critique_schema, validate_assessment,
+                                         TASK_QUESTIONS, critique_tasks, task_critique_schema, validate_assessment,
                                          validate_task_critique)
 from sci_ai_verifier.local_candidates import SECRET_BYTES
 from sci_ai_verifier.local_config import load_configuration
@@ -33,7 +33,7 @@ RECORDED = ROOT / "tests/recorded"
 # recording maps to the key its refused reply added. The question critique and the claim-only answer
 # were given schemas retired with question tests on 2026-10-05; they stay as more live evidence of
 # Claude Code's correction loop, which every structured session relies on.
-STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "paramaters",
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": None,
                          "critic-structured.jsonl": "StructuredOutput", "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
@@ -152,25 +152,26 @@ class RecordedReplyTests(unittest.TestCase):
                                 and citation["quote"] in item["quote"] for item in sent["evidence"]))
 
     def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
-        """Run 2bef9e0d's claim 1 packet judged by the pinned model under the live rubric: A, every task counted,
-        and one departure, the skill's two-step formula keeping the lane loading its tasks held equal, which
-        holds the grade below the proposal. Its first reply added a stray key and was refused and resent."""
+        """Run 2bef9e0d's claim 4 final packet, all six tasks counted live, judged by the pinned model under the
+        live rubric: its answers drop g5, whose job states the averaging order the sections supply, and g2 and g4,
+        which an analysis skipping normalization passes, and name the cut-offs the jobs give. First reply accepted."""
         raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
         self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
         value = validate_task_critique(parse_events(raw, expected_session=session_of(raw))["structured_output"],
                                        case_ids)
-        self.assertEqual(value["supported_grade"], "A")
-        self.assertEqual([item["case_id"] for item in value["case_verdicts"]], case_ids)
-        self.assertEqual({item["verdict"] for item in value["case_verdicts"]}, {"counts"})
+        self.assertEqual((sent["proposed_grade"], value["supported_grade"]), ("A", "B"))
         self.assertEqual(len(value["findings"]), len(TASK_CRITIQUE_RUBRIC["criteria"]))
-        # It agrees with A but finds where the skill departs from the reference with no task exposing it, so
-        # the hold (tool-contracts.md) settles B until a task loads lanes unequally.
-        self.assertEqual(sent["proposed_grade"], "A")
-        self.assertEqual(len(value["departures"]), 1)
-        self.assertIn("PSMAD2 x GAPDH / SMAD2", value["departures"][0])
-        self.assertTrue(any("loading variation" in item for item in value["required_revisions"]))
-        self.assertEqual({item["criterion_given"] for item in value["case_verdicts"]}, {""})
+        # Python's verdicts from its answers ("Cases each grade requires" in evidence-rubric.md).
+        self.assertEqual([(item["case_id"], item["verdict"]) for item in value["case_verdicts"]],
+                         list(zip(case_ids, ["counts", "unsound", "counts", "unsound", "leaked", "counts"])))
+        g2 = value["task_checks"]["g2_treatment_responsive_control"]["wrong_passes"]
+        self.assertEqual(g2["answer"], "yes")
+        self.assertIn("no normalization", g2["reason"])
+        # The cut-offs the jobs give, and no unit or fact about the data, are named as rules given.
+        self.assertEqual([bool(item["criterion_given"]) for item in value["case_verdicts"]],
+                         [True, True, False, False, True, True])
+        self.assertEqual(value["departures"], [])
 
     def test_task_critique_end_to_end_over_a_replayed_recording(self):
         """critique_tasks with only the child process replaced: the recorded packet is exactly what it sends,
@@ -184,7 +185,7 @@ class RecordedReplyTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
             value = critique_tasks(ClaudeCode(auth="subscription", process=replay), sent)
-        self.assertEqual((value["supported_grade"], value["rubric_ref"]), ("A", TASK_CRITIQUE_REF))
+        self.assertEqual((value["supported_grade"], value["rubric_ref"]), ("B", TASK_CRITIQUE_REF))
         self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
         self.assertEqual((json.loads(seen["prompt"]), seen["timeout"]), (sent, CRITIC_TIMEOUT_SECONDS))
         command = seen["command"]
@@ -362,11 +363,13 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
                 "objections": [], "required_revisions": [], "coverage_gaps": [], "departures": [],
-                "case_verdicts": {"t1": self.verdict(), "t2": self.verdict("leaked", "Name the columns plainly.")},
+                "task_checks": {"t1": self.verdict(), "t2": self.verdict("gives_away", "Name the columns plainly.")},
                 **changes}
 
-    def verdict(self, verdict="counts", replacement="", criterion=""):
-        return {"verdict": verdict, "reason": "because", "replacement": replacement, "criterion_given": criterion}
+    def verdict(self, yes=None, replacement="", criterion=""):
+        """One task's answers: no to every question but `yes`."""
+        return {**{key: {"answer": "yes" if key == yes else "no", "reason": "because"} for key, _, _ in TASK_QUESTIONS},
+                "criterion_given": criterion, "replacement": replacement}
 
     def refused(self, value, case_ids=("t1", "t2")):
         with self.assertRaises(Fault):
@@ -385,6 +388,7 @@ class TaskCritiqueShapeTests(unittest.TestCase):
         self.assertIsNone(value["supported_grade"])
         self.assertEqual([(item["case_id"], item["verdict"]) for item in value["case_verdicts"]],
                          [("t2", "leaked"), ("t1", "counts")])
+        self.assertEqual(list(value["task_checks"]), ["t1", "t2"])
         self.assertEqual((value["rubric_ref"], seen["timeout"]), (TASK_CRITIQUE_REF, CRITIC_TIMEOUT_SECONDS))
         command = seen["command"]
         self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), task_critique_schema(["t2", "t1"]))
@@ -393,12 +397,12 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def test_the_shapes_a_free_text_reader_once_tolerated_are_refused(self):
         """A lone string for a one-item list, an extra finding, a `null` replacement and an extra key
         in a verdict each cost a live reply before the schema; now the session corrects them."""
-        verdicts = self.base()["case_verdicts"]
+        verdicts = self.base()["task_checks"]
         for label, broken in (
                 ("lone string", self.base(required_revisions="one")),
                 ("extra finding", self.base(findings=["f"] * (len(TASK_CRITIQUE_RUBRIC["criteria"]) + 1))),
-                ("null replacement", self.base(case_verdicts={**verdicts, "t1": {**self.verdict(), "replacement": None}})),
-                ("extra key in a verdict", self.base(case_verdicts={**verdicts, "t1": {**self.verdict(), "verdict_note": ""}}))):
+                ("null replacement", self.base(task_checks={**verdicts, "t1": {**self.verdict(), "replacement": None}})),
+                ("extra key in a verdict", self.base(task_checks={**verdicts, "t1": {**self.verdict(), "verdict_note": ""}}))):
             with self.subTest(label):
                 self.refused(broken)
 
@@ -413,48 +417,79 @@ class TaskCritiqueShapeTests(unittest.TestCase):
                        self.base(departures="not a list"), self.base(departures=[" "]), self.base(departures=["x"] * 9),
                        {key: value for key, value in self.base().items() if key != "departures"},
                        {key: value for key, value in self.base().items() if key != "required_revisions"},
-                       {key: value for key, value in self.base().items() if key != "case_verdicts"}):
+                       {key: value for key, value in self.base().items() if key != "task_checks"}):
             with self.subTest(broken=canonical(broken)[:90]):
                 self.refused(broken)
 
-    def test_case_verdicts_that_do_not_match_the_packet_are_refused(self):
-        rejected = self.verdict("beyond_scope", "Ask what the claim states.")
+    def test_task_answers_that_do_not_match_the_packet_are_refused(self):
+        rejected = self.verdict("outside_claim", "Ask what the claim states.")
+        answers = self.verdict()
         for label, given in (("missing task", {"t1": self.verdict()}),
                              ("unknown task", {"t1": self.verdict(), "t2": rejected, "t9": self.verdict()}),
-                             ("unknown verdict", {"t1": self.verdict(), "t2": self.verdict("fine")}),
-                             ("a retired verdict", {"t1": self.verdict(), "t2": self.verdict("naming", "x")}),
-                             ("rejected without replacement", {"t1": self.verdict(), "t2": self.verdict("unsound")}),
-                             ("counted with replacement", {"t1": self.verdict(replacement="x"), "t2": rejected}),
-                             ("blank reason", {"t1": {**self.verdict(), "reason": " "}, "t2": rejected}),
-                             ("missing reason", {"t1": {"verdict": "counts", "replacement": "", "criterion_given": ""},
-                                                 "t2": rejected}),
+                             ("an answer that is neither yes nor no",
+                              {"t1": {**answers, "repeats": {"answer": "maybe", "reason": "r"}}, "t2": rejected}),
+                             ("a question left out", {"t1": {key: value for key, value in answers.items()
+                                                             if key != "wrong_passes"}, "t2": rejected}),
+                             ("a verdict instead of answers", {"t1": {"verdict": "counts", "reason": "r",
+                                                                     "replacement": "", "criterion_given": ""},
+                                                               "t2": rejected}),
+                             ("blank reason", {"t1": {**answers, "key_wrong": {"answer": "no", "reason": " "}},
+                                               "t2": rejected}),
+                             ("blank replacement", {"t1": self.verdict(replacement="  "), "t2": rejected}),
                              ("blank rule given", {"t1": self.verdict(criterion="  "), "t2": rejected}),
-                             ("missing rule given", {"t1": {"verdict": "counts", "reason": "r", "replacement": ""},
-                                                     "t2": rejected}),
+                             ("missing rule given", {"t1": {key: value for key, value in answers.items()
+                                                           if key != "criterion_given"}, "t2": rejected}),
                              ("a list, as before the schema", [{"case_id": "t1", **self.verdict()},
                                                                {"case_id": "t2", **rejected}]),
                              ("not an object", "all count")):
             with self.subTest(label):
-                self.refused(self.base(case_verdicts=given))
+                self.refused(self.base(task_checks=given))
+
+    def test_python_gives_the_verdict_of_the_first_question_answered_yes(self):
+        """Choosing verdicts itself, the critique counted all 43 tasks of runs f84c131c and 2bef9e0d while its own
+        objections named six flaws the verdict table excludes; now its answers decide, in the table's order."""
+        case_ids = ["t1", "t2", "t3", "t4"]
+        value = self.base(task_checks={
+            "t1": self.verdict(criterion="15 percent off the low-load slope"),
+            "t2": {**self.verdict("wrong_passes", "Plant unequal loading."),
+                   "gives_away": {"answer": "yes", "reason": "the job names the stain mark"}},
+            "t3": self.verdict("repeats"), "t4": self.verdict("key_wrong", "Quote a source that states it.")})
+        verdicts = validate_task_critique(value, case_ids)["case_verdicts"]
+        self.assertEqual([(item["case_id"], item["verdict"]) for item in verdicts],
+                         [("t1", "counts"), ("t2", "leaked"), ("t3", "duplicate"), ("t4", "unsound")])
+        self.assertEqual(verdicts[1]["reason"], "gives_away: the job names the stain mark; wrong_passes: because")
+        self.assertEqual(verdicts[0]["criterion_given"], "15 percent off the low-load slope")
+        # A yes with no replacement described says so; a counted task carries none.
+        self.assertEqual((verdicts[2]["replacement"], verdicts[0]["replacement"]),
+                         ("The critique described no replacement.", ""))
 
     def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
         """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
         from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
-        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v4")
-        # A rule the job gives is named, or leaks when the sections supply it; a key the skill's own procedure
-        # misses where it departs from the reference is no unfairness to the skill (local-tasks.md).
-        self.assertIn("rule, threshold or order of steps", TASK_CRITIQUE_RUBRIC["case_verdicts"]["leaked"])
-        self.assertNotIn("following the skill", TASK_CRITIQUE_RUBRIC["case_verdicts"]["unsound"])
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v5")
+        # One question per row of the verdict table, which Python turns into the verdict.
+        questions = TASK_CRITIQUE_RUBRIC["task_questions"]
+        self.assertEqual(list(questions), [key for key, _, _ in TASK_QUESTIONS])
+        # A rule the job gives, or where the planted problem is, gives the task away; a key the skill's own
+        # procedure misses where it departs from the reference is not wrong (local-tasks.md).
+        self.assertIn("rule, threshold or order of steps", questions["gives_away"])
+        self.assertIn("or where it is", questions["gives_away"])
+        self.assertIn("its quote as well as its number", questions["key_wrong"])
+        self.assertIn("is not wrong; see rubric.departures", questions["key_wrong"])
+        self.assertIn("pass every output", questions["wrong_passes"])
+        self.assertIn("even one the task was not built to catch", questions["wrong_passes"])
+        self.assertIn("an output's unit or format", TASK_CRITIQUE_RUBRIC["criterion_given"])
         self.assertIn("rubric.departures", TASK_CRITIQUE_RUBRIC["criteria"][2])
         self.assertIn("Python holds the grade below the proposal", TASK_CRITIQUE_RUBRIC["departures"])
-        self.assertIn("leave it empty", TASK_CRITIQUE_RUBRIC["criterion_given"])
+        self.assertIn("Leave it empty when the job gives none", TASK_CRITIQUE_RUBRIC["criterion_given"])
         # Whatever the grade, what no task tests is listed, for the coverage return (tool-contracts.md).
         self.assertIn("coverage_gaps", TASK_CRITIQUE_RUBRIC["coverage"])
         self.assertIn("Whatever your grade", TASK_CRITIQUE_RUBRIC["coverage"])
         # A described search is judged by what Python recorded the planner running ("Critique" in local-contract.md).
         self.assertIn("python_checked.search_record", TASK_CRITIQUE_RUBRIC["criteria"][3])
         owner = (ROOT / "skills/scientific-verifier/references/evidence-rubric.md").read_text(encoding="utf-8")
-        self.assertEqual(re.findall(r"^\| `(\w+)` \|", owner, re.MULTILINE), list(TASK_CRITIQUE_RUBRIC["case_verdicts"]))
+        verdicts = ["counts"] + list(dict.fromkeys(verdict for _, verdict, _ in TASK_QUESTIONS))
+        self.assertEqual(re.findall(r"^\| `(\w+)` \|", owner, re.MULTILINE), verdicts)
         for grade, count in (("A", TASK_DIRECT), ("B", TASK_MINIMUM), ("C", TASK_MINIMUM)):
             self.assertIn("| " + grade + " | at least " + str(count) + " |", owner)
 

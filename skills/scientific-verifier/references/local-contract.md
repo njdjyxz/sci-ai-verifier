@@ -206,10 +206,11 @@ to the documentary path. An unavailable critique is an operational limitation.
 The critique's reply has a fixed shape that Claude Code enforces, as the reply-shape
 paragraph under `select_local_candidate` in `tool-contracts.md` describes: a reply outside
 it goes back to the same session to be corrected, and a reply that judges the design is
-never re-rolled, whatever grade it gives. The critique session has ten minutes and the
+never re-rolled, whatever grade it gives. The critique session has fifteen minutes and the
 documentary assessor two. Live critiques took 90 to 210 seconds on 2026-09-30 and
-2026-10-01, and a live task critique 107 seconds on 2026-10-05; the two-minute deadline
-critiques once shared with the assessor killed one in run 74eadedd.
+2026-10-01, and a live task critique 107 seconds on 2026-10-05; answering a question per
+verdict for six tasks took 491 seconds on 2026-10-07. The two-minute deadline critiques
+once shared with the assessor killed one in run 74eadedd.
 
 The installed policy then requires every planned trial of every task to be scored.
 Missing observations are operational. Invalid observations remain counted. Only counting

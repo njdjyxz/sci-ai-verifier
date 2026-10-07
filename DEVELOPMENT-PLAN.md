@@ -2460,3 +2460,106 @@ With the operator's go-ahead, after a session restart and a Docker and usage che
 3. Then run tooluniverse-dose-response and check that no departure, tolerance mark or rule given
    appears where its answers match the reference. Each run costs $25–35 and most of a 5-hour
    window.
+
+## Claude: 2026-10-07 (the critique answers questions and Python gives each task's verdict)
+
+### Current stage and status
+
+Version 0.8.0 on `whole-skill-tests`, the operator's to merge. The 2026-10-06 entry built a hold for
+departures, a mark for passes on tolerance, the rule against tasks that state the skill's rule, and
+no search to end a coverage return. Today the task critique stopped choosing verdicts: it answers
+one question per row of the verdict table, and Python gives the verdict. Replays of real packets
+show the change working, and no run has used it yet.
+
+### What has been done
+
+This session, 2026-10-07:
+
+**1. Other problems in run `2bef9e0d`.** The operator asked whether there were problems besides the two
+fixed. Checked against both task runs:
+- **The critique never refused a task.** All 43 verdicts in runs `f84c131c` and `2bef9e0d` were
+  `counts`, while its objections named six flaws the verdict table excludes: two near-repeats, a
+  task that named its planted defect, two keys whose quotes did not support them, a task that
+  passed with the normalization skipped, and a solver that hard-coded a planted value. The rule that
+  objections and verdicts must agree was already in its rubric.
+- **Planner justifications held wrong numbers** in 3 of 4 claims of `2bef9e0d`, and the report shows
+  them as written. One skill only, so left for more evidence.
+- **What tasks cannot test:** the skill's image steps need tools it does not ship, and plots and
+  reporting advice have no output field.
+- **Cost and time keep growing:** 98.5 minutes and 69% of a 5-hour window for `2bef9e0d`.
+- Minor: one source per run lost to a refused redirect; three trials per task never disagreed in
+  105 tries.
+
+**2. Problem 1, checked before building.** The operator: "How would you recommend tackle problem 1",
+then "yes" to a replay check.
+- A draft rubric replaced the critique's verdicts with five yes-or-no questions, one per row of the
+  verdict table, answered before the grade; Python gave the verdict of the first yes.
+- Six real packets replayed on `claude-opus-5` for $5.11, 155 to 491 seconds each: four holding the
+  flaws, and `f84c131c` claims 1 and 3 as clean controls.
+- Four of the five clear flaws stopped counting. The controls kept every task at A. The question
+  "would a wrong analysis pass every output?" also caught tasks too loose to tell right from wrong:
+  three of `2bef9e0d` claim 3's first design, and two of `f84c131c` claim 2, where skipping blank
+  subtraction passes, which its live critique had noted and counted.
+- It showed three things to fix: a task that names where its planted problem is, a "rule given"
+  note that marked output units and facts about the data, and reviews near the 600-second
+  deadline.
+
+**3. Built.** The operator: "yes" to fixing those three and building it.
+- **Contracts first.** [`evidence-rubric.md`](skills/scientific-verifier/references/evidence-rubric.md)
+  owns it: the critique answers one question per row of the verdict table, and Python gives a case
+  the verdict of the first row answered yes, or `counts`. `leaked` adds where the planted problem
+  is, and `unsound` adds any plausible wrong analysis that passes every output.
+  `local-tasks.md`, `tool-contracts.md` (the reply shape), `workflow.md` and
+  `artifact-contracts.md` point at it, and `local-contract.md` gives the critique fifteen minutes.
+- **Code.** Rubric v5 holds `TASK_QUESTIONS`, and the reply's `task_checks` come first and the grade
+  last. `task_verdict()` derives `case_verdicts`, so selection, the report and the page read them as
+  before. A missing replacement is said, never invented. `criterion_given` excludes units, formats
+  and facts about the data. `CRITIC_TIMEOUT_SECONDS` is 900, the policy `evidence-strength-v11`,
+  and the page lists each task's five answers.
+- **Confirmation through the real code.** `critique_tasks` on two of the replayed packets, three
+  sessions for $2.74:
+  - `f84c131c` claim 1, the control: all four tasks counted at A, with no "rule given" mark; 184 s.
+  - `2bef9e0d` claim 4: g5 dropped as leaked, and "rule given" named only the jobs' cut-offs. g3
+    counted in both reviews: the stain mark its job mentions shows in its data anyway, and the
+    critique could name no wrong route that passes it.
+  - In that first claim-4 review the critique wrote that an un-normalized reading "also passes" g2,
+    and still answered no, since g2 was not built to catch it. The question now asks about any wrong
+    analysis, even one the task was not built to catch, and says that one it can name means yes.
+    Re-checked: g2 and g4 dropped because skipping normalization passes every output; three tasks
+    counted and the critique's own grade was B; 438 s, $1.07.
+  - That last review is the new recording; its first reply was accepted.
+- **Verification.** Suite 391 → 392 tests, 390 passing and 2 skipped. The verification bootstrap is 195,877 of 200,000 bytes; every pinned local block is under 40,960.
+
+### Decisions taken 2026-10-07
+
+- **Operator:** check problem 1 by replay before building; then fix the three issues it showed and
+  build. Done (sections 2 and 3).
+- **Operator:** tighten the wrong-analysis question after the re-check. Done (section 3).
+- **Proposed here and accepted with the build:** g3, whose job says the Control lane sits over a
+  stain mark, counts. Its data show the high background anyway, and the job never says what it does
+  to the answer; all three reviews under the questions judged so.
+
+### Open questions for the operator
+
+1. The 2026-10-06 entry's open questions 2, 4 and 5 stand: the skill's own thresholds, merging
+   `whole-skill-tests`, and the final reviewer.
+2. **Planner justifications with wrong numbers** (section 1): mark them in the report, or wait for a
+   second skill to show the same? Recommended: wait.
+
+### Urgent next steps, if any
+
+None. `src/` changed, so restart the session before the next run, and check Docker and usage first.
+
+### Suggested next move
+
+Re-run western-blot-quantification and tooluniverse-dose-response on the 2026-10-06 rules and today's
+questions. Expect more tasks to drop, so more replacement rounds and longer runs.
+
+### Recommended next action
+
+With the operator's go-ahead, after a session restart and a Docker and usage check:
+1. Run `verify_skill` on western-blot-quantification.
+2. It is finished when the report shows each task's answers, which tasks dropped and why, whether
+   claim 1 met a task with unequal loading or settled below A, and the run's time and cost.
+3. Then run tooluniverse-dose-response and check that its clean claims keep their tasks. Each run
+   costs $25–35 and most of a 5-hour window.

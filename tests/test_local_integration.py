@@ -542,8 +542,9 @@ class GradeNegotiationTests(unittest.TestCase):
                                           "evidence","justification","python_checked"})
             self.assertNotIn("observations",canonical(packet).decode())
             # Run 84e90683's reviewer counted a case its own objection placed outside the claim.
-            self.assertIn("never counts",packet["rubric"]["verdict_consistency"])
-            self.assertIn("correctly following the skill",packet["rubric"]["case_verdicts"]["beyond_scope"])
+            # Python, not the reviewer, turns its answers into verdicts (evidence-rubric.md).
+            self.assertIn("Python turns a yes into that question's verdict",packet["rubric"]["task_answers"])
+            self.assertIn("correctly following them",packet["rubric"]["task_questions"]["outside_claim"])
         h.call("execute_local_claim",claim_id=h.claim_id)
         result=h.data["result"]
         self.assertEqual(result["evidence_grade"],"C")

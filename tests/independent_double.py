@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.common import canonical, digest
 from sci_ai_verifier.documentary import (RUBRIC, RUBRIC_REF, TASK_CRITIQUE_REF, TASK_CRITIQUE_RUBRIC,
-    validate_assessment, validate_task_critique)
+    TASK_QUESTIONS, validate_assessment, validate_task_critique)
 
 INDEPENDENCE = "fresh host-selected no-tool session; no planner conversation"
 
@@ -44,20 +44,25 @@ def critic_reply(packet, supported, *, findings=None, objections=(), required_re
                  coverage_gaps=(), departures=(), criteria=None):
     """Shaped exactly as `documentary.critique_tasks` returns, including the "none" -> None mapping.
 
-    Every task in the packet counts unless `rejected` maps its case ID to another verdict; `criteria` maps a
-    case ID to the rule its job gives that the claim's sections do not.
+    Every task in the packet counts unless `rejected` maps its case ID to another verdict, which the reply gives
+    by answering yes to the first question of that verdict; `criteria` maps a case ID to the rule its job gives
+    that the claim's sections do not.
     """
     rejected, criteria = rejected or {}, criteria or {}
     case_ids = [case["case_id"] for case in packet["evidence"]["tasks"]]
-    verdicts = {key: {"verdict": rejected.get(key, "counts"), "reason": "Fixture task verdict.",
-                      "replacement": "Fixture replacement: a task inside the claim." if key in rejected else "",
-                      "criterion_given": criteria.get(key, "")}
-                for key in case_ids}
+
+    def check(key):
+        first = next((question for question, verdict, _ in TASK_QUESTIONS if verdict == rejected.get(key)), None)
+        return {**{question: {"answer": "yes" if question == first else "no", "reason": "Fixture answer."}
+                   for question, _, _ in TASK_QUESTIONS},
+                "criterion_given": criteria.get(key, ""),
+                "replacement": "Fixture replacement: a task inside the claim." if first else ""}
     value = validate_task_critique({
         "supported_grade": supported,
         "findings": list(findings) if findings else ["Fixture critique finding."] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
         "objections": list(objections), "required_revisions": list(required_revisions),
-        "coverage_gaps": list(coverage_gaps), "departures": list(departures), "case_verdicts": verdicts},
+        "coverage_gaps": list(coverage_gaps), "departures": list(departures),
+        "task_checks": {key: check(key) for key in case_ids}},
         case_ids)
     return {**value, **_envelope(packet, TASK_CRITIQUE_REF, "critic")}
 

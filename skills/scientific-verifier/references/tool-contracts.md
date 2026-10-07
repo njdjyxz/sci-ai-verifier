@@ -650,12 +650,16 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   operational failure, never a grade and never a scientific finding. A critique holds
   `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string per
   rubric criterion, in order), `objections`, `required_revisions`, `coverage_gaps` and
-  `departures` (each at most eight strings, empty when there are none), and `case_verdicts`:
-  one entry for every task ID in the packet and no other, each holding a `verdict` (one of
-  those defined in `evidence-rubric.md`), a `reason`, a `replacement` that is empty for
-  `counts` and otherwise describes a task that would test the claim instead, and
-  `criterion_given`, empty unless the job states a rule the claim's sections do not supply,
-  which it then names (`local-tasks.md`). An assessment holds
+  `departures` (each at most eight strings, empty when there are none), and, first,
+  `task_checks`: one entry for every task ID in the packet and no other, each holding a yes
+  or no `answer` with its `reason` for every question of the verdict table
+  (`outside_claim`, `gives_away`, `repeats`, `key_wrong`, `wrong_passes`), a `replacement`
+  that is empty when every answer is no and otherwise describes a task that would test the
+  claim instead, and `criterion_given`, empty unless the job states a rule the claim's
+  sections do not supply, which it then names (`local-tasks.md`). Python derives each
+  task's verdict from its answers (`evidence-rubric.md`) and records `case_verdicts`: the
+  verdict, the reasons of the answers that decided it, the replacement and the rule. An
+  assessment holds
   `status`, `findings` (one string per documentary criterion), one to eight `citations`
   naming packet references, and `limitations`, a single string. No string may be blank
   and no object may carry a key its schema does not name. Python checks the reply against

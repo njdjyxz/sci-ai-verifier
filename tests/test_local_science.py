@@ -392,10 +392,12 @@ class IndependentSessionTests(unittest.TestCase):
         self.assertEqual(len(calls),1)
 
     def valid_critique(self):
+        from sci_ai_verifier.documentary import TASK_QUESTIONS
         return {"supported_grade":"B","findings":["f"]*len(TASK_CRITIQUE_RUBRIC["criteria"]),
                 "objections":[],"required_revisions":["Add tasks covering the rest of the scope."],"coverage_gaps":[],
-                "departures":[],"case_verdicts":{"c":{"verdict":"counts","reason":"in scope","replacement":"",
-                                                     "criterion_given":""}}}
+                "departures":[],"task_checks":{"c":{**{key:{"answer":"no","reason":"in scope"}
+                                                      for key,_,_ in TASK_QUESTIONS},
+                                                   "criterion_given":"","replacement":""}}}
 
     def test_one_critique_session_is_asked_and_a_verdict_is_never_re_rolled(self):
         packet={"evidence":{"tasks":[{"case_id":"c"}]}}
@@ -406,12 +408,13 @@ class IndependentSessionTests(unittest.TestCase):
                    side_effect=self._replies({**good,"supported_grade":"none"},good,calls=calls)):
             self.assertIsNone(critique_tasks(object(),packet)["supported_grade"])
         self.assertEqual(len(calls),1)
-        # A critique gets ten minutes: two killed one in run 74eadedd, and replays judging eleven
-        # earlier concerns ran past five.
-        self.assertEqual(calls[0]["timeout"],600)
-        # The schema asks for exactly the packet's tasks.
-        self.assertEqual(calls[0]["schema"]["properties"]["case_verdicts"]["required"],["c"])
-        for broken in ({**good,"case_verdicts":{"x":good["case_verdicts"]["c"]}},{**good,"supported_grade":"A+"},
+        # A critique gets fifteen minutes: two killed one in run 74eadedd, replays judging eleven earlier
+        # concerns ran past five, and answering a question per verdict for six tasks took eight.
+        self.assertEqual(calls[0]["timeout"],900)
+        # The schema asks for exactly the packet's tasks, and for the answers before the grade.
+        self.assertEqual(calls[0]["schema"]["properties"]["task_checks"]["required"],["c"])
+        self.assertEqual(list(calls[0]["schema"]["properties"])[::6],["task_checks","supported_grade"])
+        for broken in ({**good,"task_checks":{"x":good["task_checks"]["c"]}},{**good,"supported_grade":"A+"},
                        {**good,"findings":["only one"]},{**good,"extra":"field"}):
             calls.clear()
             with self.subTest(broken=sorted(broken)), \

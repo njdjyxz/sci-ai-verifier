@@ -23,6 +23,10 @@ TYPES = {"numeric": "number", "exact": "exact token", "term": "word or phrase", 
 NOT_COUNTED = {"leaked": "it gives away the answer or the rule", "duplicate": "it repeats another test",
                "beyond_scope": "the claim alone does not settle it", "naming": "it only asks what something is called",
                "unsound": "its expected value or tolerance is not right"}
+# The verdict table's questions, as the page names them ("Cases each grade requires" in evidence-rubric.md).
+QUESTIONS = {"outside_claim": "Outside the claim?", "gives_away": "Gives the answer or the rule away?",
+             "repeats": "Repeats an earlier task?", "key_wrong": "Key or tolerance wrong?",
+             "wrong_passes": "Would a wrong method pass?"}
 OUTCOMES = {"local_plan_fixed": "plan fixed", "local_grade_revision_required": "sent back to revise",
             "local_grade_proposal_refused": "refused before review"}
 REFUSALS = {"prior_review_in_packet": "its notes mentioned an earlier review",
@@ -177,7 +181,8 @@ def claim_view(run, number, claim, notes):
         sessions.add(test.get("session_id"))
         if isinstance(test.get("reading"), dict):
             sessions.add(test["reading"].get("session_id"))
-    verdicts = {item["case_id"]: item for item in critique.get("case_verdicts") or []}
+    verdicts = {item["case_id"]: {**item, "answers": (critique.get("task_checks") or {}).get(item["case_id"])}
+                for item in critique.get("case_verdicts") or []}
     dropped = {item["case_id"]: item for item in record.get("uncounted_cases") or []}
     probes = {item["case_id"]: item for item in (critique.get("claim_probe") or {}).get("cases", [])}
 
@@ -553,6 +558,11 @@ def task_details(t):
         rows.append(("Why this task", e(t["why"])))
     if t["verdict"]:
         rows.append(("Reviewer AI said", f'<b>{e(t["verdict"].get("verdict"))}</b> — {e(t["verdict"].get("reason"))}'))
+    answers = t["verdict"].get("answers") if t["verdict"] else None
+    if answers:
+        rows.append(("Its answers", "<ul class='plain'>" + "".join(
+            f'<li>{e(QUESTIONS.get(key, key))} <b>{e(item["answer"])}</b> — {e(item["reason"])}</li>'
+            for key, item in answers.items() if isinstance(item, dict)) + "</ul>"))
     if t["criterion_given"]:
         rows.append(("Rule the job gives", e(t["criterion_given"]) + '<div class="dim">The skill\'s sections do not '
                      "give this rule, so the task tests applying it as given.</div>"))

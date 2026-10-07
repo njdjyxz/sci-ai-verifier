@@ -56,19 +56,19 @@ This section owns the number and kind of cases each execution grade needs. Other
 
 *Right.* A case's expected value and tolerance must be right and fair: the generator plants what the output expects, the quote supports it, and a correct analysis passes. Where the skill's own procedure departs from that analysis, missing the key is the skill's failure, not unfairness (`local-tasks.md`).
 
-**Case verdicts.** The independent critique gives every case exactly one verdict:
+**Case verdicts.** Every case gets exactly one verdict. The independent critique answers one question per row below `counts`, yes or no with the fact it rests on, and Python gives a case the verdict of the first row answered yes, or `counts` when none is:
 
 | Verdict | Meaning | Counts? |
 |---|---|---|
 | `counts` | Tests what the claim states, as a user of its sections would meet it, with a right expected value and a fair tolerance, without giving the answer away | Yes |
 | `beyond_scope` | Asks for work or a conclusion the claim's sections never give, so a subject correctly following the skill could answer otherwise | No |
-| `leaked` | The job, a file or column name or the output fields give the answer away or say which problem was planted, or the job gives a rule, threshold or order of steps the claim's sections supply | No |
+| `leaked` | The job, a file or column name or the output fields give the answer away or say which problem was planted or where it is, or the job gives a rule, threshold or order of steps the claim's sections supply | No |
 | `duplicate` | Turns on the same steps and the same kind of input as an earlier case, so a subject that does one does the other and it adds no independent evidence. The reason names that case, which keeps its own verdict | No |
-| `unsound` | An expected value or tolerance is wrong or unfair: the generator does not plant it as stated, its quote does not support it, or a correct analysis could miss it | No |
+| `unsound` | An expected value or tolerance is wrong or unfair: the generator does not plant it as stated, its quote does not support it, a correct analysis could miss it, or any plausible wrong analysis passes every output | No |
 
-Whether a case counts is a fitness judgment rather than a computable property, so the critique judges each case, and Python counts the verdicts and enforces the table below. Neither does the other's job: a critique that finds too few cases counting cannot settle a grade the count does not allow, because Python applies the count itself.
+Whether a case counts is a fitness judgment rather than a computable property, so the critique answers the questions, and Python turns the answers into verdicts, counts them and enforces the table below. Neither does the other's job: a critique that finds too few cases counting cannot settle a grade the count does not allow, because Python applies the count itself.
 
-A critique's objections and verdicts must agree. A case it objects to because it tests more or less than the claim states, or because its expected value or tolerance is wrong, takes that verdict, never `counts`; an objection about a counting case may question only how strong it is. Cases are judged against the claim's statement, expected behaviour and the text of its sections, and the claim's wording is fixed, so a critique judges cases against it as written rather than asking for it to be restated. Three of the fourteen critiques in runs 3dc02567 and 84e90683 counted a case their own objection placed outside the claim, and in 84e90683 that case failed six trials out of six, where a subject correctly applying the claim as written would also have failed.
+The critique answers about the case as designed; a weakness that leaves every answer no is an objection about strength. Cases are judged against the claim's statement, expected behaviour and the text of its sections, and the claim's wording is fixed, so a critique judges cases against it as written rather than asking for it to be restated. While the critique chose verdicts itself, its objections and verdicts disagreed: three of fourteen critiques in runs 3dc02567 and 84e90683 counted a case their own objection placed outside the claim, which then failed six trials of six, and runs f84c131c and 2bef9e0d counted all 43 tasks while their objections named six flaws this table excludes. Replayed with the questions on 2026-10-07, those flaws stopped counting and clean designs kept every task.
 
 **Requirements.** Only cases with the verdict `counts` enter these numbers:
 

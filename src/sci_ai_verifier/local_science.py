@@ -40,13 +40,14 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v10",
+    "id": "evidence-strength-v11",
     "minimum_tasks": TASK_MINIMUM,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
     "replacement_rounds": REPLACEMENT_ROUNDS,
     "tasks": {"A": TASK_DIRECT, "B": TASK_MINIMUM, "C": TASK_MINIMUM,
-              "counted": "tasks the independent critique gave the verdict counts; before a critique, every task"},
+              "counted": "tasks the independent critique answered no to every question about; before a "
+                         "critique, every task"},
     "proposal": "each round proposes the current evidence ceiling, or accepts the grade the "
                 "last critique of this exact design settled at",
     "grade_limits": "recorded over the tasks the critique counted",

@@ -28,7 +28,31 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # skill's own procedure departs from the reference solution with no task exposing it, names in criterion_given
 # a rule a job gives, and no longer calls a task unfair because following the skill misses its key: run
 # 2bef9e0d's design hid such a departure inside its tolerances, and its critique counted the tasks as fair.
-TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v4","criteria":[
+# v5 asks one question per row of the verdict table ("Cases each grade requires" in evidence-rubric.md) and
+# Python gives the verdict: choosing verdicts itself, the critique counted all 43 tasks of runs f84c131c and
+# 2bef9e0d while its own objections named six flaws the table excludes. Asked whether a wrong analysis passes,
+# one re-check wrote that an un-normalized reading also passes and answered no, as the task was not built to catch it.
+TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table's order
+    ("outside_claim", "beyond_scope",
+     "Does the task ask for work or a conclusion the claim's sections never give, so that a subject correctly "
+     "following them could answer otherwise?"),
+    ("gives_away", "leaked",
+     "Does the job, a file name, a column name or an output field give the answer away, say which problem was "
+     "planted or where it is (a lane, a row, a replicate) even without saying how to correct it, or state a rule, "
+     "threshold or order of steps the claim's sections supply?"),
+    ("repeats", "duplicate",
+     "Does the task turn on the same steps and the same kind of input as an earlier task in this design, so that a "
+     "subject that does one does the other? Name that task; the earlier task keeps its own answers."),
+    ("key_wrong", "unsound",
+     "Is any expected value or tolerance wrong? Check every output, its quote as well as its number: is its value "
+     "not planted as stated, does its quote fail to say what the output needs, or could a correct analysis miss it? "
+     "A key the skill's own procedure misses where it departs from the reference solution is not wrong; see "
+     "rubric.departures."),
+    ("wrong_passes", "unsound",
+     "Would any plausible wrong analysis, such as an omitted step (a normalization or a subtraction skipped), a wrong "
+     "unit, an inverted ratio or the wrong order of steps, pass every output of the task within its tolerance, even "
+     "one the task was not built to catch? Name it. If you can name one that passes, the answer is yes."))
+TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v5","criteria":[
         "Whether each task's expected values are right and independent of the skill: the generator implements "
         "evidence.generator.model_quote and plants what each output expects, each quote supports its output, and "
         "none rests on the skill's own text",
@@ -53,30 +77,22 @@ TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v4","criteria":[
         "objection that is now answered supports nothing against this design.",
         "instruction":"Return the strongest grade this evidence actually supports. Do not approve the proposal "
         "to be agreeable and do not lower it to be safe.",
-        "case_verdicts":{"counts":"Tests what the claim states, as a user of its sections would meet it, with a right "
-        "expected value and a fair tolerance, without giving the answer away",
-        "beyond_scope":"Asks for work or a conclusion the claim's sections never give, so a subject correctly "
-        "following the skill could answer otherwise",
-        "leaked":"The job, a file name, a column name or the output fields give the answer away or tell the subject "
-        "which problem was planted, or the job gives a rule, threshold or order of steps the claim's sections "
-        "supply, so the task tests applying a given rule",
-        "duplicate":"Turns on the same steps and the same kind of input as an earlier task in this design, so a subject "
-        "that does one does the other and it adds no independent evidence. The reason names that task",
-        "unsound":"An expected value or tolerance is wrong or unfair: the generator does not plant what the output "
-        "expects, a quote does not support it, or a correct analysis could miss it. A key the skill's own procedure "
-        "misses where it departs from the reference solution is not unfair; see rubric.departures"},
+        "task_questions":{key: question + " A yes makes the task's verdict " + verdict + "."
+                          for key, verdict, question in TASK_QUESTIONS},
+        "task_answers":"Answer every question for every task in task_checks, yes or no, each with the fact from the "
+        "files, the job, the quotes or solver_results it rests on, before you write anything else. Answer about the "
+        "task as designed: a weakness that leaves every answer no belongs in objections. Python turns a yes into that "
+        "question's verdict and the task does not count; the first yes in the order listed decides which. Judge each "
+        "task against the claim's statement, expected behaviour and the text of its sections. The claim's wording is "
+        "fixed; do not ask for it to be restated.",
         "case_requirements":{"A":f"at least {TASK_DIRECT} counting tasks","B":f"at least {TASK_MINIMUM} counting tasks",
         "C":f"at least {TASK_MINIMUM} counting tasks","none":f"fewer than {TASK_MINIMUM} counting tasks",
-        "enforcement":"Python recomputes the ceiling over the tasks you count and settles the weakest of that, "
-        "the proposal and your grade. Your grade is your own judgment of the whole design; do not lower it "
+        "enforcement":"Python recomputes the ceiling over the tasks whose every answer is no and settles the weakest "
+        "of that, the proposal and your grade. Your grade is your own judgment of the whole design; do not lower it "
         "mechanically for the count, which Python already applies."},
-        "case_replacement":"For every task that does not count, describe a task that would test the claim in its "
-        "place: its input, its job and why that stays inside the claim. Describe it; do not write expected values.",
-        "verdict_consistency":"Your objections and verdicts must agree. A task you object to because it tests more or "
-        "less than the claim states, or because its key or tolerance is wrong, takes that verdict, never counts; an "
-        "objection about a counting task may question only how strong it is. Judge each task against the claim's "
-        "statement, expected behaviour and the text of its sections. The claim's wording is fixed; do not ask for it "
-        "to be restated.",
+        "case_replacement":"For every task with a yes, describe in replacement a task that would test the claim in its "
+        "place: its input, its job and why that stays inside the claim. Describe it; do not write expected values. "
+        "Leave replacement empty when every answer is no.",
         "planted_values":"A planted value was built into the task's files by evidence.generator, which Python ran on "
         "the task's arguments; the task's planted object lists what it printed. Judge whether the generator implements "
         "the quoted model and nothing else, whether the files hold what the job describes in the units it states, and "
@@ -100,9 +116,10 @@ TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v4","criteria":[
         "a departure. If both results are defensible readings of the claim, it is no departure; judge the key under "
         "criterion 1. Python holds the grade below the proposal while any departure is listed, so do not also lower "
         "your own grade for it. Leave departures empty when there is none.",
-        "criterion_given":"For each task, put in criterion_given the rule or threshold its job states that the "
-        "claim's sections do not supply, in a few words, such as how far a signal may stray from proportional, and "
-        "leave it empty when the job states none. A job stating a rule the sections do supply is leaked.",
+        "criterion_given":"For each task, put in criterion_given the decision rule or cut-off its job gives the subject "
+        "to apply that the claim's sections do not supply, in a few words, such as how far a signal may stray from "
+        "proportional. Leave it empty when the job gives none: an output's unit or format and a fact about the data "
+        "are not rules. A job stating a rule the sections do supply answers gives_away yes.",
         "output_fields":"Python reads each trial's results file itself: a number passes within its tolerance, a "
         "text when equal ignoring case and spaces, a boolean when equal, a set when it holds the same items in any "
         "order. A missing field or a value of the wrong type makes the trial invalid."}
@@ -113,10 +130,10 @@ TASK_CRITIQUE_REF=digest(canonical(TASK_CRITIQUE_RUBRIC))
 # than show the critique a shortened design.
 CRITIC_PACKET_LIMIT = 512 * 1024
 # Live critiques took 90 to 210 seconds on 2026-09-30 and 2026-10-01, and both replays of a packet
-# with eleven earlier concerns ran past the five minutes this was then ("Critique" in
+# with eleven earlier concerns ran past the five minutes this was once ("Critique" in
 # local-contract.md owns the deadline). The two-minute one it shared with the assessor killed one
-# in run 74eadedd.
-CRITIC_TIMEOUT_SECONDS = 600
+# in run 74eadedd. Answering a question per verdict for six tasks took 491 seconds on 2026-10-07.
+CRITIC_TIMEOUT_SECONDS = 900
 ASSESSOR_TIMEOUT_SECONDS = 120
 # The tool Claude Code adds to a session given `--json-schema`, and the room that session
 # has to correct a reply the schema refused. Probed on 2026-09-28: a reply in shape at once
@@ -149,22 +166,25 @@ def texts(count=None, maximum=8, description=None):
     return {**shape, "description": description} if description else shape
 
 
+def empty_or_text(maximum, description):
+    """A string that is empty or says something: never blank."""
+    return {"type": "string", "maxLength": maximum, "pattern": "^$|\\S", "description": description}
+
+
 def task_critique_schema(case_ids):
-    """The one reply a task design's critique may give: a verdict for every task, keyed by its ID."""
-    rejected = sorted(set(TASK_CRITIQUE_RUBRIC["case_verdicts"]) - {"counts"})
-    # Empty, or a rule in words: never a blank string.
-    given = {"type": "string", "maxLength": 600, "pattern": "^$|\\S",
-             "description": "The rule or threshold the job states that the claim's sections do not supply, "
-                            "following rubric.criterion_given; empty when it states none."}
-    verdict = {"anyOf": [
-        strict({"verdict": exactly("counts"), "reason": text(4000), "replacement": exactly(""),
-                "criterion_given": given}),
-        strict({"verdict": {"type": "string", "enum": rejected, "maxLength": 20}, "reason": text(4000),
-                "replacement": text(4000, "A task that would test the claim instead, following "
-                                          "rubric.case_replacement."), "criterion_given": given})]}
+    """The one reply a task design's critique may give: its answers about every task first, keyed by task ID,
+    then its findings, and its grade last, so the answers come before the grade."""
+    answer = strict({"answer": {"type": "string", "enum": ["yes", "no"], "maxLength": 3}, "reason": text(2000)})
+    check = strict({**{key: answer for key, _, _ in TASK_QUESTIONS},
+                    "criterion_given": empty_or_text(600, "The decision rule or cut-off the job gives that the "
+                                                          "claim's sections do not supply, following "
+                                                          "rubric.criterion_given; empty when there is none."),
+                    "replacement": empty_or_text(4000, "Empty when every answer is no; otherwise a task that would "
+                                                       "test the claim instead, following rubric.case_replacement.")})
     return strict({
-        "supported_grade": {"type": "string", "enum": list(TASK_CRITIQUE_RUBRIC["grades"]), "maxLength": 4,
-                            "description": "The strongest grade this evidence actually supports."},
+        "task_checks": strict({case_id: check for case_id in case_ids},
+                              "For every task in evidence.tasks, keyed by its case_id, the answers to "
+                              "rubric.task_questions, given before anything else."),
         "findings": texts(len(TASK_CRITIQUE_RUBRIC["criteria"]), description=
                           "One finding per rubric criterion, in the rubric's order. Anything you noticed outside "
                           "those questions belongs in objections."),
@@ -175,9 +195,8 @@ def task_critique_schema(case_ids):
                                            "as rubric.coverage asks; empty if there is none."),
         "departures": texts(description="Where the skill's own procedure departs from the reference solution and no "
                                         "task exposes it, as rubric.departures asks; empty if there is none."),
-        "case_verdicts": strict({case_id: verdict for case_id in case_ids},
-                                "One verdict for every task in evidence.tasks, keyed by its case_id: counts with an "
-                                "empty replacement, or another key of rubric.case_verdicts with a replacement.")})
+        "supported_grade": {"type": "string", "enum": list(TASK_CRITIQUE_RUBRIC["grades"]), "maxLength": 4,
+                            "description": "The strongest grade this evidence actually supports, given your answers."}})
 
 
 def assessment_schema(packet):
@@ -283,17 +302,29 @@ TASK_CRITIC_PROMPT = (
     "Return your review in the structured output; its schema describes each field.")
 
 
+def task_verdict(case_id, check):
+    """A task's verdict from the critique's answers: the first question answered yes, or counts ("Cases each grade
+    requires" in evidence-rubric.md). The reasons recorded are those of the answers that decided it."""
+    yes = [(key, verdict) for key, verdict, _ in TASK_QUESTIONS if check[key]["answer"] == "yes"]
+    replacement = check["replacement"] if yes else ""
+    return {"case_id": case_id, "verdict": yes[0][1] if yes else "counts",
+            "reason": "; ".join(key + ": " + check[key]["reason"] for key, _ in yes) or "Every question answered no.",
+            # The schema cannot tie a replacement to a yes; a missing one is said, never invented.
+            "replacement": replacement or ("The critique described no replacement." if yes else ""),
+            "criterion_given": check["criterion_given"]}
+
+
 def validate_task_critique(value, case_ids):
-    """The critique, checked against its schema again, with "none" as no grade and its verdicts in
-    packet order. Claude Code enforced the schema while the session ran; Python does not take that
-    on trust."""
+    """The critique, checked against its schema again, with "none" as no grade and the verdicts Python derives
+    from its answers, in packet order. Claude Code enforced the schema while the session ran; Python does not
+    take that on trust."""
     try:
         validate(value, task_critique_schema(case_ids), "critique")
     except Fault:
         raise Fault("critic_response_invalid", "The independent critique must answer inside its fixed rubric.") from None
     safe_payload(value)
     return {**value, "supported_grade": None if value["supported_grade"] == "none" else value["supported_grade"],
-            "case_verdicts": [{"case_id": case_id, **value["case_verdicts"][case_id]} for case_id in case_ids]}
+            "case_verdicts": [task_verdict(case_id, value["task_checks"][case_id]) for case_id in case_ids]}
 
 
 def critique_tasks(adapter, packet):

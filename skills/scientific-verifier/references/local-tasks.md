@@ -180,6 +180,7 @@ text file), planted values, outputs with their tolerances and quotes, and the so
 results. Its rubric asks whether each expected value is right and independent of the
 skill, whether the tasks exercise the claim as a whole, whether the comparison is fair
 and exposes any departure of the skill from the reference solution, whether a stronger grade
-was passed over, and whether earlier concerns are answered. Each
-task gets one verdict: `counts`, `beyond_scope`, `leaked`, `duplicate` or `unsound`,
-defined in "Cases each grade requires" of `evidence-rubric.md`.
+was passed over, and whether earlier concerns are answered. For each task it answers one
+question per row of the verdict table in "Cases each grade requires" of
+`evidence-rubric.md`, and Python gives the task the verdict of the first row answered yes,
+or `counts`.
