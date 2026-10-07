@@ -191,6 +191,8 @@ class RecordedReplyTests(unittest.TestCase):
         command = seen["command"]
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
         self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), task_critique_schema(case_ids))
+        # The critique alone runs above the default effort ("Critique" in local-contract.md).
+        self.assertEqual((command[command.index("--effort") + 1], value["effort"]), ("xhigh", "xhigh"))
 
     def test_a_recorded_safety_refusal_is_named_and_not_a_crash(self):
         """A provider refusal is its own operational outcome, never a scientific result."""

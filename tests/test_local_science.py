@@ -408,9 +408,10 @@ class IndependentSessionTests(unittest.TestCase):
                    side_effect=self._replies({**good,"supported_grade":"none"},good,calls=calls)):
             self.assertIsNone(critique_tasks(object(),packet)["supported_grade"])
         self.assertEqual(len(calls),1)
-        # A critique gets fifteen minutes: two killed one in run 74eadedd, replays judging eleven earlier
-        # concerns ran past five, and answering a question per verdict for six tasks took eight.
-        self.assertEqual(calls[0]["timeout"],900)
+        # A critique gets twenty minutes at effort xhigh: two killed one in run 74eadedd, replays judging eleven
+        # earlier concerns ran past five, and answering a question per verdict for six tasks took eight at the
+        # default effort ("Critique" in local-contract.md).
+        self.assertEqual((calls[0]["timeout"],calls[0]["effort"]),(1200,"xhigh"))
         # The schema asks for exactly the packet's tasks, and for the answers before the grade.
         self.assertEqual(calls[0]["schema"]["properties"]["task_checks"]["required"],["c"])
         self.assertEqual(list(calls[0]["schema"]["properties"])[::6],["task_checks","supported_grade"])

@@ -132,8 +132,11 @@ CRITIC_PACKET_LIMIT = 512 * 1024
 # Live critiques took 90 to 210 seconds on 2026-09-30 and 2026-10-01, and both replays of a packet
 # with eleven earlier concerns ran past the five minutes this was once ("Critique" in
 # local-contract.md owns the deadline). The two-minute one it shared with the assessor killed one
-# in run 74eadedd. Answering a question per verdict for six tasks took 491 seconds on 2026-10-07.
-CRITIC_TIMEOUT_SECONDS = 900
+# in run 74eadedd. Answering a question per verdict for six tasks took 491 seconds on 2026-10-07, at the
+# default effort; xhigh thinks longer.
+CRITIC_TIMEOUT_SECONDS = 1200
+# The critique's effort ("Critique" in local-contract.md); every other session keeps Claude Code's default.
+CRITIC_EFFORT = "xhigh"
 ASSESSOR_TIMEOUT_SECONDS = 120
 # The tool Claude Code adds to a session given `--json-schema`, and the room that session
 # has to correct a reply the schema refused. Probed on 2026-09-28: a reply in shape at once
@@ -243,7 +246,8 @@ def unshaped(raw):
     return False
 
 
-def isolated_answer(adapter,packet,*,role,system_prompt,schema,limit=64000,timeout=ASSESSOR_TIMEOUT_SECONDS):
+def isolated_answer(adapter,packet,*,role,system_prompt,schema,limit=64000,timeout=ASSESSOR_TIMEOUT_SECONDS,
+                    effort=None):
     """One fresh session over an immutable packet, answering in `schema`; returns its parsed events.
 
     Claude Code hands a reply that breaks the schema back to the session with the reason, so
@@ -259,7 +263,7 @@ def isolated_answer(adapter,packet,*,role,system_prompt,schema,limit=64000,timeo
         for flag,value in (("--tools",""),("--allowedTools",""),("--max-turns",str(REPLY_TURNS)),
                            ("--system-prompt",system_prompt)):
             command[command.index(flag)+1]=value
-        command+=["--json-schema",canonical(schema).decode()]
+        command+=["--json-schema",canonical(schema).decode()]+(["--effort",effort] if effort else [])
         code,raw,_=adapter.run(command,role=role,cwd=directory,env=isolated_environment(Path(temporary)/"config",adapter.auth),
                                prompt=canonical(packet).decode(),timeout=timeout,max_bytes=262144)
         if code:
@@ -332,8 +336,8 @@ def critique_tasks(adapter, packet):
     case_ids = [case["case_id"] for case in packet["evidence"]["tasks"]]
     response, session = isolated_answer(adapter, packet, role="critic", system_prompt=TASK_CRITIC_PROMPT,
                                         schema=task_critique_schema(case_ids), limit=CRITIC_PACKET_LIMIT,
-                                        timeout=CRITIC_TIMEOUT_SECONDS)
+                                        timeout=CRITIC_TIMEOUT_SECONDS, effort=CRITIC_EFFORT)
     return {**validate_task_critique(response["structured_output"], case_ids),
-            "session_id": session, "observed_model_ids": response["observed_model_ids"],
+            "session_id": session, "observed_model_ids": response["observed_model_ids"], "effort": CRITIC_EFFORT,
             "packet_ref": digest(canonical(packet)), "rubric_ref": TASK_CRITIQUE_REF, "usage": response["usage"],
             "total_cost_usd": response["total_cost_usd"], "independence": INDEPENDENCE, "ai_judgment": True}

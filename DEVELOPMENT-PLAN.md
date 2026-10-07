@@ -2530,11 +2530,22 @@ then "yes" to a replay check.
   - That last review is the new recording; its first reply was accepted.
 - **Verification.** Suite 391 → 392 tests, 390 passing and 2 skipped. The verification bootstrap is 195,877 of 200,000 bytes; every pinned local block is under 40,960.
 
+**4. The critique's effort.** The operator asked what effort the verifier's sessions use. None was
+set: the planner, the subjects and the critique all ran at Claude Code's default for `claude-opus-5`,
+`high` per Anthropic's effort documentation; the CLI accepts `--effort` from `low` to `max`. The
+operator: "just change the reviewer setting to xhigh, no test". The critique now runs at `xhigh`,
+recorded as `effort` on each critique, with twenty minutes instead of fifteen, since it thinks
+longer ("Critique" in `local-contract.md`). The planner and the subjects keep the default: a subject
+that thinks harder could quietly correct a skill's mistake. No replay checked it; the next run does.
+Suite 392 tests, 390 passing and 2 skipped.
+
 ### Decisions taken 2026-10-07
 
 - **Operator:** check problem 1 by replay before building; then fix the three issues it showed and
   build. Done (sections 2 and 3).
 - **Operator:** tighten the wrong-analysis question after the re-check. Done (section 3).
+- **Operator:** run the critique at effort `xhigh`, untested until the next run. Done (section 4).
+  The deadline rising to twenty minutes was proposed here and built with it.
 - **Proposed here and accepted with the build:** g3, whose job says the Control lane sits over a
   stain mark, counts. Its data show the high background anyway, and the job never says what it does
   to the answer; all three reviews under the questions judged so.
