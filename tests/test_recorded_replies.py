@@ -33,7 +33,7 @@ RECORDED = ROOT / "tests/recorded"
 # recording maps to the key its refused reply added. The question critique and the claim-only answer
 # were given schemas retired with question tests on 2026-10-05; they stay as more live evidence of
 # Claude Code's correction loop, which every structured session relies on.
-STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": None,
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "StructuredOutput",
                          "critic-structured.jsonl": "StructuredOutput", "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
@@ -152,9 +152,9 @@ class RecordedReplyTests(unittest.TestCase):
                                 and citation["quote"] in item["quote"] for item in sent["evidence"]))
 
     def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
-        """Run 2bef9e0d's claim 4 final packet, all six tasks counted live, judged by the pinned model under the
-        live rubric: its answers drop g5, whose job states the averaging order the sections supply, and g2 and g4,
-        which an analysis skipping normalization passes, and name the cut-offs the jobs give. First reply accepted."""
+        """Run cfe9e57a's claim 1 final packet, judged at xhigh by the pinned model under the live rubric. Its three
+        two-step tasks define their outputs as a phosphorylated fraction, which the test AI computed without the
+        skill; its answers drop them as leaked. Its first reply was wrapped in a stray key, refused and resent."""
         raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
         self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
@@ -164,14 +164,11 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertEqual(len(value["findings"]), len(TASK_CRITIQUE_RUBRIC["criteria"]))
         # Python's verdicts from its answers ("Cases each grade requires" in evidence-rubric.md).
         self.assertEqual([(item["case_id"], item["verdict"]) for item in value["case_verdicts"]],
-                         list(zip(case_ids, ["counts", "unsound", "counts", "unsound", "leaked", "counts"])))
-        g2 = value["task_checks"]["g2_treatment_responsive_control"]["wrong_passes"]
-        self.assertEqual(g2["answer"], "yes")
-        self.assertIn("no normalization", g2["reason"])
-        # The cut-offs the jobs give, and no unit or fact about the data, are named as rules given.
-        self.assertEqual([bool(item["criterion_given"]) for item in value["case_verdicts"]],
-                         [True, True, False, False, True, True])
-        self.assertEqual(value["departures"], [])
+                         list(zip(case_ids, ["counts", "leaked", "leaked", "leaked"])))
+        # The task that passed live at 1.4, where the skill's own formula gives 2.45.
+        unequal = value["task_checks"]["wbnorm-twostep-unequal"]["job_decides"]
+        self.assertEqual(unequal["answer"], "yes")
+        self.assertIn("phosphorylated fraction", unequal["reason"])
 
     def test_task_critique_end_to_end_over_a_replayed_recording(self):
         """critique_tasks with only the child process replaced: the recorded packet is exactly what it sends,
@@ -185,7 +182,7 @@ class RecordedReplyTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
             value = critique_tasks(ClaudeCode(auth="subscription", process=replay), sent)
-        self.assertEqual((value["supported_grade"], value["rubric_ref"]), ("B", TASK_CRITIQUE_REF))
+        self.assertEqual((value["supported_grade"], value["rubric_ref"], value["effort"]), ("B", TASK_CRITIQUE_REF, "xhigh"))
         self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
         self.assertEqual((json.loads(seen["prompt"]), seen["timeout"]), (sent, CRITIC_TIMEOUT_SECONDS))
         command = seen["command"]
@@ -468,10 +465,14 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
         """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
         from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
-        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v5")
-        # One question per row of the verdict table, which Python turns into the verdict.
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v6")
+        # Fixed questions, each tied to a row of the verdict table, which Python turns into the verdict.
         questions = TASK_CRITIQUE_RUBRIC["task_questions"]
         self.assertEqual(list(questions), [key for key, _, _ in TASK_QUESTIONS])
+        # A job that says how to compute an output lets the test AI skip the skill (run cfe9e57a).
+        self.assertIn("phosphorylated fraction", questions["job_decides"])
+        self.assertIn("Naming what to report", questions["job_decides"])
+        self.assertIn("settles how to compute even one output, the answer is yes", questions["job_decides"])
         # A rule the job gives, or where the planted problem is, gives the task away; a key the skill's own
         # procedure misses where it departs from the reference is not wrong (local-tasks.md).
         self.assertIn("rule, threshold or order of steps", questions["gives_away"])

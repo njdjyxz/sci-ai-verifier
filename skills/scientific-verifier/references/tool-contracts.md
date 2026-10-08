@@ -653,7 +653,7 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   `departures` (each at most eight strings, empty when there are none), and, first,
   `task_checks`: one entry for every task ID in the packet and no other, each holding a yes
   or no `answer` with its `reason` for every question of the verdict table
-  (`outside_claim`, `gives_away`, `repeats`, `key_wrong`, `wrong_passes`), a `replacement`
+  (`outside_claim`, `gives_away`, `job_decides`, `repeats`, `key_wrong`, `wrong_passes`), a `replacement`
   that is empty when every answer is no and otherwise describes a task that would test the
   claim instead, and `criterion_given`, empty unless the job states a rule the claim's
   sections do not supply, which it then names (`local-tasks.md`). Python derives each

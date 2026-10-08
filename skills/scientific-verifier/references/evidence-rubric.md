@@ -56,13 +56,13 @@ This section owns the number and kind of cases each execution grade needs. Other
 
 *Right.* A case's expected value and tolerance must be right and fair: the generator plants what the output expects, the quote supports it, and a correct analysis passes. Where the skill's own procedure departs from that analysis, missing the key is the skill's failure, not unfairness (`local-tasks.md`).
 
-**Case verdicts.** Every case gets exactly one verdict. The independent critique answers one question per row below `counts`, yes or no with the fact it rests on, and Python gives a case the verdict of the first row answered yes, or `counts` when none is:
+**Case verdicts.** Every case gets exactly one verdict. The independent critique answers fixed questions, each tied to a row below `counts`, yes or no with the fact it rests on, and Python gives a case the verdict of the first question answered yes, or `counts` when none is:
 
 | Verdict | Meaning | Counts? |
 |---|---|---|
 | `counts` | Tests what the claim states, as a user of its sections would meet it, with a right expected value and a fair tolerance, without giving the answer away | Yes |
 | `beyond_scope` | Asks for work or a conclusion the claim's sections never give, so a subject correctly following the skill could answer otherwise | No |
-| `leaked` | The job, a file or column name or the output fields give the answer away or say which problem was planted or where it is, or the job gives a rule, threshold or order of steps the claim's sections supply | No |
+| `leaked` | The job, a file or column name or the output fields give the answer away or say which problem was planted or where it is, or the job gives a rule, threshold or order of steps the claim's sections supply, or says how to compute an output so it can be answered without them | No |
 | `duplicate` | Turns on the same steps and the same kind of input as an earlier case, so a subject that does one does the other and it adds no independent evidence. The reason names that case, which keeps its own verdict | No |
 | `unsound` | An expected value or tolerance is wrong or unfair: the generator does not plant it as stated, its quote does not support it, a correct analysis could miss it, or any plausible wrong analysis passes every output | No |
 

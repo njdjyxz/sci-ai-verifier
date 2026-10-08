@@ -25,6 +25,7 @@ NOT_COUNTED = {"leaked": "it gives away the answer or the rule", "duplicate": "i
                "unsound": "its expected value or tolerance is not right"}
 # The verdict table's questions, as the page names them ("Cases each grade requires" in evidence-rubric.md).
 QUESTIONS = {"outside_claim": "Outside the claim?", "gives_away": "Gives the answer or the rule away?",
+             "job_decides": "Says how to compute it, so the skill can be skipped?",
              "repeats": "Repeats an earlier task?", "key_wrong": "Key or tolerance wrong?",
              "wrong_passes": "Would a wrong method pass?"}
 OUTCOMES = {"local_plan_fixed": "plan fixed", "local_grade_revision_required": "sent back to revise",

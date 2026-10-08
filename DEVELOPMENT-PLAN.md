@@ -48,6 +48,7 @@ the table below before `f84c131c` used 0.7.0 or earlier, and tested claims with 
 | `1d1c3b6e` (2026-10-01) | tooluniverse-dose-response | 1 at A, 2 at B, 1 at D with no trials; 51 of 51 counted trials passed, none by the AI reader; 0 invalid, 0 faults |
 | `90c60cbe` (2026-10-02) | tooluniverse-dose-response | 4 at A, one of them `fail` on a single case; 57 of 60 counted trials passed, 1 by the AI reader; 0 invalid, 0 faults |
 | `f84c131c` (2026-10-06) | tooluniverse-dose-response | Task tests, 0.8.0: 4 at A, all `pass`; 48 of 48 trials passed, 0 invalid, 0 faults |
+| `cfe9e57a` (2026-10-07) | western-blot-quantification | Question-based verdicts, critique at `xhigh`: 3 at A (`pass`, 27 of 27 trials), 2 at D by the fallback after their critiques passed the output limit; the two-step flaw passed again |
 | `2bef9e0d` (2026-10-06) | western-blot-quantification | Task tests with the coverage return: 4 at A, all `pass`; 57 of 57 trials passed, 0 invalid, 0 faults; 4 tasks passed only on tolerance, hiding a flaw in the skill |
 
 Four more sar-analysis runs on 2026-09-23 (`28d19f8a`, `d87a6d5c`, `0a243b7e`, `74eadedd`) are
@@ -2461,7 +2462,7 @@ With the operator's go-ahead, after a session restart and a Docker and usage che
    appears where its answers match the reference. Each run costs $25–35 and most of a 5-hour
    window.
 
-## Claude: 2026-10-07 (the critique answers questions and Python gives each task's verdict)
+## Claude: 2026-10-07 (the critique answers questions and Python gives each task's verdict; run cfe9e57a)
 
 ### Current stage and status
 
@@ -2539,11 +2540,49 @@ longer ("Critique" in `local-contract.md`). The planner and the subjects keep th
 that thinks harder could quietly correct a skill's mistake. No replay checked it; the next run does.
 Suite 392 tests, 390 passing and 2 skipped.
 
+**5. Run `cfe9e57a`, and two fixes.** The operator: "clean and run the verifier on western blot
+skill", then "yes, do both" to the fixes below.
+- **Cleanup.** Run `2bef9e0d`'s files (4,714) moved into session `0f5df502`'s scratchpad
+  (`cleaned-2bef9e0d/`); nothing deleted.
+- **Result.** Five claims; 2,118 of 2,558 words (83%) in claims, against 75% in `2bef9e0d`, since
+  the image steps (S9, S10) became a claim tested on intensity profiles. 145.6 of 180 minutes and
+  $35.2: planner $20.79, critiques $8.55, 30 trials $5.62, assessor $0.24.
+  - Claims 1, 2 and 5 settled at A and passed, 9 of 9 trials each. The critique dropped tasks in
+    claims 1 to 4. Two of claim 5's tasks passed on tolerance only.
+  - Claims 3 and 4 ran no task. Each redesign's critique passed the 256 KiB output limit at `xhigh`
+    (`claude_output_limit` after 638 and 664 s), so no plan was fixed, and both ended at D,
+    inconclusive, by the fallback documentary assessment. Claim 4's first critique had listed two
+    departures, the saturation check and including all repetitions against a documented
+    exclusion, and held its grade at B.
+  - The two-step flaw passed again. The planner did build a task with unequal loading, but its job
+    asked for "the phosphorylated fraction of the SMAD2 that is present". The test AI computed that,
+    1.4, where the skill's own formula gives 2.45, and the critique counted the task.
+- **Fixes.**
+  - The critique may write 2 MiB (`CRITIC_OUTPUT_BYTES`); the assessor keeps 256 KiB ("Critique" in
+    `local-contract.md`).
+  - Rubric v6 adds the question `job_decides` (`leaked` if yes): does the job say how to compute an
+    output, so the test AI could answer without the claim's sections? Naming what to report is not
+    saying how; a job settling even one output answers yes. `local-tasks.md` tells the planner to ask
+    for outputs in the user's terms, and `evidence-rubric.md`'s `leaked` row covers it.
+  - Considered and not built: a no-skill control trial per task, which Python would score. Left for
+    after the next run.
+- **The re-recordings.** Two sessions on `cfe9e57a` claim 1's final packet at `xhigh`, $3.05:
+  - The first answered `job_decides` no for every task: the wording "settles that one output", it
+    wrote, but another output still needed the skill. The question now says that a job settling
+    even one output answers yes.
+  - The second dropped all three two-step tasks as leaked, so claim 1 would need a redesign in which
+    the skill decides the computation. 579 s; its 284 KB stream would have passed the old limit. Its
+    first reply was wrapped in a stray `StructuredOutput` key, refused and resent. It is the new
+    recording.
+- **Verification.** Suite 392 tests, 390 passing and 2 skipped.
+
 ### Decisions taken 2026-10-07
 
 - **Operator:** check problem 1 by replay before building; then fix the three issues it showed and
   build. Done (sections 2 and 3).
 - **Operator:** tighten the wrong-analysis question after the re-check. Done (section 3).
+- **Operator:** raise the critique's output limit and add the question on jobs that say how to
+  compute an output, tightened after its first re-check. Done (section 5).
 - **Operator:** run the critique at effort `xhigh`, untested until the next run. Done (section 4).
   The deadline rising to twenty minutes was proposed here and built with it.
 - **Proposed here and accepted with the build:** g3, whose job says the Control lane sits over a
@@ -2563,8 +2602,9 @@ None. `src/` changed, so restart the session before the next run, and check Dock
 
 ### Suggested next move
 
-Re-run western-blot-quantification and tooluniverse-dose-response on the 2026-10-06 rules and today's
-questions. Expect more tasks to drop, so more replacement rounds and longer runs.
+Re-run western-blot-quantification to see claims 3 and 4 reach a fixed plan and claim 1 meet a
+two-step task the skill decides, then tooluniverse-dose-response. Do not move to a longer skill yet:
+`cfe9e57a` used 146 of 180 minutes for five claims, with each critique taking 8 to 11 minutes.
 
 ### Recommended next action
 

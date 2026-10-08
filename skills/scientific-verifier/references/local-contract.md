@@ -207,8 +207,10 @@ The critique's reply has a fixed shape that Claude Code enforces, as the reply-s
 paragraph under `select_local_candidate` in `tool-contracts.md` describes: a reply outside
 it goes back to the same session to be corrected, and a reply that judges the design is
 never re-rolled, whatever grade it gives. The critique session runs at effort `xhigh`, a step
-above Claude Code's default `high` for its model, and has twenty minutes; the documentary assessor
-runs at the default and has two. The operator set `xhigh` on 2026-10-07 without a replay, so the
+above Claude Code's default `high` for its model, has twenty minutes, and may write 2 MiB; the
+documentary assessor runs at the default and has two minutes and 256 KiB. Run `cfe9e57a`'s
+critiques of two redesigned claims passed 256 KiB at `xhigh` and were cut off, which left both
+claims without tests. The operator set `xhigh` on 2026-10-07 without a replay, so the
 next run is its first test. Live critiques took 90 to 210 seconds on 2026-09-30 and
 2026-10-01, and a live task critique 107 seconds on 2026-10-05; answering a question per
 verdict for six tasks took 491 seconds on 2026-10-07. The two-minute deadline critiques

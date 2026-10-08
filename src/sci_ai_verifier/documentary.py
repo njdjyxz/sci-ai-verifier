@@ -32,6 +32,9 @@ RUBRIC_REF=digest(canonical(RUBRIC))
 # Python gives the verdict: choosing verdicts itself, the critique counted all 43 tasks of runs f84c131c and
 # 2bef9e0d while its own objections named six flaws the table excludes. Asked whether a wrong analysis passes,
 # one re-check wrote that an un-normalized reading also passes and answered no, as the task was not built to catch it.
+# v6 asks whether the job says how to compute an output: run cfe9e57a's two-step task defined its output as "the
+# phosphorylated fraction", and the test AI computed that, 1.4, where the skill's own formula gives 2.45. Its first
+# re-check wrote that the wording "settles that one output" and answered no, as another output still needed the skill.
 TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table's order
     ("outside_claim", "beyond_scope",
      "Does the task ask for work or a conclusion the claim's sections never give, so that a subject correctly "
@@ -40,6 +43,12 @@ TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table'
      "Does the job, a file name, a column name or an output field give the answer away, say which problem was "
      "planted or where it is (a lane, a row, a replicate) even without saying how to correct it, or state a rule, "
      "threshold or order of steps the claim's sections supply?"),
+    ("job_decides", "leaked",
+     "Does the job say how to compute an output, by a formula or by a definition that settles the computation, "
+     "such as 'the phosphorylated fraction of the total', so that the test AI could work it out from the job alone "
+     "instead of following the claim's sections? Naming what to report, such as a fold change, a mean or a standard "
+     "error, is not saying how. If the job's wording settles how to compute even one output, the answer is yes, "
+     "whatever the other outputs need."),
     ("repeats", "duplicate",
      "Does the task turn on the same steps and the same kind of input as an earlier task in this design, so that a "
      "subject that does one does the other? Name that task; the earlier task keeps its own answers."),
@@ -52,7 +61,7 @@ TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table'
      "Would any plausible wrong analysis, such as an omitted step (a normalization or a subtraction skipped), a wrong "
      "unit, an inverted ratio or the wrong order of steps, pass every output of the task within its tolerance, even "
      "one the task was not built to catch? Name it. If you can name one that passes, the answer is yes."))
-TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v5","criteria":[
+TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v6","criteria":[
         "Whether each task's expected values are right and independent of the skill: the generator implements "
         "evidence.generator.model_quote and plants what each output expects, each quote supports its output, and "
         "none rests on the skill's own text",
@@ -135,6 +144,10 @@ CRITIC_PACKET_LIMIT = 512 * 1024
 # in run 74eadedd. Answering a question per verdict for six tasks took 491 seconds on 2026-10-07, at the
 # default effort; xhigh thinks longer.
 CRITIC_TIMEOUT_SECONDS = 1200
+# Run cfe9e57a's critiques of two redesigned claims passed the 256 KiB the assessor keeps, at xhigh, and were cut
+# off as claude_output_limit, which left both claims without tests ("Critique" in local-contract.md).
+CRITIC_OUTPUT_BYTES = 2 * 1024 * 1024
+ASSESSOR_OUTPUT_BYTES = 256 * 1024
 # The critique's effort ("Critique" in local-contract.md); every other session keeps Claude Code's default.
 CRITIC_EFFORT = "xhigh"
 ASSESSOR_TIMEOUT_SECONDS = 120
@@ -247,7 +260,7 @@ def unshaped(raw):
 
 
 def isolated_answer(adapter,packet,*,role,system_prompt,schema,limit=64000,timeout=ASSESSOR_TIMEOUT_SECONDS,
-                    effort=None):
+                    effort=None,max_bytes=ASSESSOR_OUTPUT_BYTES):
     """One fresh session over an immutable packet, answering in `schema`; returns its parsed events.
 
     Claude Code hands a reply that breaks the schema back to the session with the reason, so
@@ -265,7 +278,7 @@ def isolated_answer(adapter,packet,*,role,system_prompt,schema,limit=64000,timeo
             command[command.index(flag)+1]=value
         command+=["--json-schema",canonical(schema).decode()]+(["--effort",effort] if effort else [])
         code,raw,_=adapter.run(command,role=role,cwd=directory,env=isolated_environment(Path(temporary)/"config",adapter.auth),
-                               prompt=canonical(packet).decode(),timeout=timeout,max_bytes=262144)
+                               prompt=canonical(packet).decode(),timeout=timeout,max_bytes=max_bytes)
         if code:
             if unshaped(raw):
                 raise Fault(role+"_response_invalid","The independent "+role+" ended without a reply in its schema.")
@@ -336,7 +349,8 @@ def critique_tasks(adapter, packet):
     case_ids = [case["case_id"] for case in packet["evidence"]["tasks"]]
     response, session = isolated_answer(adapter, packet, role="critic", system_prompt=TASK_CRITIC_PROMPT,
                                         schema=task_critique_schema(case_ids), limit=CRITIC_PACKET_LIMIT,
-                                        timeout=CRITIC_TIMEOUT_SECONDS, effort=CRITIC_EFFORT)
+                                        timeout=CRITIC_TIMEOUT_SECONDS, effort=CRITIC_EFFORT,
+                                        max_bytes=CRITIC_OUTPUT_BYTES)
     return {**validate_task_critique(response["structured_output"], case_ids),
             "session_id": session, "observed_model_ids": response["observed_model_ids"], "effort": CRITIC_EFFORT,
             "packet_ref": digest(canonical(packet)), "rubric_ref": TASK_CRITIQUE_REF, "usage": response["usage"],

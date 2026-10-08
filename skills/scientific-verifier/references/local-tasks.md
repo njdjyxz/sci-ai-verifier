@@ -53,7 +53,12 @@ a given rule, and the critique does not count it (`leaked`). Where a field needs
 sections do not give, such as how far a signal may stray from proportional, the job may
 state one; the critique names it in that task's `criterion_given`, and the report shows it.
 Run `2bef9e0d`'s tasks on spotting problems gave the test AI every deciding threshold, and
-one told it the order of averaging the skill prescribes.
+one told it the order of averaging the skill prescribes. Ask for each output in the user's
+terms and let the claim's sections decide how to compute it: a job that says how, by a
+formula or a definition such as "the phosphorylated fraction of the total", lets the test AI
+answer without the skill (`leaked`). Naming what to report, such as a fold change or a
+standard error, is not saying how. Run `cfe9e57a`'s two-step task defined its output so, and
+the test AI computed the fraction, 1.4, where the skill's own formula gives 2.45.
 
 **Each task names the claim's sections it uses**, in `sections`. Python refuses a design
 whose tasks leave one of the claim's sections unused by every task. A design holds one to
@@ -180,7 +185,7 @@ text file), planted values, outputs with their tolerances and quotes, and the so
 results. Its rubric asks whether each expected value is right and independent of the
 skill, whether the tasks exercise the claim as a whole, whether the comparison is fair
 and exposes any departure of the skill from the reference solution, whether a stronger grade
-was passed over, and whether earlier concerns are answered. For each task it answers one
-question per row of the verdict table in "Cases each grade requires" of
-`evidence-rubric.md`, and Python gives the task the verdict of the first row answered yes,
-or `counts`.
+was passed over, and whether earlier concerns are answered. For each task it answers fixed
+questions, each tied to a row of the verdict table in "Cases each grade requires" of
+`evidence-rubric.md`, and Python gives the task the verdict of the first question answered
+yes, or `counts`.

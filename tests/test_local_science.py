@@ -412,6 +412,8 @@ class IndependentSessionTests(unittest.TestCase):
         # earlier concerns ran past five, and answering a question per verdict for six tasks took eight at the
         # default effort ("Critique" in local-contract.md).
         self.assertEqual((calls[0]["timeout"],calls[0]["effort"]),(1200,"xhigh"))
+        # Run cfe9e57a's critiques passed 256 KiB at xhigh and were cut off; the assessor keeps that limit.
+        self.assertEqual(calls[0]["max_bytes"],2*1024*1024)
         # The schema asks for exactly the packet's tasks, and for the answers before the grade.
         self.assertEqual(calls[0]["schema"]["properties"]["task_checks"]["required"],["c"])
         self.assertEqual(list(calls[0]["schema"]["properties"])[::6],["task_checks","supported_grade"])
