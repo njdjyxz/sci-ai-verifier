@@ -182,14 +182,14 @@ class RecordedReplyTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
             value = critique_tasks(ClaudeCode(auth="subscription", process=replay), sent)
-        self.assertEqual((value["supported_grade"], value["rubric_ref"], value["effort"]), ("B", TASK_CRITIQUE_REF, "xhigh"))
+        self.assertEqual((value["supported_grade"], value["rubric_ref"], value["effort"]), ("B", TASK_CRITIQUE_REF, "high"))
         self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
         self.assertEqual((json.loads(seen["prompt"]), seen["timeout"]), (sent, CRITIC_TIMEOUT_SECONDS))
         command = seen["command"]
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
         self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), task_critique_schema(case_ids))
-        # The critique alone runs above the default effort ("Critique" in local-contract.md).
-        self.assertEqual((command[command.index("--effort") + 1], value["effort"]), ("xhigh", "xhigh"))
+        # The critique's effort is passed explicitly ("Critique" in local-contract.md).
+        self.assertEqual((command[command.index("--effort") + 1], value["effort"]), ("high", "high"))
 
     def test_a_recorded_safety_refusal_is_named_and_not_a_crash(self):
         """A provider refusal is its own operational outcome, never a scientific result."""

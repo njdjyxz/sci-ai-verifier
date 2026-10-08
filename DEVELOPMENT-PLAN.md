@@ -2614,3 +2614,43 @@ With the operator's go-ahead, after a session restart and a Docker and usage che
    claim 1 met a task with unequal loading or settled below A, and the run's time and cost.
 3. Then run tooluniverse-dose-response and check that its clean claims keep their tasks. Each run
    costs $25–35 and most of a 5-hour window.
+
+## Claude: 2026-10-08 (run 50104eac stopped on the session limit; the critique back at high effort)
+
+### Current stage and status
+
+Version 0.8.0 on `whole-skill-tests`, the operator's to merge; the 2026-10-07 entry's state stands.
+The first run on a longer skill, neurokit2, stopped on the subscription's session limit, and the
+critique runs at effort `high` again.
+
+### What has been done
+
+This session, 2026-10-08:
+- **Run `50104eac`, neurokit2.** The operator: "Check my usage and Docker, then run the verifier on
+  neurokit2". The window was at 20%, Docker up, and the session's server postdated `4877b54`. The
+  skill's `uv pip install "neurokit2==0.2.13"` was read as a declared package. After 2 h 22 min, with
+  five claims (three with results, one stopped operationally, one still in design) and 40 trials,
+  the planner stopped on HTTP 429, "You've hit your session limit". Neither the run nor its claims
+  are a finding about the skill.
+- **The critique's effort back to `high`.** The operator: "change the reviewer's effort back to
+  "high", clean the failed previous run due to usage limit and then run the verifier on neurokit2".
+  `CRITIC_EFFORT` is `high`, still passed explicitly; the twenty-minute deadline and the 2 MiB
+  output limit stay ("Critique" in `local-contract.md`).
+- **Cleanup.** Run `50104eac`'s run, attempt, subject runs and 8 candidates (7,658 files) moved into
+  session `60cf88bc`'s scratchpad (`cleaned-50104eac/`); nothing deleted. Run `cfe9e57a` stays.
+- **Verification.** Suite 392 tests, 390 passing and 2 skipped.
+
+### Urgent next steps, if any
+
+The session's `serve-local` loaded the critique module with `xhigh` during `50104eac`, so restart
+the session before the next run.
+
+### Suggested next move
+
+Run neurokit2 again with the window near empty: at about an hour per two claims it needs most of
+a 5-hour window and may reach the 180-minute cap.
+
+### Recommended next action
+
+After a session restart and a usage and Docker check, run `verify_skill` on neurokit2. It is finished
+when the report exists, or when the run stops on its time cap with the claims it reached.

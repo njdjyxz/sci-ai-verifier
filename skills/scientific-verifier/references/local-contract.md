@@ -206,11 +206,12 @@ to the documentary path. An unavailable critique is an operational limitation.
 The critique's reply has a fixed shape that Claude Code enforces, as the reply-shape
 paragraph under `select_local_candidate` in `tool-contracts.md` describes: a reply outside
 it goes back to the same session to be corrected, and a reply that judges the design is
-never re-rolled, whatever grade it gives. The critique session runs at effort `xhigh`, a step
-above Claude Code's default `high` for its model, has twenty minutes, and may write 2 MiB; the
+never re-rolled, whatever grade it gives. The critique session runs at effort `high`, Claude
+Code's default for its model, passed explicitly, has twenty minutes, and may write 2 MiB; the
 documentary assessor runs at the default and has two minutes and 256 KiB. Run `cfe9e57a`'s
 critiques of two redesigned claims passed 256 KiB at `xhigh` and were cut off, which left both
-claims without tests. The operator set `xhigh` on 2026-10-07 without a replay, so the
+claims without tests. It ran at `xhigh` from 2026-10-07 until the operator set `high` again on
+2026-10-08, after run `50104eac` stopped on the subscription's session limit. The operator set `xhigh` on 2026-10-07 without a replay, so the
 next run is its first test. Live critiques took 90 to 210 seconds on 2026-09-30 and
 2026-10-01, and a live task critique 107 seconds on 2026-10-05; answering a question per
 verdict for six tasks took 491 seconds on 2026-10-07. The two-minute deadline critiques

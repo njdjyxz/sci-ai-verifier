@@ -148,8 +148,9 @@ CRITIC_TIMEOUT_SECONDS = 1200
 # off as claude_output_limit, which left both claims without tests ("Critique" in local-contract.md).
 CRITIC_OUTPUT_BYTES = 2 * 1024 * 1024
 ASSESSOR_OUTPUT_BYTES = 256 * 1024
-# The critique's effort ("Critique" in local-contract.md); every other session keeps Claude Code's default.
-CRITIC_EFFORT = "xhigh"
+# The critique's effort ("Critique" in local-contract.md), passed explicitly; every other session keeps Claude
+# Code's default, which is also high. It was xhigh from 2026-10-07 to 2026-10-08.
+CRITIC_EFFORT = "high"
 ASSESSOR_TIMEOUT_SECONDS = 120
 # The tool Claude Code adds to a session given `--json-schema`, and the room that session
 # has to correct a reply the schema refused. Probed on 2026-09-28: a reply in shape at once
