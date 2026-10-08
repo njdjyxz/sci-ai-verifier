@@ -65,8 +65,9 @@ again, which took about 30 seconds for scikit-survival, and removes its image,
 left behind once it is a day old.
 
 [`images/rdkit/`](images/rdkit/Dockerfile) is one such image, for skills that use RDKit
-and pandas, such as `examples/sar-analysis`, and for the task generators and reference
-solutions every run executes, which can use SciPy to fit models. It holds the pinned
+and pandas, such as `examples/sar-analysis`, and for the task generators every run
+executes, and the reference solutions of a skill with no built environment, which can use
+SciPy to fit models ("The reference solution" in `local-tasks.md`). It holds the pinned
 `python:3.12-slim` base, exact Debian libraries for RDKit's drawing module and hash-pinned
 wheels. Build it and read its ID:
 

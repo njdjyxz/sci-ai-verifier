@@ -642,7 +642,8 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
         record.update(status="source_unavailable", reason=getattr(error, "code", "source_unreadable"))
         return finish(record, log)
     record["snapshot_digest"] = taken["digest"]
-    # What a task design's generator and solver can use ("The reference solution" in local-tasks.md).
+    # What a task design's generator can use, and its solver when nothing is built ("The reference solution"
+    # in local-tasks.md).
     record["operator_manifest"] = manifest(docker, operator, [], settings, required=False, log=log)
     files = [(entry["path"], store.get(entry["digest"]).decode("utf-8"))
              for entry in taken["files"] if entry["encoding"] == "utf-8"]
@@ -718,8 +719,13 @@ def planner_block(record):
                     if imported else "")
                  + (f"; added for the commands it runs: {', '.join(n for n in commanded if SAFE_NAME.fullmatch(n))}"
                     if commanded else "") + ".")
-    lines.append("Task generators, reference solutions and scoring run in the operator's image, without the skill's "
-                 "packages.")
+    # "The reference solution" in local-tasks.md: run 55d345a3's solver imitated a library it did not have.
+    if status == "built":
+        lines.append("Task generators and scoring run in the operator's image, without the skill's packages. Reference "
+                     "solutions run in the subject trials' image above, so when a job asks what a library the skill "
+                     "uses does, the solver calls that library rather than imitating it.")
+    else:
+        lines.append("Task generators, reference solutions and scoring run in the operator's image too.")
     report = record.get("operator_manifest") or {}
     packages = sorted({str(name).lower() + " " + str(version) for name, version in report.get("distributions") or []
                        if SAFE_NAME.fullmatch(str(name).lower()) and SAFE_VERSION.fullmatch(str(version))})
@@ -751,8 +757,8 @@ def report_line(summary):
                 f"{summary.get('lock_digest')}), for {summary['requirements']} requirements, "
                 f"{summary.get('from_imports', 0)} of them added from the skill's imports and "
                 f"{summary.get('from_commands', 0)} for the commands it runs, and "
-                f"{summary['rejected']} rejected; the image was removed after the run. Task generators, reference "
-                f"solutions and scoring used the operator's image {summary['operator_image']}.")
+                f"{summary['rejected']} rejected; the image was removed after the run. Reference solutions ran there "
+                f"too; task generators and scoring used the operator's image {summary['operator_image']}.")
     else:
         text = (f"Environment: {status}. Subject trials ran in the operator's image {summary['operator_image']}. "
                 f"The skill declared {summary['requirements']} installable requirements and "

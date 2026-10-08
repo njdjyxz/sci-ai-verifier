@@ -438,8 +438,8 @@ class ClaudeCode:
         from .local_config import load_configuration, configuration_digest
         self.settings = settings if settings is not None else load_configuration()
         # The image the skill's declared packages were installed into ("Skill environment",
-        # local-contract.md). Only subject trials use it, so it is folded into the subject's
-        # identity while the pinned settings keep the operator's image for everything else.
+        # local-contract.md). Subject trials and reference solutions use it, so it is folded into the
+        # subject's identity while the pinned settings keep the operator's image for everything else.
         self.subject_image = subject_image
         self.identity = {"adapter_id": "claude-code-local-v1-" + auth, "model_id": model, "synthetic": False}
         self.identity["adapter_id"] += "-"+configuration_digest(
@@ -551,7 +551,9 @@ class ClaudeCode:
                     "args":[str(Path(__file__).with_name("subject_server.py")),"--binding",str(binding)]}}}))
                 code, raw, _ = self.run(self.command(directory, session, plugin=plugin, mcp=mcp), role="subject", cwd=directory,
                                            env=env, prompt=prompt, timeout=timeout_seconds)
-                artifacts=sandbox.collect() if not code else []
+                # Run 55d345a3's skill wrote a 4 MiB signal table beside its results, which voided the claim.
+                from .local_tasks import RESULTS_FILE
+                artifacts,not_kept=sandbox.collect(keep=RESULTS_FILE) if not code else ([],[])
                 loaded={pin["path"]:pin["loaded_sha256"] for pin in pins}
                 artifacts=[item for item in artifacts if loaded.get(item["path"])!=item["sha256"]]
             if code:
@@ -567,6 +569,7 @@ class ClaudeCode:
                 extra.append("mcp__subject__call_app")
             result = parse_events(raw, expected_session=session, subject=True, extra_tools=extra)
             result["artifacts"]=artifacts
+            result["files_not_kept"]=not_kept
             result["run_problems"]=run_problems(raw)
             # Never retain an auth value echoed by a malfunctioning provider.
             serialized = canonical(result)

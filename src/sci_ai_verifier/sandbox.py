@@ -19,20 +19,28 @@ COLLECT = r'''
 import os,stat,json,base64
 root='/work'
 limits=json.loads(__import__('sys').argv[1])
-files=[]; total=0
+keep=limits['keep']
+paths=[]
 for folder,dirs,names in os.walk(root,followlinks=False):
     dirs[:]=[name for name in dirs if not os.path.islink(os.path.join(folder,name)) and name not in {'__pycache__','.cache'}]
     for name in sorted(names):
         path=os.path.join(folder,name)
-        info=os.lstat(path)
-        if not stat.S_ISREG(info.st_mode): continue
-        if info.st_size>limits['max_file_bytes']: raise ValueError('artifact too large')
+        if stat.S_ISREG(os.lstat(path).st_mode): paths.append(os.path.relpath(path,root))
+paths.sort(key=lambda path:path!=keep)
+files=[]; left=[]; total=0
+for relative in paths:
+    path=os.path.join(root,relative)
+    size=os.lstat(path).st_size
+    raw=None
+    if size<=limits['max_file_bytes']:
         with open(path,'rb',opener=lambda p,f:os.open(p,f|os.O_NOFOLLOW)) as handle:
             raw=handle.read(limits['max_file_bytes']+1)
-        total+=len(raw)
-        if len(raw)>limits['max_file_bytes'] or total>limits['max_artifact_bytes'] or len(files)>=limits['max_artifacts']: raise ValueError('artifact limit')
-        files.append({'path':os.path.relpath(path,root),'base64':base64.b64encode(raw).decode()})
-print(json.dumps(files))
+    if raw is None or len(raw)>limits['max_file_bytes'] or total+len(raw)>limits['max_artifact_bytes'] or len(files)>=limits['max_artifacts']:
+        if keep is None or relative==keep: raise ValueError('artifact limit')
+        left.append({'path':relative,'bytes':size}); continue
+    total+=len(raw)
+    files.append({'path':relative,'base64':base64.b64encode(raw).decode()})
+print(json.dumps({'files':files,'not_kept':left}))
 '''
 
 
@@ -43,6 +51,8 @@ def local_endpoint(value):
 # Where a task's input files appear, read-only, in every container that works on the task
 # ("Tasks" in local-tasks.md).
 TASK_ROOT = "/task"
+# How many files left behind a trial records by name.
+MAX_NOT_KEPT = 20
 
 
 class DockerSandbox:
@@ -190,17 +200,29 @@ class DockerSandbox:
         return {"exit_code":code,"stdout":out.decode("utf-8",errors="replace"),
                 "stderr":err.decode("utf-8",errors="replace")}
 
-    def collect(self):
+    def collect(self, *, keep=None):
+        """The new files under /work and those left behind, as (files, not_kept).
+
+        Without `keep` every file must fit the limits. With it, `keep` is collected first and must
+        fit; any other file past a limit is left in the container and named with its size
+        ("Files not kept" in local-tasks.md).
+        """
         remaining=self.deadline-time.monotonic()
         if remaining<=0:
             raise Fault("sandbox_timeout", "The execution container reached its deadline.")
         limits={key:self.settings[key] for key in ("max_file_bytes","max_artifacts","max_artifact_bytes")}
-        code,out,_=self.invoke(["exec",self.name,"python3","-c",COLLECT,canonical(limits).decode()],
+        code,out,_=self.invoke(["exec",self.name,"python3","-c",COLLECT,canonical({**limits,"keep":keep}).decode()],
                               timeout=min(15,remaining),max_bytes=self.settings["max_artifact_bytes"]*2+65536,
                               capture_output=False)
         try:
-            files=json.loads(out)
-            if code or not isinstance(files,list) or len(files)>self.settings["max_artifacts"]:
+            found=json.loads(out)
+            files,left=found["files"],found["not_kept"]
+            if (code or not isinstance(files,list) or len(files)>self.settings["max_artifacts"]
+                    or not isinstance(left,list) or (left and keep is None)):
+                raise ValueError()
+            not_kept=[{"path":item["path"],"bytes":item["bytes"]} for item in left[:MAX_NOT_KEPT]
+                      if valid_relative(item["path"]) and isinstance(item["bytes"],int) and not isinstance(item["bytes"],bool)]
+            if len(not_kept)!=min(len(left),MAX_NOT_KEPT):
                 raise ValueError()
             result,total,seen=[],0,set()
             for item in files:
@@ -213,7 +235,9 @@ class DockerSandbox:
                     raise ValueError()
                 seen.add(path)
                 result.append({"path":path,"sha256":digest(raw),"bytes":len(raw),"base64":item["base64"]})
-            return result
+            if keep is not None and keep in {item["path"] for item in not_kept}:
+                raise ValueError()
+            return result,not_kept
         except (ValueError,KeyError,TypeError,UnicodeError):
             raise Fault("sandbox_artifacts_invalid", "Generated artifacts failed path, size or credential checks.") from None
 

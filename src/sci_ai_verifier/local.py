@@ -246,7 +246,8 @@ def operate(store, state, name, args, subject):
     if name == "qualify_local_tasks":
         from . import local_tasks
         settings = settings_for(store, state)
-        runner = local_tasks.SandboxRunner(settings, log=getattr(subject, "log", None))
+        runner = local_tasks.SandboxRunner(settings, log=getattr(subject, "log", None),
+                                           solver_image=getattr(subject, "subject_image", None))
         refs = {key: store.get_json(key) for key in work["reference_refs"]}
         proposal = {key: args[key] for key in ("name", "scope", "limitations", "generator", "solver", "cases")
                     if key in args}
@@ -833,6 +834,7 @@ def execute(store, state, claim_id, subject, retry=False):
         # Python reads the trial's results file itself ("Reading a trial's results", local-tasks.md).
         scored_trials.append({"index":index,"case":case,"trial":trial,"request_ref":request_ref,
                               "response_ref":response_ref,"models":models,"run_problems":response.get("run_problems",[]),
+                              "files_not_kept":response.get("files_not_kept",[]),
                               "score":score_task(case,{item["path"]:store.get(item["object_ref"]) for item in artifacts})})
     # Tasks the critique did not count ran and stay in the receipts, but a task measuring
     # something other than the claim cannot pass or fail it.
@@ -844,6 +846,7 @@ def execute(store, state, claim_id, subject, retry=False):
                   "response_ref": item["response_ref"], "comparison_status": item["score"]["status"],
                   "model_ids": item["models"], "outputs": item["score"]["outputs"],
                   "results_found": item["score"]["results_found"], "run_problems": item["run_problems"],
+                  "files_not_kept": item["files_not_kept"],
                   **({"results_problem": item["score"]["results_problem"]} if "results_problem" in item["score"] else {})}
         score_ref = keep(store, state, scored)
         receipts.append(score_ref)
@@ -1091,7 +1094,8 @@ def report(store, state):
                               "comparison_status": score.get("comparison_status", "not_obtained"),
                               "outputs": score.get("outputs"), "results_found": score.get("results_found"),
                               "results_problem": score.get("results_problem"),
-                              "run_problems": score.get("run_problems", []), "sections": case["sections"],
+                              "run_problems": score.get("run_problems", []),
+                              "files_not_kept": score.get("files_not_kept", []), "sections": case["sections"],
                               "files": case.get("files") or [], "applicability": case["applicability"],
                               "counted": counted is None or case["case_id"] in counted,
                               "session_id": observed.get("session_id") if observed else None,
@@ -1223,6 +1227,12 @@ def report(store, state):
                 for case in tests:
                     for artifact in case["artifacts"]:
                         lines.append("- Task "+cell(case["case_id"])+", trial "+str(case["trial"])+": ["+cell(artifact["path"]).replace("[","&#91;").replace("]","&#93;")+"]("+quote(Path(artifact["saved_path"]).as_posix(),safe="/:")+"); SHA256 "+artifact["object_ref"])
+            if any(case.get("files_not_kept") for case in tests):
+                # "Files not kept" in local-tasks.md: past a size or count limit, left in the container.
+                lines.extend(["","Files not kept, past the size or count limits:",""])
+                for case in tests:
+                    for item in case.get("files_not_kept") or []:
+                        lines.append("- Task "+cell(case["case_id"])+", trial "+str(case["trial"])+": "+cell(item["path"])+", "+str(item["bytes"])+" bytes")
             lines.extend(["", "Reference provenance:", ""])
             for source in sources.values():
                 lines.append("- " + cell(source["url"]) + "; version: " + cell(source["version"]) + "; license: " + cell(source["license"]))

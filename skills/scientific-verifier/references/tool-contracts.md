@@ -575,11 +575,12 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   own what the fields mean. Python checks every quote against its pinned reference and
   that the tasks together use every section of the claim, then runs the generator once
   for each task with `arguments` and the solver once for each task, each in a new
-  container of the operator's image with no network, and checks every output against the
+  container with no network ("The reference solution" in `local-tasks.md` owns which
+  image), and checks every output against the
   solver's results. It saves `qualified_local` or `rejected` with each problem named. The
   candidate holds each task's files (name, stored object, size), planted values and
   resolved expected values, the solver's results and the verdict of each output on them,
-  and the programs' digests and image; the reply shows the start of each text file.
+  and the programs' digests and images; the reply shows the start of each text file.
   Without a container the tool is refused as `sandbox_configuration_required`. Selection
   re-checks a saved design against these records without running anything again.
 - `select_local_candidate`: in local_discovery, bind an exact qualified task design and its
@@ -674,7 +675,7 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   job, save each request before invocation, and read each trial's `/work/results.json` as
   "Reading a trial's results" in `local-tasks.md` says. A score receipt holds each output's
   expected value, the value found and that output's verdict, and the trial's
-  `run_problems`. Accuracy, consistency, comparison status and scientific status are
+  `run_problems` and `files_not_kept`. Accuracy, consistency, comparison status and scientific status are
   computed over the audit's `counted_cases`; the result lists the others under
   `uncounted_cases` with their verdicts, and their observations stay in the receipts. No
   uncertain trial retries. Produce a result or operational record.

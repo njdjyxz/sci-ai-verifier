@@ -402,7 +402,7 @@ A computational run also holds `local_environment_ref`, the record of "Skill
 environment" in `local-contract.md`, with these fields:
 - `status`, `source_path` and `snapshot_digest`;
 - `operator_image`, `base_image` (the environment base, for `built` only) and `image_id`, the
-  image subject trials run in;
+  image subject trials and reference solutions run in;
 - `index`;
 - `requirements`, each with its normalized name and the `path:line` sources that declared it;
 - `rejected` and `notes`, each with its source, bounded text and reason code;
@@ -411,8 +411,7 @@ environment" in `local-contract.md`, with these fields:
   version, file, SHA256 and size);
 - `manifest`, the packages and unavailable imports the built image reported about itself,
   marked `reported_by_image` because it is untrusted;
-- `operator_manifest`, the packages the operator's image reports, where task generators and
-  reference solutions run.
+- `operator_manifest`, the packages the operator's image reports, where task generators run.
 
 A local manifest carries `sections`, every section of `SKILL.md` with its ID, heading,
 level, first line and word count, and `set_aside`, each section no claim holds with its
@@ -420,11 +419,12 @@ level, first line and word count, and `set_aside`, each section no claim holds w
 task design's candidate (`method` `task`, `method_version` `local-task-comparison-1`) holds
 its `generator` and `solver`; per task its `files` (name, `object_ref`, bytes), `planted`
 values, `outputs` with their resolved `expected` values, the solver's `solver_results` and
-`solver_checks`; and `task_receipts` with the programs' digests, the image and each run's
-exit code. A task trial's score receipt holds `outputs`: each field's expected value,
+`solver_checks`; and `task_receipts` with the programs' digests, `generator_image_id` and
+`solver_image_id`, and each run's exit code. A task trial's score receipt holds `outputs`: each field's expected value,
 tolerance, the value found and its verdict, and for a number that passed far from the
 reference solution's result its `reference_result` and `off_reference` ("Reading a trial's
-results" in `local-tasks.md`), with `results_found` and the trial's `run_problems`.
+results" in `local-tasks.md`), with `results_found` and the trial's `run_problems` and
+`files_not_kept`.
 
 The report card carries `environment_ref` and an `environment` summary, and
 report-card.md opens with an Environment line. It also carries `coverage`: each section of

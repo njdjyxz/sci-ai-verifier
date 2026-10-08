@@ -40,8 +40,8 @@ class FakeSandbox:
     def __exit__(self, *error):
         return False
 
-    def collect(self):
-        return []
+    def collect(self, *, keep=None):
+        return [], []
 
 
 def stream(session, *, skill=SUBJECT_SKILL, failed=False, output="42", tool="Skill"):

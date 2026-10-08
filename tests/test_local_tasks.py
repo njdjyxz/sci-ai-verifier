@@ -23,6 +23,7 @@ from sci_ai_verifier.local_tasks import (RESULTS_FILE, RecordedRunner, check, qu
                                          traceable)
 
 IMAGE = "sha256:" + "a" * 64
+BUILT = "sha256:" + "b" * 64
 MODEL = "Fixture model: the response is the dose times the slope."
 RULE = "A compound that needs a lower dose for the same response is the more potent one."
 PAGE = "Independent fixture page. " + MODEL + " " + RULE + " Published value: the slope of compound Z is 2.5."
@@ -32,8 +33,11 @@ class FakeRunner:
     """Stands in for the operator's container: the generator writes a dose table from its arguments, and
     the solver fits the slope from the table. Neither program's code is run; `faults` injects failures."""
 
-    def __init__(self, settings=None, *, log=None, sandbox_factory=None):
-        self.generated, self.solved, self.faults = [], [], {}
+    made = []
+
+    def __init__(self, settings=None, *, log=None, sandbox_factory=None, solver_image=None):
+        self.generated, self.solved, self.faults, self.solver_image = [], [], {}, solver_image
+        FakeRunner.made.append(self)
 
     def generate(self, code, arguments):
         self.generated.append(arguments)
@@ -55,7 +59,8 @@ class FakeRunner:
         results = fit(files, given)
         if "solver_wrong" in self.faults:
             results["slope"] = results["slope"] * 1000
-        return {"exit_code": 0, "stderr": "", "results": json.dumps(results).encode(), "image_id": IMAGE}
+        return {"exit_code": 0, "stderr": "", "results": json.dumps(results).encode(),
+                "image_id": self.solver_image or IMAGE}
 
 
 def fit(files, given):
@@ -239,6 +244,44 @@ class QualifyTests(unittest.TestCase):
         self.assertIn("Task t1: the reference solution does not pass: slope (expected \"2\", found 2000.0)",
                       candidate["qualification_problems"][0])
 
+    def test_the_solver_runs_in_the_trials_image_and_the_generator_in_the_operators(self):
+        """Run 55d345a3's solver imitated NeuroKit2 in an image without it: it kept the four responses planted,
+        and the library, which every trial ran, keeps five."""
+        candidate, _ = self.run_design(design([task("t1", ["S1", "S2"])]), FakeRunner(solver_image=BUILT))
+        receipts = candidate["task_receipts"]
+        self.assertEqual((receipts["generator_image_id"], receipts["solver_image_id"]), (IMAGE, BUILT))
+        self.assertNotIn("image_id", receipts)
+        opened = []
+
+        class Box:
+            """A container that records its image and returns what its program would have written."""
+
+            def __init__(self, source, settings, *, timeout=None, log=None, inputs=None):
+                self.image, self.keep = settings["sandbox_image"], "unset"
+                self.program = sorted(path.name for path in Path(source).iterdir())
+                opened.append(self)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *error):
+                return False
+
+            def command(self, command, *, stdin="", timeout=None):
+                return {"exit_code": 0, "stdout": "{}", "stderr": ""}
+
+            def collect(self, *, keep=None):
+                self.keep = keep
+                return [{"path": RESULTS_FILE if keep else "out/doses.csv", "base64": base64.b64encode(b"{}").decode()}], []
+        settings = {**load_configuration(), "sandbox_image": IMAGE}
+        runner = local_tasks.SandboxRunner(settings, sandbox_factory=Box, solver_image=BUILT)
+        self.assertEqual(runner.generate("print(1)", "{}")["files"], {"doses.csv": b"{}"})
+        self.assertEqual(runner.solve("print(1)", {}, {})["results"], b"{}")
+        self.assertEqual([(box.program, box.image, box.keep) for box in opened],
+                         [(["generator.py"], IMAGE, None), (["solver.py"], BUILT, RESULTS_FILE)])
+        # With nothing built, the solver runs in the operator's image like the generator.
+        self.assertEqual(local_tasks.SandboxRunner(settings, sandbox_factory=Box).solver_settings["sandbox_image"], IMAGE)
+
     def test_generator_faults_are_named_for_the_planner(self):
         for extra, named in (({"exit": 3}, "the generator exited with code 3"),
                              ({"nested": True}, "write files by plain names"),
@@ -299,7 +342,8 @@ class TaskSubject:
                 "model_id": "synthetic", "invocation_verified": True, "synthetic": True,
                 "artifacts": [{"path": RESULTS_FILE, "sha256": digest(raw), "bytes": len(raw),
                                "base64": base64.b64encode(raw).decode()} for raw in files],
-                "run_problems": ["missing Python module scipy"] if self.mode == "wrong" else []}
+                "run_problems": ["missing Python module scipy"] if self.mode == "wrong" else [],
+                **({"files_not_kept": [{"path": "signals.csv", "bytes": 25000000}]} if self.mode == "large" else {})}
 
 
 class FlowTests(unittest.TestCase):
@@ -404,6 +448,27 @@ class FlowTests(unittest.TestCase):
         markdown = Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
         self.assertIn("| t1 | 1 | fail | slope fail (2; 0.002) | missing Python module scipy | yes |", markdown)
         self.assertIn("missing Python module scipy", markdown)
+
+    def test_a_file_past_the_limits_is_named_and_the_trial_still_scored(self):
+        """Run 55d345a3's skill wrote a 4 MiB signal table beside its results, and the claim ended on its first
+        trial. The solver of a skill with a built environment runs in the trials' image."""
+        h = self.h
+        subject = TaskSubject("large")
+        ref = self.start(subject, graded=True)
+        subject.subject_image = BUILT
+        data = self.qualify(ref, [task("t1", ["S1"]), task("t2", ["S2"], slope=4), task("t3", ["S1", "S2"], slope=8)])
+        self.assertEqual(FakeRunner.made[-1].solver_image, BUILT)
+        self.assertEqual(data["candidate"]["task_receipts"]["solver_image_id"], BUILT)
+        with self.critic("A"):
+            self.select(data["candidate_ref"], "A")
+        h.call("execute_local_claim", claim_id=h.claim_id)
+        self.assertEqual((h.data["result"]["scientific_status"], h.data["result"]["accuracy"]["matched"]), ("pass", 9))
+        h.call("write_report_card")
+        test = h.data["report"]["claims"][0]["tests"][0]
+        self.assertEqual(test["files_not_kept"], [{"path": "signals.csv", "bytes": 25000000}])
+        markdown = Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Files not kept, past the size or count limits:", markdown)
+        self.assertIn("- Task t1, trial 1: signals.csv, 25000000 bytes", markdown)
 
     def test_the_page_shows_each_task_its_checks_and_what_the_skill_lacked(self):
         from sci_ai_verifier.report_html import publish

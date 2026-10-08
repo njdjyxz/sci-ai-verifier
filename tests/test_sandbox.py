@@ -28,6 +28,7 @@ class SandboxTests(unittest.TestCase):
         self.commands=[]
         self.endpoint="npipe:////./pipe/docker_engine"
         self.files=[{"path":"results/value.bin","base64":base64.b64encode(b"\0binary").decode()}]
+        self.not_kept=[]
 
     def process(self,command,**kwargs):
         self.commands.append((command,kwargs))
@@ -36,7 +37,7 @@ class SandboxTests(unittest.TestCase):
         if "inspect" in command:
             return 0,canonical([{"Os":"linux","Id":IMAGE}]),b""
         if "python3" in command and "-c" in command and "exec" in command:
-            return 0,canonical(self.files),b""
+            return 0,canonical({"files":self.files,"not_kept":self.not_kept}),b""
         return 0,b"ok",b""
 
     def box(self):
@@ -55,8 +56,8 @@ class SandboxTests(unittest.TestCase):
             self.assertEqual(run.count("--mount"),1)
             self.assertTrue(run[run.index("--mount")+1].endswith("target=/submission,readonly"))
             self.assertNotIn("ANTHROPIC_API_KEY",self.commands[-1][1]["env"])
-            files=box.collect()
-            self.assertEqual(files[0]["bytes"],7)
+            files,not_kept=box.collect()
+            self.assertEqual((files[0]["bytes"],not_kept),(7,[]))
             self.assertEqual(SubjectRuntime(box).call("run_command",{"command":"python3 script.py","stdin":"","timeout_seconds":5})["status"],"ok")
             # The tool is what a subject reads before each call; run 84e90683's ran pip anyway.
             self.assertIn("nothing can be downloaded or installed",SubjectRuntime(box).definitions[0]["description"])
@@ -85,6 +86,48 @@ class SandboxTests(unittest.TestCase):
         with patch("shutil.which",return_value="docker.exe"),self.assertRaises(Fault):
             with self.box() as box:
                 box.collect()
+
+    def test_a_file_past_the_limits_is_left_behind_only_beside_the_kept_results(self):
+        """Run 55d345a3's skill wrote a 4 MiB signal table beside its results, which voided the claim."""
+        self.files=[{"path":"results.json","base64":base64.b64encode(b"{}").decode()}]
+        self.not_kept=[{"path":"signals.csv","bytes":25000000}]
+        with patch("shutil.which",return_value="docker.exe"),self.box() as box:
+            files,not_kept=box.collect(keep="results.json")
+            self.assertEqual(([item["path"] for item in files],not_kept),(["results.json"],self.not_kept))
+            sent=next(command for command,_ in reversed(self.commands) if "-c" in command)
+            self.assertEqual(json.loads(sent[-1])["keep"],"results.json")
+        # Without a file to keep, or for the kept file itself, a limit is still a fault.
+        for keep,left in ((None,"signals.csv"),("results.json","results.json"),("results.json","../outside")):
+            self.not_kept=[{"path":left,"bytes":5}]
+            with self.subTest(keep=keep,left=left),patch("shutil.which",return_value="docker.exe"),self.assertRaises(Fault) as caught:
+                with self.box() as box:
+                    box.collect(keep=keep)
+            self.assertEqual(caught.exception.code,"sandbox_artifacts_invalid")
+
+    def test_the_collect_script_keeps_the_results_first_and_names_what_it_left(self):
+        import subprocess
+        from sci_ai_verifier.sandbox import COLLECT
+        script=COLLECT.replace("root='/work'","root=__import__('sys').argv[2]")
+        # Windows has no O_NOFOLLOW; the container's Linux does.
+        script=script.replace("f|os.O_NOFOLLOW","f|getattr(os,'O_NOFOLLOW',0)")
+        self.assertNotEqual(script,COLLECT)
+        for name,raw in (("a_large.csv",b"x"*2048),("notes.txt",b"ok"),("results.json",b"{}"),("z.txt",b"z")):
+            (self.directory/name).write_bytes(raw)
+        limits={"max_file_bytes":1024,"max_artifacts":2,"max_artifact_bytes":4096}
+
+        def collect(keep):
+            done=subprocess.run([sys.executable,"-I","-c",script,canonical({**limits,"keep":keep}).decode(),
+                                 str(self.directory)],capture_output=True,timeout=60)
+            return done.returncode,done.stdout
+        code,out=collect("results.json")
+        self.assertEqual(code,0)
+        found=json.loads(out)
+        self.assertEqual([item["path"] for item in found["files"]],["results.json","notes.txt"])
+        # One file too large, one past the count.
+        self.assertEqual(found["not_kept"],[{"path":"a_large.csv","bytes":2048},{"path":"z.txt","bytes":1}])
+        self.assertNotEqual(collect(None)[0],0)
+        (self.directory/"results.json").write_bytes(b"x"*2048)
+        self.assertNotEqual(collect("results.json")[0],0)
 
     def test_source_copy_error_cleans_container(self):
         def failed(command,**kwargs):

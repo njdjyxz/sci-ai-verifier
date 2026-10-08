@@ -127,18 +127,28 @@ even past the 40 KiB a reply carries (`fetch_local_reference` in `tool-contracts
 
 The design's `solver` holds `code`: the planner's own correct analysis, written from the
 referenced model, not from the skill's code. For each task Python runs it in a new
-container of the operator's image with no network, the task's files at `/task`, and on
+container of the image the task's trials use, with no network, the task's files at `/task`, and on
 standard input the same task input the test AI receives, for at most five minutes; it
-writes `/work/results.json`.
+writes `/work/results.json`, and Python keeps no other file it writes.
 Every output must pass on the solver's results, or the design is rejected, naming each
 failure. This is how Python checks that a task is fair before it is used: the planted
 values are in the files, the tolerances leave room for an honest analysis, and the
 outputs can be filled as asked. A solver that copies planted values instead of analysing
 the files proves nothing, and the critique sees its code.
 
-Generator and solver run in the operator's image, never the skill's environment, so no
-package the skill chose touches an expected value. A run reports what that image lacked
-when the program failed.
+The generator runs in the operator's image, never the skill's environment, so no package
+the skill chose touches a planted value. The solver runs where the trials run: in the
+skill's environment when setup built one ("Skill environment" in `local-contract.md`),
+otherwise in the operator's image. A task is then proven fair with the packages the test
+AI has. When a job asks what a library the skill uses does, the solver calls that library
+rather than imitating it. In run `55d345a3`, before this, the solver imitated NeuroKit2's
+response detector in an image without NeuroKit2 and kept the four responses the generator
+planted; the library keeps five, and every trial of that task failed on a key the library
+never gives. The solver never sets an expected value, so a package can at most let an
+unfair task qualify, and the critique reads the solver. A run reports what an image lacked
+when a program failed. Catalog requalification still runs both programs in the
+operator's image, so a design whose solver needs the skill's packages does not yet
+requalify on another machine.
 
 ## Reading a trial's results
 
@@ -167,6 +177,14 @@ other task within 0.01%.
 skill needed and the container lacked (`ModuleNotFoundError`, `command not found`) and
 records it on the trial. The report lists them per claim. A skill that cannot run as
 shipped is a finding about the skill, and says nothing about whether its advice is right.
+
+**Files not kept.** Python keeps a trial's new files as evidence, `results.json` first,
+within `max_file_bytes` for one file and `max_artifacts` and `max_artifact_bytes` for all.
+Any other file past a limit stays in the container, and the trial records its path and
+size under `files_not_kept`. A results file past a limit is still the operational fault
+`sandbox_artifacts_invalid`. Before this, one such file voided the claim: in run
+`55d345a3` the skill's own script wrote its processed signal table, over 4 MiB, beside a
+results file of four numbers, and the claim ended after its first trial.
 
 ## Selecting and critiquing a task design
 

@@ -2615,13 +2615,15 @@ With the operator's go-ahead, after a session restart and a Docker and usage che
 3. Then run tooluniverse-dose-response and check that its clean claims keep their tasks. Each run
    costs $25–35 and most of a 5-hour window.
 
-## Claude: 2026-10-08 (run 50104eac stopped on the session limit; the critique back at high effort)
+## Claude: 2026-10-08 (run 50104eac stopped on the session limit; run 55d345a3 on neurokit2; reference solutions run where trials run; files past the limits left behind)
 
 ### Current stage and status
 
 Version 0.8.0 on `whole-skill-tests`, the operator's to merge; the 2026-10-07 entry's state stands.
-The first run on a longer skill, neurokit2, stopped on the subscription's session limit, and the
-critique runs at effort `high` again.
+The first longer skill, neurokit2, completed in run `55d345a3` after `50104eac` stopped on the
+session limit. Its two faults that were not the skill's are fixed: a task's reference solution now
+runs in the skill's environment, and a trial's oversized side file no longer voids a claim. Open
+question 2 of the 2026-09-28 entry is settled by the operator's choice below.
 
 ### What has been done
 
@@ -2638,19 +2640,66 @@ This session, 2026-10-08:
   output limit stay ("Critique" in `local-contract.md`).
 - **Cleanup.** Run `50104eac`'s run, attempt, subject runs and 8 candidates (7,658 files) moved into
   session `60cf88bc`'s scratchpad (`cleaned-50104eac/`); nothing deleted. Run `cfe9e57a` stays.
-- **Verification.** Suite 392 tests, 390 passing and 2 skipped.
+- **Run `55d345a3`, neurokit2 again** (started at 7% of the window): six claims in 150.6 of 180
+  minutes for $48.88, the most so far (planner $27.79, 43 trials $13.04, critiques $7.93). Claims
+  cover 59% of `SKILL.md`'s words; seven sections were set aside.
+  - C1 data contract B, pass 9/9; C2 preprocessing order A, pass 12/12; C5 multimodal manifest B,
+    pass 9/9, held at B by a departure no task exposed (a stream that starts late).
+  - C3 ECG: `sandbox_artifacts_invalid` after its first trial. The trial ran the skill's
+    `ecg_hrv_pipeline.py --signals-output`, which writes the whole processed signal table (90,000
+    rows) beside a four-number `results.json`; the collector raised on the one file over 4 MiB (its
+    106-byte stderr matches the "artifact too large" traceback exactly) and the claim ended.
+  - C4 EDA: A, **fail** 6/9, a false fail. Task `threshold_against_the_largest_response` planted
+    seven responses (4.0, 1.5, 0.30, 0.20, 0.12, 1.0, 0.8 µS) and keyed four kept at
+    `amplitude_min` 0.1. The solver, in the operator's image without NeuroKit2, imitated the detector
+    with a percentile baseline and also kept four; every trial ran NeuroKit2 0.2.13 and kept five,
+    the 0.30 µS response included. The skill's statement that the threshold is relative to the
+    largest response is right. Three passes rode the tolerance; a trial lacked `cvxopt` (cvxEDA).
+  - C6 complexity: D. The planner skipped task design for lack of time.
+  - What worked: the critique dropped weak tasks, the departure hold engaged on C5, and the
+    tolerance marks appeared on C4.
+- **Decision (operator, "do 1 and 2 … we really need to find a permanent way of fixing this", then
+  "yes, build both"): reference solutions run where trials run.** This settles open question 2 of
+  the 2026-09-28 entry: a library the skill uses may decide whether a task qualifies, never what its
+  key is. Until now each library was added to the operator's image by hand (scipy for
+  dose-response; RDKit built in), and a skill whose library was missing got a solver that imitated
+  it. Contracts first: "The reference solution" in
+  [`local-tasks.md`](skills/scientific-verifier/references/local-tasks.md) owns it, with
+  [`local-contract.md`](skills/scientific-verifier/references/local-contract.md) ("Subject trials
+  and reference solutions"), [`resource-policy.md`](skills/scientific-verifier/references/resource-policy.md),
+  [`tool-contracts.md`](skills/scientific-verifier/references/tool-contracts.md) and
+  [`artifact-contracts.md`](skills/scientific-verifier/references/artifact-contracts.md).
+  - `SandboxRunner` takes `solver_image`, the subject image setup built; the generator keeps the
+    operator's image, so no package the skill chose touches a planted value. `task_receipts`
+    record `generator_image_id` and `solver_image_id` instead of one `image_id`.
+  - The planner's environment block says solvers run in the trials' image and should call a library
+    the job asks about rather than imitate it; the report's Environment line says where each ran.
+  - Not done: catalog requalification still runs both programs in the operator's image, so a design
+    whose solver needs the skill's packages does not requalify on another machine.
+- **Files past the limits are left behind.** "Files not kept" in `local-tasks.md`: a trial's and a
+  solver's collection keeps `results.json` first, leaves any other file past `max_file_bytes`,
+  `max_artifacts` or `max_artifact_bytes` in the container, and the trial records each under
+  `files_not_kept` (path and size, at most 20); `report-card.md` lists them. A results file past a
+  limit, and any file the generator writes past one, is still `sandbox_artifacts_invalid`.
+- **Verification.** New tests: the collector's own script run on a folder (results first, a large
+  and an extra file left, strict mode and an oversized results file still fail), the host side of
+  `collect(keep=…)`, each program's image through `SandboxRunner`, the receipts, the planner
+  block and report line, and a task flow whose trials leave a file behind and whose solver ran in a
+  built image. Live, no AI: the collector in the operator's image kept `results.json` and named a
+  5.2 MB `signals.csv` it left behind, and strict collection still faulted. Suite 396 tests, 394 passing and 2 skipped.
 
 ### Urgent next steps, if any
 
-The session's `serve-local` loaded the critique module with `xhigh` during `50104eac`, so restart
-the session before the next run.
+`src/` changed after this session's `serve-local` started, so restart the session before the next
+run.
 
 ### Suggested next move
 
-Run neurokit2 again with the window near empty: at about an hour per two claims it needs most of
-a 5-hour window and may reach the 180-minute cap.
+Run neurokit2 again to see the solver call NeuroKit2 and C3 finish, with the window near empty.
+Six claims need most of the 180-minute cap, so the last claim may again go documentary.
 
 ### Recommended next action
 
 After a session restart and a usage and Docker check, run `verify_skill` on neurokit2. It is finished
-when the report exists, or when the run stops on its time cap with the claims it reached.
+when the report exists; check in C4's qualify replies that the solver imported NeuroKit2, and in C3's
+receipts that the trials were scored.

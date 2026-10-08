@@ -52,7 +52,7 @@ def task(name, sections, reference_ref):
 class TableRunner:
     """Stands in for the operator's container: the reference solution looks each row up in the table."""
 
-    def __init__(self, settings=None, *, log=None, sandbox_factory=None):
+    def __init__(self, settings=None, *, log=None, sandbox_factory=None, solver_image=None):
         pass
 
     def generate(self, code, arguments):

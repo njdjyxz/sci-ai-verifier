@@ -88,7 +88,8 @@ and `scipy` and declares neither, so until this its own fitting script could not
 listed module the skill imports and every listed command it runs; `all_rejected` when every declaration was rejected and
 no import needs a build; `disabled` when requirements exist but `package_index` is null; `source_unavailable` when setup cannot snapshot the skill, in which case
 `load_submitted_skill` records the fault as it would anyway; otherwise `built`. Only
-`built` gives subject trials a different image; otherwise they run in `sandbox_image`.
+`built` gives subject trials and reference solutions a different image; otherwise they
+run in `sandbox_image`.
 
 **Build.** Every build starts from `environment_base_image`, a plain Python image the
 operator pins, never from `sandbox_image`, so one skill's packages never land on
@@ -115,10 +116,11 @@ verification ends, however it ends, so every verification starts from the plain 
 again and nothing accumulates. Setup also removes environment images more than a day old
 that a killed verification left behind.
 
-**Subject trials only.** The built image serves the skill's subject trials and nothing
-else. Task generators, reference solutions, scoring and catalog requalification keep
-the operator's `sandbox_image`, so no package the skill chose runs inside code that
-produces an expected answer or scores a trial. The built image is part of the subject identity, so
+**Subject trials and reference solutions.** The built image serves the skill's subject
+trials and the reference solutions that prove a task fair where those trials run ("The
+reference solution" in `local-tasks.md` says why). Task generators, scoring and catalog
+requalification keep the operator's `sandbox_image`, so no package the skill chose runs
+inside code that plants an expected value or scores a trial. The built image is part of the subject identity, so
 the identity checks catch any change, and `environment_digest` includes the environment
 record.
 
@@ -126,8 +128,8 @@ record.
 verifier renders it only from values it checked itself: the image digests, the status,
 package names and versions from the lock, counts, reason codes and the index host. The
 block also says that nothing can be installed during the run, and lists the packages the
-operator's own image reports, since task generators and reference solutions run there and
-no skill can alter that image. The full record is the
+operator's own image reports, since task generators run there and no skill can alter
+that image; reference solutions run in the trials' image. The full record is the
 `environment` section of `get_verifier_context`. It includes where each declaration was
 found, the text of rejected commands, and the packages and imports the built image
 reports. That last part is untrusted, because an installed package could alter it. The

@@ -185,14 +185,17 @@ def tail(text):
 
 
 class SandboxRunner:
-    """Runs a design's programs, each in a new container of the operator's image with no network."""
+    """Runs a design's programs, each in a new container with no network: the generator in the operator's
+    image, the solver in `solver_image`, the image the trials use, when setup built the skill one
+    ("The reference solution" in local-tasks.md)."""
 
-    def __init__(self, settings, *, log=None, sandbox_factory=None):
+    def __init__(self, settings, *, log=None, sandbox_factory=None, solver_image=None):
         if not settings.get("sandbox_image"):
             raise Fault("sandbox_configuration_required", "Task tests need the operator's pinned container image.")
         if sandbox_factory is None:
             from .sandbox import DockerSandbox as sandbox_factory
         self.settings, self.log, self.factory = settings, log, sandbox_factory
+        self.solver_settings = {**settings, "sandbox_image": solver_image} if solver_image else settings
 
     def generate(self, code, arguments):
         with tempfile.TemporaryDirectory(prefix="sci-verifier-generator-") as temporary:
@@ -201,7 +204,7 @@ class SandboxRunner:
             with self.factory(source, self.settings, timeout=GENERATOR_SECONDS + 30, log=self.log) as sandbox:
                 result = sandbox.command("mkdir -p /work/out && cd /work/out && python3 -I /work/generator.py",
                                          stdin=arguments, timeout=GENERATOR_SECONDS)
-                files = sandbox.collect() if not result["exit_code"] else []
+                files, _ = sandbox.collect() if not result["exit_code"] else ([], [])
                 image = sandbox.image
         written = {}
         for item in files:
@@ -214,11 +217,11 @@ class SandboxRunner:
         with tempfile.TemporaryDirectory(prefix="sci-verifier-solver-") as temporary:
             source = Path(temporary)
             atomic_write(source / "solver.py", code.encode("utf-8"))
-            with self.factory(source, self.settings, timeout=SOLVER_SECONDS + 30, log=self.log,
+            with self.factory(source, self.solver_settings, timeout=SOLVER_SECONDS + 30, log=self.log,
                               inputs=files) as sandbox:
                 result = sandbox.command("cd /work && python3 -I /work/solver.py",
                                          stdin=canonical(given).decode("utf-8"), timeout=SOLVER_SECONDS)
-                found = sandbox.collect()
+                found, _ = sandbox.collect(keep=RESULTS_FILE)
                 image = sandbox.image
         written = {item["path"]: base64.b64decode(item["base64"], validate=True) for item in found}
         return {"exit_code": result["exit_code"], "stderr": tail(result["stderr"]),
@@ -243,7 +246,7 @@ class RecordedRunner:
         if any(digest(raw) != item["object_ref"] for item, raw in zip(run["files"], files.values())):
             raise Fault("candidate_integrity", "A task design's recorded file changed.", fatal=True)
         return {"exit_code": run["exit_code"], "stdout": run["stdout"], "stderr": run["stderr"], "files": files,
-                "image_id": self.receipts.get("image_id")}
+                "image_id": self.receipts.get("generator_image_id")}
 
     def solve(self, code, given, files):
         key = digest(canonical({"input": given, "files": {name: digest(raw) for name, raw in files.items()}}))
@@ -252,7 +255,7 @@ class RecordedRunner:
             raise Fault("candidate_integrity", "A task design's solver or its recorded runs changed.", fatal=True)
         return {"exit_code": run["exit_code"], "stderr": run["stderr"],
                 "results": run["results"].encode("utf-8") if isinstance(run["results"], str) else None,
-                "image_id": self.receipts.get("image_id")}
+                "image_id": self.receipts.get("solver_image_id")}
 
 
 def quote_problem(references, ref, quote):
@@ -427,7 +430,7 @@ def qualify(proposal, references, claim_sections, runner, raw):
     problems = []
     check_design(proposal, references, claim_sections, problems)
     cases, made = [], {}
-    generator_runs, solver_runs, image = [], [], None
+    generator_runs, solver_runs, images = [], [], {}
     def run(program, case_id, call):
         """One program run, or None with the design problem named when the program itself was at fault."""
         try:
@@ -446,7 +449,7 @@ def qualify(proposal, references, claim_sections, runner, raw):
                                 lambda: runner.generate(proposal["generator"]["code"], case["arguments"]))
                 if generated is None:
                     continue
-                image = generated["image_id"] or image
+                images["generator_image_id"] = generated["image_id"] or images.get("generator_image_id")
                 generator_runs.append({"arguments": case["arguments"], "exit_code": generated["exit_code"],
                                        "stdout": generated["stdout"][:PLANTED_BYTES], "stderr": generated["stderr"],
                                        "files": [{"name": name, "object_ref": digest(data), "bytes": len(data)}
@@ -465,7 +468,7 @@ def qualify(proposal, references, claim_sections, runner, raw):
                          lambda: runner.solve(proposal["solver"]["code"], given, files))
             if solved is None:
                 continue
-            image = solved["image_id"] or image
+            images["solver_image_id"] = solved["image_id"] or images.get("solver_image_id")
             results = solved["results"]
             solver_runs.append({"key": digest(canonical({"input": given, "files": {name: digest(data) for name, data
                                                                                    in files.items()}})),
@@ -490,7 +493,9 @@ def qualify(proposal, references, claim_sections, runner, raw):
                  "task_receipts": {"generator_sha256": digest(proposal["generator"]["code"].encode("utf-8"))
                                    if proposal.get("generator") else None,
                                    "solver_sha256": digest(proposal["solver"]["code"].encode("utf-8")),
-                                   "image_id": image, "generator_runs": generator_runs, "solver_runs": solver_runs},
+                                   "generator_image_id": images.get("generator_image_id"),
+                                   "solver_image_id": images.get("solver_image_id"),
+                                   "generator_runs": generator_runs, "solver_runs": solver_runs},
                  "status": "rejected" if problems else "qualified_local", "scientific_approval": "provisional",
                  "qualification_problems": sorted(set(problems)), "controls": [],
                  "qualification_limitations": QUALIFICATION_LIMITS, "qualified_at": utc_now()}
@@ -541,7 +546,7 @@ def reply_view(candidate, raw, preview=400, shown=3):
     # what says whether a program ran well, so a long design still fits a reply the planner can read.
     receipts = candidate.get("task_receipts") or {}
     view["task_receipts"] = {
-        **{key: receipts.get(key) for key in ("generator_sha256", "solver_sha256", "image_id")},
+        **{key: receipts.get(key) for key in ("generator_sha256", "solver_sha256", "generator_image_id", "solver_image_id")},
         "generator_runs": [{"arguments": item["arguments"][:200], "exit_code": item["exit_code"],
                             "stderr": item["stderr"], "files": item["files"]}
                            for item in receipts.get("generator_runs") or []],

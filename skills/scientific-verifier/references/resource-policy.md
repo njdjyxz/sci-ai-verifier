@@ -217,5 +217,5 @@ The local profile may download the Python packages a submitted skill declares, o
   | --- | --- |
   | `tu` | `tooluniverse` |
 - **Gates.** Wheels only, from one HTTPS index, hashed by the verifier, installed offline from a lock, with count and size caps.
-- **Scope.** Subject trials only. Task generators, reference solutions and scoring keep the operator's image.
-- **Residual risk.** Trust moves from vetting each package to "index, wheels and lock", as in ordinary CI. A compromised package still runs inside trials. The offline, capped, disposable sandbox contains it and must not be relaxed. The size cap applies only after download.
+- **Scope.** Subject trials and task designs' reference solutions ("The reference solution" in `local-tasks.md`). Task generators and scoring keep the operator's image.
+- **Residual risk.** Trust moves from vetting each package to "index, wheels and lock", as in ordinary CI. A compromised package still runs inside trials and reference solutions; a reference solution never sets an expected value, so there it can at most let an unfair task qualify. The offline, capped, disposable sandbox contains it and must not be relaxed. The size cap applies only after download.
