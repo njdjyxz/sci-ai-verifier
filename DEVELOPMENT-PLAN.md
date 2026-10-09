@@ -2615,7 +2615,7 @@ With the operator's go-ahead, after a session restart and a Docker and usage che
 3. Then run tooluniverse-dose-response and check that its clean claims keep their tasks. Each run
    costs $25–35 and most of a 5-hour window.
 
-## Claude: 2026-10-08 (run 50104eac stopped on the session limit; run 55d345a3 on neurokit2; reference solutions run where trials run; files past the limits left behind)
+## Claude: 2026-10-08 (run 50104eac stopped on the session limit; run 55d345a3 on neurokit2; reference solutions run where trials run; files past the limits left behind; run 2f395087 confirms both; the critique's effort and model measured by replay)
 
 ### Current stage and status
 
@@ -2687,19 +2687,75 @@ This session, 2026-10-08:
   block and report line, and a task flow whose trials leave a file behind and whose solver ran in a
   built image. Live, no AI: the collector in the operator's image kept `results.json` and named a
   5.2 MB `signals.csv` it left behind, and strict collection still faulted. Suite 396 tests, 394 passing and 2 skipped.
+  Committed as `0fb90ca`.
+- **Run `2f395087`, neurokit2 with both fixes.** The operator: "Clean and run verifier on NeuroKit2".
+  The session restarted after `0fb90ca` (its `serve-local` started 12:45, the commit 12:10), the window
+  was at 0% and Docker up. Run `55d345a3`'s run, attempt, subject runs and 12 candidates (7,644 files)
+  moved into session `60cf88bc`'s scratchpad (`cleaned-55d345a3/`); nothing deleted. Five claims in
+  147 minutes for $44.34 (planner $22.23, 51 trials $15.67, 7 critiques $6.44); every one of the ten
+  sections not set aside is in a claim, and none went documentary.
+  - C1 ECG and HRV A, pass 12/12; C3 events and epochs A, pass 9/9; C5 inspect before processing
+    (six sections) A, pass 12/12.
+  - C2 EDA B, pass 6/6, and C4 multimodal B, pass 6/6: the critique found one task in each that a
+    wrong analysis passes (`wrong_passes`), leaving two counting tasks.
+  - **Both fixes confirmed.** Every solver imported `neurokit2` and ran in the built image
+    (`79fd121a…`), every generator in the operator's (`6876c07f…`). Qualification rejected two EDA
+    designs because the library disagreed with a planted value (`response_count` expected 2, found 3;
+    a tonic level 3.48 against 3.83), before any trial; that is `55d345a3`'s false fail caught where
+    it belongs. Two C1 trials wrote a 4,966,033-byte signal table, recorded under `files_not_kept`,
+    and were scored.
+  - One solver run failed inside SciPy's FFT and the planner revised it; not investigated.
+- **The critique's effort and model, measured by replay.** The operator: "I want to test how effort
+  level can effect our verifier's work", then asked to add Sonnet 5, then "Sonnet 5, 7 packets, go
+  ahead". Run `2f395087`'s seven task-critique packets (live rubric; each judged once live by
+  `claude-opus-5` at `high`) were replayed byte for byte, once per cell, on {`claude-opus-5`,
+  `claude-sonnet-5`} × {`medium`, `high`, `xhigh`}: 42 sessions through `isolated_answer()` with the
+  critique's prompt, schema, deadline and output limit. Nothing in the repository changed, and the
+  decision rule was written before any result. $27.94; the 5-hour window went from 2% to 91%, about
+  3.2 points a dollar, more than full runs use.
+
+  | Cell | $ a packet | Median s | Median output tokens | Tasks judged otherwise than live (of 23) |
+  |---|---|---|---|---|
+  | opus-5 `medium` | 0.63 | 147 | 11k | 3, all more lenient |
+  | opus-5 `high`, repeated | 0.97 | 389 | 30k | 6 |
+  | opus-5 `xhigh` | 1.18 | 510 | 40k | 4 |
+  | sonnet-5 `medium` | 0.33 | 171 | 17k | 8 |
+  | sonnet-5 `high` | 0.43 | 316 | 28k | 8 |
+  | sonnet-5 `xhigh` | 0.52 | 509 | 47k | 6 of 20; C4 round 1 hit the 1200 s deadline |
+
+  - The repeat at `high` disagreed with the live critique on 6 of 23 tasks and 3 of 7 grades. A
+    single critique varies about as much as any effort changes it.
+  - Reasons were read wherever verdicts split. `medium` missed defects that `high` and `xhigh` named:
+    in C2's `five_similar_responses` the absolute 0.1 µS misreading the claim exists to prevent
+    passes; in C4's round 1 `aligned_session` an analysis that never reads the timestamps passes every
+    output; in C5's round 2 `read_returned_components` the raw value at 30 s passes the tonic window
+    its own `tolerance_basis` says rejects it.
+  - `xhigh` found nothing that the two `high` samples together missed, at 22% more cost and 30% more
+    time.
+  - Opus softens at every effort: in C1's `ecg_resting_rsa` and `ecg_low_variability_tachycardia`
+    all four Opus critiques named a swap of the RMSSD and SDNN values that passes, and answered no.
+    All three Sonnet critiques answered yes, as the question's wording requires. Sonnet also missed
+    defects Opus caught (C2 and C5 at `high` and `xhigh`) and raised one pedantic flag (C3, a baseline
+    window placed after onset).
+  - Decision under the rule: `CRITIC_EFFORT` stays `high` on `claude-opus-5`; no code or contract
+    changed. One skill only. The rule, scripts, per-session results and streams are in session
+    `3983990c`'s scratchpad (`effort-model/`).
+  - A lead, not a change: sampling, not effort, is the larger variation. Keeping the stricter of two
+    critiques would change "never re-rolled" ("Critique" in `local-contract.md`) and needs a second
+    skill's packets first.
 
 ### Urgent next steps, if any
 
-`src/` changed after this session's `serve-local` started, so restart the session before the next
-run.
+None.
 
 ### Suggested next move
 
-Run neurokit2 again to see the solver call NeuroKit2 and C3 finish, with the window near empty.
-Six claims need most of the 180-minute cap, so the last claim may again go documentary.
+Catalog requalification still runs solvers in the operator's image, so neurokit2's designs cannot be
+requalified elsewhere; decide whether requalification should build the skill's environment. Then try
+another library-wrapping skill. Separately, replaying another skill's critique packets twice at
+`high` would show whether the critique's sampling variation above holds beyond neurokit2.
 
 ### Recommended next action
 
-After a session restart and a usage and Docker check, run `verify_skill` on neurokit2. It is finished
-when the report exists; check in C4's qualify replies that the solver imported NeuroKit2, and in C3's
-receipts that the trials were scored.
+Ask the operator whether to give catalog requalification the skill's environment or to leave it
+documented as a limit. It is finished when that choice is recorded here.
