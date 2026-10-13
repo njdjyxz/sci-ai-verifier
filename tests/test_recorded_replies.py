@@ -38,6 +38,8 @@ STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structu
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
                     "subject-refusal-fallback.jsonl", "subject-refusal-recovered.jsonl"]
+# A critique that also asked for a tool it was not given, which Claude Code refused.
+REFUSED_TOOL_RECORDING = "critic-refused-tool.jsonl"
 TASK = {"task": "Return the supplied text.", "results_file": "/work/results.json"}
 
 
@@ -106,7 +108,7 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_recordings_are_present_and_carry_no_credential_bytes(self):
         names = sorted(path.name for path in RECORDED.glob("*.jsonl"))
-        self.assertEqual(names, sorted([*STRUCTURED_RECORDINGS, *OTHER_RECORDINGS]))
+        self.assertEqual(names, sorted([*STRUCTURED_RECORDINGS, *OTHER_RECORDINGS, REFUSED_TOOL_RECORDING]))
         for path in RECORDED.iterdir():
             if path.suffix in {".jsonl", ".json"}:
                 with self.subTest(recording=path.name):
@@ -190,6 +192,27 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertEqual(json.loads(command[command.index("--json-schema") + 1]), task_critique_schema(case_ids))
         # The critique's effort is passed explicitly ("Critique" in local-contract.md).
         self.assertEqual((command[command.index("--effort") + 1], value["effort"]), ("high", "high"))
+
+    def test_a_critique_whose_tool_call_claude_code_refused_still_answers(self):
+        """Run 4f16f74d's claim 1: started with the reply tool only, the critique asked for `bash` to recompute
+        the expected values, Claude Code refused, and it replied in shape supporting A. The verifier then
+        voided the claim as a boundary violation, as it did claim 4 of run b573cd15."""
+        from sci_ai_verifier.documentary import isolated_answer
+        raw = recorded(REFUSED_TOOL_RECORDING)
+
+        def replay(command, **kwargs):
+            return 0, raw.replace(session_of(raw).encode(), command[command.index("--session-id") + 1].encode()), b""
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
+            response, _ = isolated_answer(ClaudeCode(auth="subscription", process=replay), {"evidence": "e"},
+                                          role="critic", system_prompt="Answer.", schema={"type": "object"})
+        self.assertEqual(response["offered_tools"], [REPLY_TOOL])
+        self.assertEqual([(call["name"], call["completed"]) for call in response["tool_calls"]],
+                         [("bash", False), (REPLY_TOOL, True)])
+        (_, _, refusal), _ = reply_attempts(raw)
+        self.assertTrue(refusal["is_error"])
+        self.assertIn("No such tool available: bash", json.dumps(refusal["content"]))
+        self.assertEqual(response["structured_output"]["supported_grade"], "A")
 
     def test_a_recorded_safety_refusal_is_named_and_not_a_crash(self):
         """A provider refusal is its own operational outcome, never a scientific result."""

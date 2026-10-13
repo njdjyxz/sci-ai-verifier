@@ -646,7 +646,11 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   prose and parsing text. Claude Code adds one `StructuredOutput` tool to the otherwise
   tool-free session, checks the reply against the schema, and hands a reply that breaks it
   back to the session with the reason, so the session corrects its own shape within its
-  turn limit. Any other tool call is a boundary violation. A session that ends without a
+  turn limit. A session is a boundary violation when Claude Code starts it with any other
+  tool or carries out a call to one. A call to a tool the session does not have runs
+  nothing: Claude Code refuses it as an error, the run's events keep it, and the session's
+  reply still counts. Runs `b573cd15` and `4f16f74d` each lost a claim when a critique asked
+  for `bash` and Claude Code refused it. A session that ends without a
   reply in shape is `critic_response_invalid` or `assessor_response_invalid`, an
   operational failure, never a grade and never a scientific finding. A critique holds
   `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string per

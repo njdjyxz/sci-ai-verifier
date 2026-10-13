@@ -395,8 +395,10 @@ def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
     result = results[0]
     if result.get("session_id") != expected_session or not isinstance(result.get("result"), str):
         raise Fault("claude_identity_error", "Claude Code returned a mismatched session or missing result.")
-    calls, completed, models = [], set(), set()
+    calls, completed, models, offered = [], set(), set(), None
     for event in events:
+        if event.get("type") == "system" and event.get("subtype") == "init" and isinstance(event.get("tools"), list):
+            offered = event["tools"]
         message = event.get("message", {})
         if not isinstance(message, dict):
             continue
@@ -412,6 +414,9 @@ def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
                 calls.append({"id": block.get("id"), "name": block.get("name"), "input": block.get("input", {})})
             if block.get("type") == "tool_result" and not block.get("is_error"):
                 completed.add(block.get("tool_use_id"))
+    # A call Claude Code refused, such as one to a tool the session was not given, ran nothing.
+    for call in calls:
+        call["completed"] = call["id"] in completed
     invoked = [call for call in calls if call["name"] == "Skill" and isinstance(call["input"], dict)
                and call["input"].get("skill") == SUBJECT_SKILL and call["id"] in completed]
     allowed={"Skill", "EndConversation", *extra_tools} if extra_tools else {"Skill","Read","EndConversation"}
@@ -422,6 +427,8 @@ def parse_events(raw, *, expected_session, subject=False, extra_tools=()):
             "session_id": expected_session, "response_id_source": "claude_cli_session_id",
             "observed_model_ids": sorted(models), "invocation_verified": bool(invoked),
             "tool_calls": calls, "usage": result.get("usage"), "total_cost_usd": result.get("total_cost_usd"),
+            # The tools Claude Code started the session with; None for a stream without its init event.
+            "offered_tools": offered,
             # Present only for a session given a reply schema: the reply, already parsed.
             "structured_output": result.get("structured_output")}
 

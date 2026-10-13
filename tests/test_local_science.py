@@ -456,7 +456,8 @@ class ReplySchemaSessionTests(unittest.TestCase):
     SCHEMA={"type":"object","additionalProperties":False,"required":["answer"],
             "properties":{"answer":{"type":"string","minLength":1,"maxLength":10}}}
 
-    def ask(self,*,code=0,tool="StructuredOutput",subtype="success",structured=True):
+    def ask(self,*,code=0,tool="StructuredOutput",subtype="success",structured=True,offered=None,outcome=None):
+        """`offered` is the init event's tool list; `outcome` answers the call: "ran", "refused" or none."""
         from sci_ai_verifier.claude_runner import ClaudeCode
         from sci_ai_verifier.documentary import isolated_answer
         seen={}
@@ -470,7 +471,14 @@ class ReplySchemaSessionTests(unittest.TestCase):
             if structured:
                 result["structured_output"]=reply
             events=[{"type":"assistant","session_id":session,"message":{"model":"m","role":"assistant","content":[
-                        {"type":"tool_use","id":"toolu_1","name":tool,"input":reply}]}},result]
+                        {"type":"tool_use","id":"toolu_1","name":tool,"input":reply}]}}]
+            if offered is not None:
+                events.insert(0,{"type":"system","subtype":"init","session_id":session,"tools":offered})
+            if outcome:
+                events.append({"type":"user","session_id":session,"message":{"role":"user","content":[
+                    {"type":"tool_result","tool_use_id":"toolu_1","is_error":outcome=="refused",
+                     "content":"Error: No such tool available: "+tool if outcome=="refused" else "done"}]}})
+            events.append(result)
             return code,b"".join(canonical(event)+b"\n" for event in events),b""
 
         with patch.dict(os.environ,{"CLAUDE_CODE_OAUTH_TOKEN":"fake-oauth-for-boundary-test"}):
@@ -485,10 +493,19 @@ class ReplySchemaSessionTests(unittest.TestCase):
         self.assertEqual(command[command.index("--tools")+1],"")
         self.assertEqual(command[command.index("--max-turns")+1],"4")
 
-    def test_any_other_tool_call_is_a_boundary_violation(self):
-        with self.assertRaises(Fault) as caught:
-            self.ask(tool="Bash")
-        self.assertEqual(caught.exception.code,"critic_boundary_violation")
+    def test_another_tool_given_or_run_is_a_boundary_violation(self):
+        for label,options in (("ran",{"tool":"Bash","outcome":"ran"}),
+                              ("given",{"offered":["StructuredOutput","Bash"],"outcome":"ran"})):
+            with self.subTest(label),self.assertRaises(Fault) as caught:
+                self.ask(**options)
+            self.assertEqual(caught.exception.code,"critic_boundary_violation")
+
+    def test_a_call_claude_code_refused_ran_nothing_and_the_reply_counts(self):
+        """Runs b573cd15 and 4f16f74d each lost a claim to a critique whose `bash` Claude Code refused;
+        tests/recorded/critic-refused-tool.jsonl is the second."""
+        response,_=self.ask(tool="Bash",offered=["StructuredOutput"],outcome="refused")
+        self.assertEqual(response["structured_output"],{"answer":"9"})
+        self.assertEqual([(call["name"],call["completed"]) for call in response["tool_calls"]],[("Bash",False)])
 
     def test_a_session_whose_replies_never_met_the_schema_is_an_invalid_reply(self):
         """Probed live on 2026-09-28: a session whose replies the schema refused twice ended as

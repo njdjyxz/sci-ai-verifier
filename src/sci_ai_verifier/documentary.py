@@ -285,8 +285,11 @@ def isolated_answer(adapter,packet,*,role,system_prompt,schema,limit=64000,timeo
                 raise Fault(role+"_response_invalid","The independent "+role+" ended without a reply in its schema.")
             raise Fault(role+"_unavailable","The independent "+role+" did not complete.")
         response=parse_events(raw,expected_session=session)
-        if any(call["name"]!=REPLY_TOOL for call in response["tool_calls"]):
-            raise Fault(role+"_boundary_violation","The independent "+role+" attempted a tool call.")
+        # A refused call to a tool the session was not given ran nothing (tool-contracts.md): runs
+        # b573cd15 and 4f16f74d each lost a claim to a critique whose `bash` Claude Code refused.
+        if set(response["offered_tools"] or ())-{REPLY_TOOL} or any(
+                call["name"]!=REPLY_TOOL and call["completed"] for call in response["tool_calls"]):
+            raise Fault(role+"_boundary_violation","The independent "+role+" was given or used a tool besides its reply.")
         if not isinstance(response["structured_output"],dict):
             raise Fault(role+"_response_invalid","The independent "+role+" returned no reply in its schema.")
         return response,session
