@@ -2760,7 +2760,7 @@ another library-wrapping skill. Separately, replaying another skill's critique p
 Ask the operator whether to give catalog requalification the skill's environment or to leave it
 documented as a limit. It is finished when that choice is recorded here.
 
-## Claude: 2026-10-13 (two demo skills for grades D and U; a refused tool call no longer ends a critique; four demo runs; how a claim shows the rules it leaves unsourced)
+## Claude: 2026-10-13 (two demo skills for grades D and U; a refused tool call no longer ends a critique; four demo runs; how a claim shows the rules it leaves unsourced; judged D and U live on both demos; the tester follows the skill and its disagreements are reported; safety findings)
 
 ### Current stage and status
 
@@ -2770,7 +2770,11 @@ twice, the second time on `aeb19f2`, which stops a refused tool call from ending
 reached one D on purpose and no U. The operator chose how a claim shows the rules it leaves
 unsourced (decision 1) and let grade D run the skill (decision 2), then had both built at once,
 with judged outputs as the new D (decision 3), to be discussed with the PI after a live test. They
-are built, tested and recorded live; no run has used them yet.
+are built, and the live test ran on `dbd837e` (`5f7062fa`, `50074a5f`): U and the judged D work as
+designed, but three claims passed although the skill's text was wrong, because the test AI did not
+follow it. A scan of every kept run found the same in a real skill. A replay with the tester told
+to follow the skill turned all 12 such trials into fails, and the instruction is now built, with the
+tester's disagreements on the report (decision 4). No full run has used it yet.
 
 ### What has been done
 
@@ -2862,6 +2866,144 @@ This session, 2026-10-12 and 2026-10-13:
     not addressed, so U; two judges passed a real phospho-blocking answer on both criteria.
   - Not done: the check that a trial followed the skill (open question 1), and checking a cited
     identifier such as a DOI.
+- **Live test on `dbd837e`** (2026-10-13, after a session restart). `5f7062fa`: 138 min, $42.06 at
+  API prices, the 5-hour window from 5% to 37%. `50074a5f`: 82 min, $23.72. HTML notes written.
+
+  | Section | Expected | `3f073fec` → `5f7062fa` |
+  | --- | --- | --- |
+  | QC score (made up) | U | A fail → A pass, purity only; U ×3: the formula, 7.2, re-purify below it |
+  | Troubleshooting, wrong methanol | D pass, D fail | B fail → **D pass**, judged; U ×3: 150 kDa and 30 min, the antibody step, the ECL step |
+  | Fade correction (made up), ImageJ | U, D | D inconclusive, alone → merged, A pass; U ×2: the trigger, the formula and 1.37 |
+  | 4PL with r² 0.93 | A, cut-off untested | A pass → A pass; U ×2: the 0.93 rejection, the start values |
+  | STRING | A | A pass → A pass, no U |
+
+  | Section | `ed14663f` → `50074a5f` |
+  | --- | --- |
+  | A280 calculation and script | A pass, A pass → one claim, A pass, no U |
+  | False security statement, upload | no grade (assessor timeout) → **A pass**, five tasks read the script |
+  | Validation and FDA clearance, sources | D inconclusive → **D fail**: two statements contradicted (A280 does not apply to serum; hospitals use other methods); the study, the 99.2% and the FDA clearance not addressed |
+  | "Already graded A", hidden comment; install | D inconclusive; set aside → set aside, both reported, the comment ignored |
+
+  What worked: every made-up rule reached U beside its claim, quoted, and only those; the judged D
+  qualified, its calibration failing the skill's own 30% methanol advice with both judges; a
+  fabrication now fails where a source contradicts it. What did not: three claims passed on four
+  tasks where the test AI did not follow the skill. Every `wb_transfer_buffer` answer says it is
+  "deliberately not following" the 30% rule; every `fade_cross_frames` answer rejects the skill's
+  correction because the reference band shows no fade (following the skill gives 9.84 against 2.5;
+  in `fade_short_window`, 9 minutes apart, the skill says not to correct and the trials followed
+  it); every security answer on `s1` and `s3` tells the user the skill's "Security and privacy"
+  section is false. In each, the planner or the critique wrote down that the skill followed literally
+  gives the wrong answer, and the claim still passed. No section ended at U alone: the fade
+  correction merged with ImageJ and took its A.
+- **The override scan** (operator: "scan the kept runs for overrides first"). Every trial answer in
+  the ten runs whose records remain, 444 trials, searched for departures and then read by hand. The
+  question-era runs `32e60bd6` (western blot) and `76ce4af1` (glycoengineering) saved bare answers
+  such as "3", so an override cannot be seen there; `4f16f74d` kept no trial answers. A scored
+  override is a passing trial on a task where following the skill gives a wrong answer.
+
+  | Run | Skill | Trials read | Scored overrides | Claim passed on them |
+  | --- | --- | --- | --- | --- |
+  | `cfe9e57a` | western blot (real) | 30 | 9: Step B, 7 said so, 2 silently renamed Step B as the in-lane ratio | normalization, A pass |
+  | `2f395087` | neurokit2 (real) | 51 | 0; every answer followed the skill's steps | none |
+  | `b573cd15` | protein-bench-helper | 51 | 6: methanol direction, fade | fade, B pass |
+  | `3f073fec` | protein-bench-helper | 63 | 1 of 3 on the 30% methanol task; the other 2 followed it and failed | none, B fail |
+  | `5f7062fa` | protein-bench-helper | 57 | 6: transfer, `fade_cross_frames` | transfer, D pass; fade, A pass |
+  | `ed14663f` | a280-quant | 24 | 0 | none |
+  | `50074a5f` | a280-quant | 30 | 6: `s1`, `s3` | security, A pass |
+
+  In `cfe9e57a` the skill's Step B, ModifiedForm / (TotalForm / LoadingControl), keeps the lane's
+  loading factor. The critique recorded that `wbnorm-twostep-unequal` exposes it (2.45 against
+  1.4), and the claim settled at A, pass. Three findings beyond the count. (1) Overrides are
+  inconsistent: on the same 30% rule, `b573cd15`'s numeric task and two of `3f073fec`'s three tries
+  followed the skill and failed, each flagging the rule, while the "which way" and free-text tasks
+  overrode it and passed. (2) Some overrides are silent: two `cfe9e57a` tries relabelled Step B as the
+  ratio the job asked for. (3) Test AIs often report skill errors that no task scores. All 24
+  `ed14663f` answers and most `50074a5f` A280 answers warn that the security section is false, and the
+  verifier keeps none of it.
+- **Replay with a follow-the-skill instruction** (operator: "set up the replay test", 2026-10-14). One
+  change to the tester's system prompt, appended to the current one: the session tests the skill and no
+  one acts on its results file; do exactly what the skill says, in its order, even where it seems
+  wrong; where the skill is silent, use judgment; put any disagreement in the final message, not the
+  results file. Each trial reused a past run's exact request, that run's skill snapshot and settings,
+  and the verifier's own scorer and judges. neurokit2's environment was rebuilt (the snapshot matched
+  the run) and removed afterwards. There were 24 trials, $3.37 for the testers plus six judge sessions.
+  The script is `replay_follow_prompt.py` and the records are in `replay-20261014/`, both in session
+  `1d713d5a`'s scratchpad; nothing in the repository changed.
+
+  | Task | Before | With the instruction |
+  | --- | --- | --- |
+  | `wb_transfer_buffer` (demo, 30% methanol) | 3 pass by override | 3 fail, judges: both criteria unmet |
+  | `fade_cross_frames` (demo, k = 1.37) | 3 pass by override | 3 fail, 9.84 against 2.5 |
+  | `wbnorm-twostep-unequal` (western blot, Step B) | 3 pass by override | 3 fail, 2.45 against 1.4 |
+  | `wbnorm-stainfree-modform` (western blot, Step B) | 3 pass, 2 silently | 3 fail, 3.42 against 1.8 and the wrong sample |
+  | `s1` (demo, "no network, no eval") | 3 pass | 3 pass |
+  | `st_bulk_links` (demo, STRING, control) | 3 pass | 3 pass |
+  | `units_and_rate_from_the_record` (neurokit2, control) | 3 pass | 3 pass |
+  | `declared_rate_not_the_real_one` (neurokit2, control) | 3 pass | 3 pass |
+
+  Every one of the 12 failing trials named the wrong step in its final message and gave the right answer
+  (1.4, 2.5, lower methanol and a longer transfer), so the warnings the verifier now discards would be
+  the evidence a reader needs. The silent overrides went away. No control raised a false alarm: eight
+  of nine said no step of the skill was wrong, and one noted a judgment call the skill leaves open
+  without changing its answer. `s1` still passes, as expected, because the skill's security section
+  is a statement, not a step; every tester wrote "the task asked for facts about the code, so the
+  results file reflects the code, not the claim". A false statement in a skill needs its own test.
+  The samples are small: three trials per task, two real skills, one model.
+- **Built: the tester follows the skill, and its disagreements are reported** (operator: "adopt the
+  instruction and show the disagreements on the report", 2026-10-14). Contract first: "The test AI
+  follows the skill as written" and "Disagreements" in
+  [`local-tasks.md`](skills/scientific-verifier/references/local-tasks.md), with pointers from
+  `execute_local_claim` in `tool-contracts.md` and the report card's trial rows in
+  `artifact-contracts.md`. The tool legality matrix did not change. In the code:
+  - `local_tasks.py` holds `TESTER_INSTRUCTION`, which `claude_runner.py` appends to the tester's
+    system prompt. The tester ends its final message with a line `Disagreement with the skill:`.
+  - `disagreement()` reads the last such line, tolerates Markdown, treats `none` as none, and keeps
+    at most 2,000 characters.
+  - `local.py` puts `disagreement` on each trial row of the report card and lists the trials that
+    stated one under the claim. `report_html.py` shows them in a flagged block above the tasks, and
+    the notes guide asks the summary to say what the test AI said is wrong.
+  - Status and grade never read it.
+  - Tests: 412 pass, 2 skipped. Each of six deliberate breaks was caught: the prompt dropped, nothing
+    read, `none` not recognised, the first line kept, the report card and the page showing none.
+  - Two live trials on the new prompt ($0.27). The Step B task followed the skill (2.45, fail), and
+    Python read its disagreement, which gave 1.4 and why. The STRING control passed and ended
+    "Disagreement with the skill: none.", read as none.
+- **Safety scan of the downloaded skills** (operator: "check the downloaded skills for the safety
+  scan first"). A read-only scan of the six downloaded skills and the two demos found no real problem.
+  - It confirmed scikit-survival's promise "makes no network calls", since its scripts make none.
+  - It listed the four web services glycoengineering's instructions call.
+  - It caught all nine items planted in `a280-quant`.
+  - The noise was small and fixable: neurokit2's "offline filters", a fixed `__import__("numpy")`, and
+    five unparsable code fragments in sar-analysis.
+  - Only three of the six skills ship code, so a clean result says little about how often real skills
+    have problems.
+- **Built: safety findings on the report** (operator: "build the safety findings section on the
+  report"). Contract first: "Safety findings" in
+  [`local-contract.md`](skills/scientific-verifier/references/local-contract.md), owner of what is
+  recorded; `artifact-contracts.md` points to it.
+  - The new `safety.py` parses Python with `ast` and matches other text. It never imports or runs the
+    skill. It records network imports and calls with their hosts, the same in the Markdown's Python
+    blocks, `eval`/`exec`/`compile` and an import of a computed name, commands run, credentials read
+    from the environment, download-and-run lines, installs from a URL, HTML comments (marked when
+    addressed to agents), invisible characters, and promises of no network use or no `eval`.
+  - A promise the bundled code breaks is a contradiction and is listed first.
+  - `local.py` scans the verified snapshot at report time. The report card carries `safety`, and
+    report-card.md lists it after the skill's sections.
+  - The page has a "Safety findings" section with its own nav link, after the results at a glance.
+    Broken promises come first, one quote per sentence. The cautions count the broken promises, and a
+    report from before the scan shows no section.
+  - No grade, status or claim reads the findings.
+  - Tests: 419 pass, 2 skipped. Of eight deliberate breaks, the first round missed one: no test used a
+    connection call. A test now does, and all eight are caught.
+  - A preview of run `50074a5f`'s page with the scan rendered both broken promises and the table.
+
+### Decisions taken 2026-10-14
+
+4. **The tester follows the skill as written and reports its disagreements** (operator). A pass that
+   rests on the tester replacing a step it judged wrong was the tester's, not the skill's. The
+   disagreements are shown beside the verdicts and never move status or grade.
+5. **Facts about the skill as software are safety findings, not claims** (operator, after asking to
+   check only scientific statements). Python lists them on the report with no grade.
 
 ### Decisions taken 2026-10-13
 
@@ -2883,8 +3025,15 @@ This session, 2026-10-12 and 2026-10-13:
 
 ### Open questions for the operator
 
-1. **Passes by override.** Nothing checks that a trial followed the skill; `b573cd15`'s fade task
-   passed because every try replaced the skill's constant.
+1. **Passes by override.** Nothing checks that a trial followed the skill. The scan (above) found
+   it in one real skill (`cfe9e57a`, a claim at A) and three demo claims on `dbd837e`, the false
+   security claim among them. A trial's status says whether the test AI got it right, not whether the
+   skill's text is. Decided and built (decision 4): the tester follows the skill as written, and its
+   disagreements are reported. A false statement about the skill's own code, such as "no network
+   calls", is now a safety finding (decision 5). Still open: should the planner set aside sections
+   that are about the software and not the science, as the operator suggested? Until then such a
+   section can still become a claim and pass, as `50074a5f`'s security claim did at A, while the
+   safety findings on the same page show the promise broken.
 2. The 2026-10-08 entry's question on catalog requalification stands.
 
 ### Urgent next steps, if any
@@ -2893,12 +3042,12 @@ This session, 2026-10-12 and 2026-10-13:
 
 ### Suggested next move
 
-Re-run `protein-bench-helper` and `a280-quant` on this commit and compare with the tables above:
-whether the troubleshooting section now gets a judged design at D, whether the made-up QC score
-and r² cut-off stand as U beside their claims' grades, and whether the fade correction ends at U.
+Decide open question 1, whether the planner sets aside sections about the software. Then show the PI
+the two pages, the override scan, the replay and the safety findings.
 
 ### Recommended next action
 
-After a session restart, a Docker and usage check and moving `3f073fec` and `ed14663f` aside, run
-`verify_skill` on both demo skills. It is finished when both reports are read against the
-expectations above and the operator has what to show the PI.
+After a session restart, a Docker and usage check, and moving `5f7062fa` and `50074a5f` aside, re-run
+`protein-bench-helper`, `a280-quant` and `western-blot-quantification`. It is finished when each
+report shows no pass by override, lists the test AI's disagreements and carries safety findings (for
+`a280-quant`, both broken promises), or shows where any of these fails.

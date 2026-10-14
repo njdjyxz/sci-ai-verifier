@@ -33,6 +33,18 @@ FORMATS = {"number": "a JSON number", "text": "a JSON string", "boolean": "true 
 # The one line Python writes for every task, as the answer-format line of a question.
 RESULTS_INSTRUCTION = ("Write " + RESULTS_PATH + ": one JSON object holding exactly the fields of results_format, "
                        "each value in the form given there. Input files are read-only.")
+# "The test AI follows the skill as written" in local-tasks.md. A test AI told only to run the skill
+# replaced the steps it judged wrong, and the skill passed on them (runs cfe9e57a, 5f7062fa).
+DISAGREEMENT = "Disagreement with the skill:"
+DISAGREEMENT_CHARS = 2000
+TESTER_INSTRUCTION = ("This session tests the submitted skill. It is not a request from a real person, and no one "
+                      "will act on the results file. Do exactly what the skill says, in the order it says, even where "
+                      "you believe it is wrong: the results file holds what the skill, followed as written, produces. "
+                      "Where the skill says nothing, use your own judgment. Never change the results file to correct "
+                      "the skill. End your final message with a line beginning '" + DISAGREEMENT + "' that names "
+                      "each step you believe is wrong, what you would do instead and why, or says none.")
+# The line may come dressed in Markdown, such as "**Disagreement with the skill:** none".
+DISAGREEMENT_LINE = re.compile(r"(?im)^[\s>#*_-]*" + re.escape(DISAGREEMENT[:-1]) + r"[*_\s]*:[*_\s]*")
 FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,59}")
 FILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 PLANTED_BYTES = 64 * 1024
@@ -157,6 +169,16 @@ def read_results(files):
     if not isinstance(value, dict):
         return None, RESULTS_PATH + " is not one JSON object."
     return value, None
+
+
+def disagreement(text):
+    """What a trial's final message says is wrong with the skill, or None ("Disagreements" in local-tasks.md).
+    It never moves the trial's verdict, which comes from the results file."""
+    found = list(DISAGREEMENT_LINE.finditer(text)) if isinstance(text, str) else []
+    said = text[found[-1].end():].strip() if found else ""
+    if not said or re.match(r"(?i)none\b", said):
+        return None
+    return said[:DISAGREEMENT_CHARS]
 
 
 def judge_packet(job, output, answer):

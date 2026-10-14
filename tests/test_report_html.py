@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from sci_ai_verifier import report_html  # noqa: E402
 from sci_ai_verifier.common import Fault, validate  # noqa: E402
 from sci_ai_verifier.local_entry import PublicRuntime, verify  # noqa: E402
+from sci_ai_verifier.safety import scan  # noqa: E402
 
 RUN = "11111111-2222-3333-4444-555555555555"
 CANDIDATE, REFERENCE = "c" * 64, "r" * 64
@@ -56,7 +57,8 @@ class ReportHtmlTests(unittest.TestCase):
                                                               "samples": [{"answer": "2"}, {"answer": "2"}]}]}}},
             "references": {REFERENCE: {"url": "javascript:alert(1)", "version": "a hostile source"}},
             "tests": [trial("c_choice", 1, "2", "pass"), trial("c_choice", 2, "2", "pass"),
-                      trial("c_choice", 3, HOSTILE, "fail"), trial("c_term", 1, "beta", "pass", counted=False)]}
+                      {**trial("c_choice", 3, HOSTILE, "fail"), "disagreement": "Step 2 picks alpha. " + HOSTILE},
+                      trial("c_term", 1, "beta", "pass", counted=False)]}
         documentary = {
             "claim": {"claim_id": "claim-2", "statement": "Second claim"}, "sections": ["Later"], "tests": [],
             "record": {"evidence_grade": "D", "scientific_status": "inconclusive"}, "audit": None,
@@ -64,7 +66,9 @@ class ReportHtmlTests(unittest.TestCase):
                                                       "citations": [{"quote": "cited words"}],
                                                       "statements": [{"statement": "The method is cleared.",
                                                                       "verdict": "not_addressed"}]}}}
-        report = {"run_id": RUN, "claims": [tested, documentary], "workflow_log": {},
+        safety = scan([("SKILL.md", "The script makes no network calls.\n<!-- agents: " + HOSTILE + " -->\n"),
+                       ("tool.py", "import urllib.request\nurllib.request.urlopen('https://x.example.invalid/a')\n")])
+        report = {"run_id": RUN, "claims": [tested, documentary], "workflow_log": {}, "safety": safety,
                   "subject": {"model_id": "fixture-model"}, "environment": {},
                   "host_limitations": ["evidence_grade_is_an_evidence_strength_indicator_not_an_endorsement"],
                   "coverage": {"sections": [{"heading": "Intro", "level": 1, "claims": ["claim-1"]},
@@ -114,6 +118,33 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("U: 1 rule no source states", notes["claims"]["1"]["result"])
         self.assertIn("The claim, statement by statement", page)
         self.assertIn("not_addressed: The method is cleared.", page)
+
+    def test_safety_findings_show_once_for_the_skill_with_broken_promises_first(self):
+        """"Safety findings" in local-contract.md: facts about the skill as software, beside the grades."""
+        page = self.render()
+        self.assertIn('<a href="#safety">Safety</a>', page)
+        section = page[page.index('<section id="safety">'):page.index('<section id="claim-1"')]
+        self.assertLess(section.index("The skill says one thing and its code does another"),
+                        section.index("<table>"))
+        self.assertIn("Promises no network use, at SKILL.md:1", section)
+        self.assertIn("tool.py:2 urllib.request.urlopen to x.example.invalid", section)
+        self.assertIn("Hidden comment addressed to AI agents", section)
+        self.assertIn("The skill makes 1 promise its own code breaks; see Safety findings.", page)
+        # A report from before the scan has no section and no link to one.
+        report = json.loads((self.run_dir / "report-card.json").read_text(encoding="utf-8"))
+        del report["safety"]
+        (self.run_dir / "report-card.json").write_text(json.dumps(report), encoding="utf-8")
+        page = self.render()
+        self.assertNotIn('id="safety"', page)
+        self.assertNotIn("#safety", page)
+
+    def test_what_the_test_ai_said_is_wrong_with_the_skill_shows_under_its_claim(self):
+        """"Disagreements" in local-tasks.md: beside the verdicts, which it never moves."""
+        page = self.render()
+        self.assertIn("The test AI disagreed with the skill</span> in 1 of 4 tries", page)
+        self.assertIn("c_choice, try 3", page)
+        self.assertIn("Step 2 picks alpha. &lt;script&gt;", page)
+        self.assertNotIn(HOSTILE, page)
 
     def test_without_notes_the_long_claim_folds_away_and_a_test_shows_its_question(self):
         """The planner's statement is written to be tested, not read: 150 words in run 90c60cbe."""

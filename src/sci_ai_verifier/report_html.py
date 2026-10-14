@@ -45,7 +45,7 @@ GUIDE = ("Fill in the empty fields below in plain words and short sentences, for
          "skill. Do not quote the skill. skill.name: a short plain name. skill.summary: 3 to 5 sentences on what "
          "the skill does. For each claim: title, 2 to 5 words; says, 2 to 4 sentences on what the claim says; "
          "summary, 2 to 4 sentences on how it did, naming any test that failed, did not count or passed on "
-         "tolerance only, and any fact left untested. For each test: asks, the question or task in one short plain sentence; review, only if you checked a "
+         "tolerance only, what the test AI said is wrong with the skill, and any fact left untested. For each test: asks, the question or task in one short plain sentence; review, only if you checked a "
          "failed or odd test, saying whether the question, the key or the skill was at fault. cautions: short "
          "sentences the reader should know. by: your name; author: who wrote this text, and when. Leave every "
          "other field as it is, then run the render command to update the page.")
@@ -254,6 +254,8 @@ def claim_view(run, number, claim, notes):
                    "model_url": ((claim.get("references") or {}).get((generator or {}).get("reference_ref")) or {}).get("url")}
         if candidate.get("method") == "task" else None,
         "run_problems": sorted({item for test in tests for row in test["trials"] for item in row.get("run_problems") or []}),
+        # "Disagreements" in local-tasks.md: what the test AI said is wrong, beside verdicts it never moves.
+        "disagreements": [row for test in tests for row in test["trials"] if row.get("disagreement")],
         "number": number, "id": claim_id, "claim": claim["claim"], "note": note, "record": record,
         "title": note.get("title") or (claim.get("sections") or [f"Claim {number}"])[0],
         "sections": claim.get("sections") or [], "grade": record.get("evidence_grade"),
@@ -394,6 +396,7 @@ pre{white-space:pre-wrap;word-wrap:break-word;background:var(--card2);border:1px
 padding:10px 12px;font:13px/1.45 Consolas,"Courier New",monospace;max-height:22em;overflow:auto;margin:6px 0}
 .question{white-space:pre-wrap;background:var(--card2);border:1px solid #e3e9f0;border-radius:8px;padding:10px 12px}
 blockquote{margin:6px 0;padding:8px 14px;background:var(--teal-tint);border-radius:8px;color:var(--ink)}
+blockquote.said{white-space:pre-wrap;max-height:16em;overflow:auto}
 .try{border-top:1px dashed var(--line);padding-top:8px;margin-top:8px}
 ul.plain{margin:.4em 0;padding-left:1.2em}ul.plain li{margin:.3em 0}
 .legend dt{color:var(--navy)}
@@ -713,6 +716,13 @@ def chapter(v, author):
     if v["run_problems"]:
         out.append('<p><span class="flag">⚑ While running the skill</span>, the test AI met: '
                    + e("; ".join(v["run_problems"])) + ". The skill may not run as shipped on this computer.</p>")
+    if v["disagreements"]:
+        out.append(f'<p><span class="flag">⚑ The test AI disagreed with the skill</span> in {len(v["disagreements"])} '
+                   f'of {v["trials_run"]} tries. It followed the skill anyway, so the verdicts stand on what the skill '
+                   "gives. What it said is wrong:</p><ul class='plain'>"
+                   + "".join(f'<li><b>{e(row.get("case_id"))}, try {e(row.get("trial"))}</b>'
+                             f'<blockquote class="said">{e(row["disagreement"])}</blockquote></li>'
+                             for row in v["disagreements"]) + "</ul>")
     if v["tests"]:
         out.append(("<h3>The tasks</h3><p class='dim'>Each task gives fresh AI sessions input files and a job. They "
                     "follow the skill and write their results, and Python checks every output.</p>" if v["tasks"]
@@ -798,6 +808,45 @@ def sections_block(sections, rows):
             f"</summary><div class='inner'>{table}</div></details>")
 
 
+SAFETY_KINDS = {"network": "Code uses the network", "network in instructions": "Instructions tell the AI to use the network",
+                "dynamic code": "Code runs code built from text", "runs commands": "Code runs commands",
+                "reads a credential": "Code reads a credential", "download and run": "Downloads and runs code",
+                "install from a URL": "Installs from a web address", "hidden comment": "Hidden comment",
+                "hidden comment to agents": "Hidden comment addressed to AI agents",
+                "invisible character": "Invisible character", "network promise": "Promises no network use",
+                "eval promise": "Promises no eval or exec"}
+
+
+def safety_section(safety):
+    """"Safety findings" in local-contract.md: facts about the skill as software, which carry no grade."""
+    if not safety:  # A report from before the scan.
+        return ""
+    out = [f'<section id="safety"><h2>Safety findings</h2><p class="lead">Python read the skill\'s '
+           f'{safety["files_read"]} text files without running any of them. These are facts about the skill as '
+           "software. They carry no grade, and no claim depends on them.</p>"]
+    # One sentence can break two promises, as run 50074a5f's did; it is quoted once.
+    grouped = {}
+    for item in safety["contradictions"]:
+        group = grouped.setdefault((item["path"], item["line"], item["promise"]), ([], []))
+        label = SAFETY_KINDS.get(item["kind"], item["kind"])
+        group[0].append(label if not group[0] else label[0].lower() + label[1:])
+        group[1].extend(item["contradicted_by"])
+    for (path, line, promise), (labels, found) in grouped.items():
+        out.append(f'<p><span class="flag">⚑ The skill says one thing and its code does another.</span> '
+                   f'{e(" and ".join(labels))}, at {e(path)}:{e(line)}:</p><blockquote>{e(promise)}</blockquote>'
+                   "<ul class='plain'>" + "".join(f"<li>{e(item)}</li>" for item in found) + "</ul>")
+    if safety["findings"]:
+        out.append("<div class='wrap'><table><thead><tr><th>What</th><th>Where</th><th>Detail</th></tr></thead><tbody>"
+                   + "".join(f'<tr><td>{e(SAFETY_KINDS.get(item["kind"], item["kind"]))}</td>'
+                             f'<td>{e(item["path"])}:{e(item["line"])}</td><td>{e(item["detail"])}</td></tr>'
+                             for item in safety["findings"]) + "</tbody></table></div>")
+        if safety["truncated"]:
+            out.append(f'<p class="dim">Only the first {len(safety["findings"])} findings are listed.</p>')
+    else:
+        out.append("<p>Nothing found.</p>")
+    return "".join(out) + "</section>"
+
+
 def page(run, notes):
     report, state = run.report, run.state
     author = notes.get("by") or "Claude"
@@ -819,7 +868,9 @@ def page(run, notes):
              (minutes(run.span), f"run time, of {minutes(run.deadline)} allowed" if run.deadline else "run time"),
              (f'{state.get("subject_calls_used", "–")} of {settings.get("max_subject_calls", "–")}', "AI test sessions"),
              (money(total), "cost at API prices" + (f", planner {money(run.planner['cost'])}" if run.planner else ""))]
+    safety = report.get("safety")
     nav = ['<a href="#skill">The skill</a>', '<a href="#glance">Results at a glance</a>']
+    nav += ['<a href="#safety">Safety</a>'] if safety else []
     nav += [f'<a href="#claim-{v["number"]}">Claim {v["number"]}</a>' for v in claims]
     nav += ['<a href="#cautions">Cautions</a>', '<a href="#how">How to read this</a>']
     created = str(state.get("created_at") or report.get("generated_at") or "")[:10]
@@ -852,6 +903,7 @@ def page(run, notes):
     out.append('<section id="glance"><h2>Results at a glance</h2><p class="lead">One row per claim. A claim passes only if '
                'every counted answer is right. The grade says how strong the tests were, not whether the skill passed.'
                '</p>' + summary_table(claims, run) + "</section>")
+    out.append(safety_section(safety))
     out += [chapter(v, author) for v in claims]
 
     cautions = notes.get("cautions") or []
@@ -871,6 +923,10 @@ def page(run, notes):
     if environment.get("imports_unavailable_reported_by_image"):
         recorded.append("The test computer did not have these Python packages: "
                         + ", ".join(environment["imports_unavailable_reported_by_image"]) + ".")
+    if safety and safety["contradictions"]:
+        broken = len(safety["contradictions"])
+        recorded.append(f"The skill makes {broken} promise{'s' if broken > 1 else ''} its own code breaks; "
+                        "see Safety findings.")
     readers = sum(v["by_reader"] for v in claims)
     recorded.append("A reviewer AI checked every test plan, so every grade includes AI judgment."
                     + (f" {readers} counted answer{'s' if readers > 1 else ''} passed only because the AI reader "

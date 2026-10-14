@@ -684,7 +684,8 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   and an empty extra key in a case verdict lost a claim in run 0a243b7e.
 - `execute_local_claim`: in local_ready, run every task of the fixed design for its audited
   trial count, each trial a fresh answer-blind subject session given the task's files and
-  job, save each request before invocation, and read each trial's `/work/results.json` as
+  job and told to follow the skill as written ("Tasks" in `local-tasks.md`), save each
+  request before invocation, and read each trial's `/work/results.json` as
   "Reading a trial's results" in `local-tasks.md` says, with two judge sessions for a judged
   output, whose failure is an operational limitation. A score receipt holds each output's
   expected value, the value found and that output's verdict, a judged output's answers per

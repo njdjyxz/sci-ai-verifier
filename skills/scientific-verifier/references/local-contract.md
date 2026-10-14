@@ -334,6 +334,28 @@ calculated answers and generated evaluators were retired on 2026-10-05.
 
 The report lists each claim's sections, and the sections set aside with their reasons.
 
+## Safety findings
+
+Python reads every text file of the skill's snapshot, parsing Python with `ast` and never
+importing or running it, and the report lists what it finds as safety findings. They are
+facts about the skill as software, not claims: no grade, status or claim reads them.
+Python records:
+- each network module the bundled code imports, each network call it makes, and the hosts
+  its code names, and the same for a Python block in the skill's Markdown;
+- `eval`, `exec` and `compile`, and an import whose module name is not written in the code;
+- commands run through `subprocess` or `os`;
+- environment variables read whose names suggest a credential;
+- a command that downloads and runs code, such as `curl … | sh`, and an install from a URL;
+- every HTML comment, marked when it addresses an agent or a verifier, and invisible characters;
+- each sentence promising no network use, data kept on the computer, or no `eval` or `exec`.
+
+A network promise that a network call in the bundled code contradicts, or an `eval` or `exec`
+promise beside such a call, is listed first as a contradiction. The skill of run `50074a5f`
+said its script makes no network calls and never uses `eval`. The script called two hosts and
+`eval`, and the claim built on that section passed at A, because its tasks scored the test AI's
+reading of the code. In the six downloaded skills the scan found no problem, and it confirmed
+scikit-survival's promise of no network calls.
+
 ## Legal operations
 
 The `Local profile` matrix in workflow.md and `Local profile tools` in

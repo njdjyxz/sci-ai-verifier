@@ -60,6 +60,18 @@ answer without the skill (`leaked`). Naming what to report, such as a fold chang
 standard error, is not saying how. Run `cfe9e57a`'s two-step task defined its output so, and
 the test AI computed the fraction, 1.4, where the skill's own formula gives 2.45.
 
+**The test AI follows the skill as written.** Its instructions say the session tests the
+skill and no one acts on its results file. It does exactly what the skill says, in the
+skill's order, even where it believes a step is wrong, and uses its own judgment only where
+the skill says nothing. It never changes the results file to correct the skill. Instead it
+ends its final message with a line `Disagreement with the skill:` naming each step it
+believes wrong, what it would do instead and why, or `none` ("Disagreements" below). Before
+this, a test AI that judged a step wrong replaced it, and the skill passed: in runs
+`cfe9e57a` and `5f7062fa` every trial of four tasks did so, and three claims passed, one at
+A, on steps the trials had set aside. Replayed with this instruction on 2026-10-14, all 12 of
+those trials followed the skill and failed, and every one named the wrong step. Nine trials
+of tasks the skills get right still passed.
+
 **Each task names the claim's sections it uses**, in `sections`. Python refuses a design
 whose tasks leave one of the claim's sections unused by every task. A design holds one to
 six tasks, and each runs for the run's trial count.
@@ -193,6 +205,13 @@ the reader the skill computed something other than the reference, inside a toler
 for honest variation. In run `f84c131c` every answer was within 0.18% of its reference
 result; in `2bef9e0d` the four tasks that hid a departure were 2.4 to 5.5% off, and every
 other task within 0.01%.
+
+**Disagreements.** Python keeps what follows the last `Disagreement with the skill:` line
+of the trial's final message, at most 2,000 characters, as the trial's `disagreement`. A
+message without that line, or one whose line says `none`, has none. The report lists each
+disagreement under its claim, by task and trial. A disagreement changes no status or grade:
+it is the test AI's view, and the verdict comes from the results file. In the replay, each
+test AI that failed by following a wrong step gave the right answer there.
 
 **Run problems.** Python also reads each trial's tool output for a module or command the
 skill needed and the container lacked (`ModuleNotFoundError`, `command not found`) and

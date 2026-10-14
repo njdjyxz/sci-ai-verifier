@@ -513,6 +513,29 @@ class UnsourcedRuleTests(unittest.TestCase):
                          [("U", True), ("U", False)])
 
 
+class DisagreementTests(unittest.TestCase):
+    """"Disagreements" in local-tasks.md: what a test AI that followed the skill says is wrong with it."""
+
+    def test_the_last_disagreement_line_is_kept_and_none_or_its_absence_is_none(self):
+        said = "Step B multiplies by the loading control; I would report PSMAD2/SMAD2, 1.4."
+        for text, kept in (
+                ("Wrote the file.\n\nDisagreement with the skill: " + said, said),
+                ("Wrote the file.\n**Disagreement with the skill:** " + said, said),
+                ("Disagreement with the skill: an early draft.\n> **Disagreement with the skill**: " + said, said),
+                ("Wrote the file.\nDisagreement with the skill: none.", None),
+                ("Wrote the file.\n**Disagreement with the skill:** None of its steps is wrong here.", None),
+                ("I kept a line Disagreement with the skill: inside a sentence.", None),
+                ("Wrote the file.", None), (None, None)):
+            with self.subTest(text=text):
+                self.assertEqual(local_tasks.disagreement(text), kept)
+        long = local_tasks.disagreement("Disagreement with the skill: " + "x" * 5000)
+        self.assertEqual(len(long), local_tasks.DISAGREEMENT_CHARS)
+
+    def test_the_tester_is_told_to_follow_the_skill_and_where_to_disagree(self):
+        self.assertIn("even where you believe it is wrong", local_tasks.TESTER_INSTRUCTION)
+        self.assertIn("'" + local_tasks.DISAGREEMENT + "'", local_tasks.TESTER_INSTRUCTION)
+
+
 class FlowTests(unittest.TestCase):
     """A task design through the planner's tools: qualify, select, execute and report."""
 

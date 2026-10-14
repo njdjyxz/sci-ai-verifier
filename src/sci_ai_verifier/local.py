@@ -1058,6 +1058,7 @@ def axis_lines(terminal, cell):
 
 def report(store, state):
     from .local_science import rejected_cases, size_limit
+    from .local_tasks import disagreement
 
     def cell(value):
         return escape(str(value)).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
@@ -1091,6 +1092,23 @@ def report(store, state):
                                                         if coverage["uncovered"] else "")
                            + ("; set aside: " + "; ".join(item["section"] + " " + item["heading"] + " (" + item["reason"]
                                                           + ")" for item in aside) if aside else "") + "."), ""])
+    # "Safety findings" in local-contract.md: facts about the skill as software, read and never run, with no grade.
+    from .safety import scan as safety_scan
+    safety = safety_scan([(entry["path"], store.get(entry["digest"]).decode("utf-8"))
+                          for entry in snapshot["files"] if entry["encoding"] == "utf-8"])
+    if safety["findings"]:
+        lines.extend(["Safety findings: Python read the skill's " + str(safety["files_read"]) + " text files and ran none "
+                      "of them. These are facts about the skill as software and carry no grade:", ""])
+        lines.extend("- Contradiction (" + cell(item["kind"]) + "): " + cell(item["path"]) + ":" + str(item["line"])
+                     + " promises \"" + cell(item["promise"])
+                     + "\", but " + cell("; ".join(item["contradicted_by"])) + "." for item in safety["contradictions"])
+        lines.extend("- " + cell(item["kind"]) + ": " + cell(item["path"]) + ":" + str(item["line"]) + " " + cell(item["detail"])
+                     for item in safety["findings"])
+        lines.extend(["- Only the first " + str(len(safety["findings"])) + " findings are listed."] if safety["truncated"] else [])
+        lines.append("")
+    else:
+        lines.extend(["Safety findings: none in the skill's " + str(safety["files_read"]) + " text files, which Python read "
+                      "and ran none of.", ""])
     for claim in claims:
         work = state["local_work"][claim["claim_id"]]
         terminal = store.get_json(work.get("result_ref") or work["outcome_ref"])
@@ -1114,6 +1132,7 @@ def report(store, state):
                               "expected": {output["field"]: output["expected"] for output in case["outputs"]},
                               "artifacts": observed.get("artifacts", []) if observed else [],
                               "observed": observed["text"] if observed else None,
+                              "disagreement": disagreement(observed["text"]) if observed else None,
                               "comparison_status": score.get("comparison_status", "not_obtained"),
                               "outputs": score.get("outputs"), "results_found": score.get("results_found"),
                               "results_problem": score.get("results_problem"),
@@ -1237,6 +1256,14 @@ def report(store, state):
                 lines.extend(["Passed on tolerance only, more than 0.5% from the reference solution's result: "
                               +"; ".join(cell(case_id)+" (up to "+format(value,".1%")+")" for case_id,value in off.items())
                               +".",""])
+            # "Disagreements" in local-tasks.md: the test AI's view beside the verdict, which it never moves.
+            said=[case for case in tests if case["disagreement"]]
+            if said:
+                lines.extend(["The test AI disagreed with the skill in "+str(len(said))+" of "+str(len(tests))
+                              +" trials. It followed the skill anyway, so status and grade stand on its results:",""])
+                lines.extend("- Task "+cell(case["case_id"])+", trial "+str(case["trial"])+": "+cell(case["disagreement"])
+                             for case in said)
+                lines.append("")
             # One row per trial: the task, its status, and every output that did not pass.
             lines.extend(["| Task | Trial | Status | Outputs not passing (expected; found) | Run problems | Counted |",
                           "| --- | --- | --- | --- | --- | --- |"])
@@ -1287,7 +1314,7 @@ def report(store, state):
                 "snapshot_ref": state["source_ref"], "manifest_ref": state["manifest_ref"],
                 "claims": rows, "verification_complete": True, "overall_scientific_grade": None,
                 "synthetic": state["subject_config"]["synthetic"], "subject": state["subject_config"],
-                "host_limitations": state["host_limitations"], "generated_at": utc_now()}
+                "host_limitations": state["host_limitations"], "safety": safety, "generated_at": utc_now()}
     if state.get("local_settings_ref"):
         document["configuration_ref"]=state["local_settings_ref"]
     if state.get("local_catalog_ref"):

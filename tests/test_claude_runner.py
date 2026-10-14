@@ -18,6 +18,7 @@ from sci_ai_verifier.claude_runner import (ClaudeCode, SUBJECT_SKILL, isolated_e
     sweep_stale_directories)
 from sci_ai_verifier.common import Fault, canonical
 from sci_ai_verifier.local_config import load_configuration
+from sci_ai_verifier.local_tasks import TESTER_INSTRUCTION
 
 
 NEWLINE = bytes([10])
@@ -81,6 +82,8 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("mcp__subject__run_command",command[command.index("--allowedTools")+1])
             self.assertIn("--restricted", command)
             self.assertIn("--strict-mcp-config", command)
+            # "The test AI follows the skill as written" in local-tasks.md.
+            self.assertTrue(command[command.index("--system-prompt")+1].endswith(TESTER_INSTRUCTION))
             self.assertIn(SUBJECT_SKILL, kwargs["prompt"])
             self.assertNotIn("expected", kwargs["prompt"])
             self.assertFalse(Path(kwargs["env"]["CLAUDE_CONFIG_DIR"]).is_relative_to(directory))

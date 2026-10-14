@@ -108,6 +108,49 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(saved["output.bin"],artifact)
         self.assertIn("Generated files:",Path(h.data["report_markdown_path"]).read_text())
 
+    def test_the_report_lists_safety_findings_with_a_broken_promise_first(self):
+        """"Safety findings" in local-contract.md: read from the snapshot, never run, and no verdict reads them."""
+        h=self.h
+        (h.source/"scripts").mkdir()
+        (h.source/"scripts/tool.py").write_text("import urllib.request\n"
+                                               "urllib.request.urlopen('https://x.example.invalid/a')\n",encoding="utf-8")
+        (h.source/"notes.md").write_text("The bundled script makes no network calls.\n",encoding="utf-8")
+        # setUp loaded the skill before these files existed, so this run loads it again.
+        h.data=h.runtime.call("start_verifier_run",{"source_path":str(h.source)})["data"]
+        h.call("load_submitted_skill",source_path=str(h.source))
+        h.snapshot=h.data["snapshot"]
+        h.ready()
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual(h.data["result"]["comparison_status"],"pass")
+        h.call("write_report_card")
+        safety=h.data["report"]["safety"]
+        self.assertEqual(safety["files_read"],3)
+        self.assertEqual([(item["kind"],item["path"]) for item in safety["contradictions"]],[("network promise","notes.md")])
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Safety findings: Python read the skill's 3 text files",markdown)
+        self.assertIn("- Contradiction (network promise): notes.md:1 promises",markdown)
+        self.assertIn("- network: scripts/tool.py:2 urllib.request.urlopen to x.example.invalid",markdown)
+
+    def test_a_trial_s_disagreement_with_the_skill_is_reported_and_moves_no_verdict(self):
+        h=self.h
+        original=h.subject.observe
+        said="Step 2 divides by the wrong band; I would divide by the loading control."
+
+        def observe(**request):
+            observation=original(**request)
+            ending="none." if len(h.subject.requests)>1 else said
+            return {**observation,"text":observation["text"]+"\n\n**Disagreement with the skill:** "+ending}
+        h.subject.observe=observe
+        h.ready()
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual(h.data["result"]["comparison_status"],"pass")
+        h.call("write_report_card")
+        trials=h.data["report"]["claims"][0]["tests"]
+        self.assertEqual([trial["disagreement"] for trial in trials],[said]+[None]*(len(trials)-1))
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("The test AI disagreed with the skill in 1 of "+str(len(trials))+" trials",markdown)
+        self.assertIn(said,markdown)
+
 
 class PublicationTests(unittest.TestCase):
     """The draft pull request is the review request; a person merges it."""

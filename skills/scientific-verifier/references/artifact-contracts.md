@@ -427,13 +427,17 @@ judged packet's digest with both judges' answers. A task trial's score receipt h
 judged output its `criteria` with both judges' answers and whether each is met, and for a
 number that passed far from the reference solution's result its `reference_result` and
 `off_reference` ("Reading a trial's results" in `local-tasks.md`), with `results_found` and
-the trial's `run_problems` and `files_not_kept`. A comparison result carries
+the trial's `run_problems` and `files_not_kept`. Each task trial in a report card claim's
+`tests` also carries `disagreement`, read from the trial's final message ("Disagreements" in
+`local-tasks.md`), or null. A comparison result carries
 `unsourced_rules` from the critique that settled its grade, each with grade `U`. A
 documentary assessment holds the assessor's `statements` with the `status` and `citations`
 Python derived; a record whose assessment addresses no statement is grade U.
 
 The report card carries `environment_ref` and an `environment` summary, and
-report-card.md opens with an Environment line. It also carries `coverage`: each section of
+report-card.md opens with an Environment line. It carries `safety`, the findings and
+contradictions of "Safety findings" in `local-contract.md`, which report-card.md lists after
+the skill's sections. It also carries `coverage`: each section of
 `SKILL.md` with its heading, level, line, the files it names, the claims that hold it and,
 for a section set aside, its reason, and the sections no claim holds, which report-card.md
 lists near the top. A manifest from before sections were named gets the claims whose quote
