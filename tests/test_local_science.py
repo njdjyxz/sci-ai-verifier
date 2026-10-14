@@ -143,8 +143,11 @@ class CeilingTests(unittest.TestCase):
         # A grade the last critique of this same design supported is the one exception.
         self.assertIsNone(proposal_problem("C","A",accepted="C"))
         self.assertEqual(proposal_problem("B","A",accepted="C"),"below_evidence_ceiling")
+        # D is the ceiling of a judged design only ("Judged outputs" in local-tasks.md).
+        self.assertIsNone(proposal_problem("D","D"))
+        self.assertEqual(proposal_problem("D","A"),"below_evidence_ceiling")
         with self.assertRaises(Fault) as caught:
-            proposal_problem("D","A")
+            proposal_problem("U","A")
         self.assertEqual(caught.exception.code,"grade_proposal_invalid")
 
     def test_one_negotiation_round_per_rubric_grade(self):
@@ -336,20 +339,43 @@ class DecisionTests(unittest.TestCase):
 
 
 class IndependentSessionTests(unittest.TestCase):
+    @staticmethod
+    def statement(verdict,quote=""):
+        return {"statement":"A statement of the claim.","verdict":verdict,
+                "reference_ref":"b"*64 if quote else "","quote":quote}
+
     def test_documentary_response_requires_exact_packet_citations(self):
         packet={"evidence":[{"reference_ref":"b"*64,"quote":"Known source text."}]}
-        response={"status":"inconclusive","findings":["Evidence bounded"]*len(RUBRIC["criteria"]),
-                  "citations":[{"reference_ref":"b"*64,"quote":"Known source"}],"limitations":"Documentary only."}
-        validate_assessment(response,packet)
-        response["citations"][0]["quote"]="Invented source"
+        response={"statements":[self.statement("supported","Known source"),self.statement("not_addressed")],
+                  "findings":["Evidence bounded"]*len(RUBRIC["criteria"]),"limitations":"Documentary only."}
+        value=validate_assessment(response,packet)
+        # Python derives the status and the citations from the statements.
+        self.assertEqual((value["status"],value["citations"]),
+                         ("inconclusive",[{"reference_ref":"b"*64,"quote":"Known source"}]))
+        response["statements"][0]["quote"]="Invented source"
+        with self.assertRaises(Fault):
+            validate_assessment(response,packet)
+        # A supported or contradicted statement must quote the packet.
+        response["statements"][0]["quote"]=""
         with self.assertRaises(Fault):
             validate_assessment(response,packet)
 
+    def test_python_gives_the_documentary_status_and_unaddressed_sources_give_u(self):
+        """Run 3f073fec's made-up fade correction got D, inconclusive, from a blot review that never named it."""
+        from sci_ai_verifier.documentary import documentary_status
+        supported,contradicted,silent=(self.statement("supported","q"),self.statement("contradicted","q"),
+                                       self.statement("not_addressed"))
+        self.assertEqual(documentary_status([supported,supported]),"pass")
+        self.assertEqual(documentary_status([supported,contradicted,silent]),"fail")
+        self.assertEqual(documentary_status([supported,silent]),"inconclusive")
+        self.assertEqual(documentary_status([silent,silent]),"no_evidence")
+        self.assertEqual(RUBRIC["id"],"local-documentary-v2")
+        self.assertIn("grade U",RUBRIC["status_rules"]["no_evidence"])
+
     def _assessor_packet_and_reply(self):
         packet={"evidence":[{"reference_ref":"b"*64,"quote":"Known source text."}]}
-        reply={"status":"inconclusive","findings":["Evidence bounded"]*len(RUBRIC["criteria"]),
-               "citations":[{"reference_ref":"b"*64,"quote":"Known source"}],
-               "limitations":"Documentary only."}
+        reply={"statements":[self.statement("supported","Known source"),self.statement("not_addressed")],
+               "findings":["Evidence bounded"]*len(RUBRIC["criteria"]),"limitations":"Documentary only."}
         return packet,reply
 
     def _replies(self,*values,calls):
@@ -367,9 +393,12 @@ class IndependentSessionTests(unittest.TestCase):
         with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=self._replies(good,calls=calls)):
             result=assess(object(),packet)
         self.assertEqual(result["assessment"]["status"],"inconclusive")
-        # The schema lets the assessor cite the packet's own references and nothing else.
-        citation=calls[0]["schema"]["properties"]["citations"]["items"]["properties"]["reference_ref"]
-        self.assertEqual(citation["enum"],["b"*64])
+        # The schema lets the assessor cite the packet's own references and nothing else, or none.
+        citation=calls[0]["schema"]["properties"]["statements"]["items"]["properties"]["reference_ref"]
+        self.assertEqual(citation["enum"],["","b"*64])
+        # Run ed14663f's assessor of a claim about a script's code ran past the two minutes it had.
+        from sci_ai_verifier.documentary import ASSESSOR_TIMEOUT_SECONDS
+        self.assertEqual(ASSESSOR_TIMEOUT_SECONDS,600)
         # Claude Code corrects a reply outside the schema inside the session, so one that still
         # reaches Python is an operational failure and no second session is asked.
         calls.clear()
@@ -383,7 +412,7 @@ class IndependentSessionTests(unittest.TestCase):
     def test_bad_citations_are_never_retried(self):
         """Re-rolling a parsed judgement until it is acceptable would be grade shopping."""
         packet,good=self._assessor_packet_and_reply()
-        invented={**good,"status":"pass","citations":[{"reference_ref":"b"*64,"quote":"Invented source"}]}
+        invented={**good,"statements":[self.statement("supported","Invented source")]}
         calls=[]
         with patch("sci_ai_verifier.documentary.isolated_answer",side_effect=self._replies(invented,good,calls=calls)):
             with self.assertRaises(Fault) as caught:
@@ -395,7 +424,7 @@ class IndependentSessionTests(unittest.TestCase):
         from sci_ai_verifier.documentary import TASK_QUESTIONS
         return {"supported_grade":"B","findings":["f"]*len(TASK_CRITIQUE_RUBRIC["criteria"]),
                 "objections":[],"required_revisions":["Add tasks covering the rest of the scope."],"coverage_gaps":[],
-                "departures":[],"task_checks":{"c":{**{key:{"answer":"no","reason":"in scope"}
+                "departures":[],"unsourced_rules":[],"task_checks":{"c":{**{key:{"answer":"no","reason":"in scope"}
                                                       for key,_,_ in TASK_QUESTIONS},
                                                    "criterion_given":"","replacement":""}}}
 
@@ -416,7 +445,10 @@ class IndependentSessionTests(unittest.TestCase):
         self.assertEqual(calls[0]["max_bytes"],2*1024*1024)
         # The schema asks for exactly the packet's tasks, and for the answers before the grade.
         self.assertEqual(calls[0]["schema"]["properties"]["task_checks"]["required"],["c"])
-        self.assertEqual(list(calls[0]["schema"]["properties"])[::6],["task_checks","supported_grade"])
+        properties=list(calls[0]["schema"]["properties"])
+        self.assertEqual((properties[0],properties[-1]),("task_checks","supported_grade"))
+        # The rules it finds no source for come just before its grade, shown as grade U beside it.
+        self.assertEqual(properties[-2],"unsourced_rules")
         for broken in ({**good,"task_checks":{"x":good["task_checks"]["c"]}},{**good,"supported_grade":"A+"},
                        {**good,"findings":["only one"]},{**good,"extra":"field"}):
             calls.clear()

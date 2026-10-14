@@ -577,14 +577,17 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   for each task with `arguments` and the solver once for each task, each in a new
   container with no network ("The reference solution" in `local-tasks.md` owns which
   image), and checks every output against the
-  solver's results. It saves `qualified_local` or `rejected` with each problem named. The
+  solver's results; a judged output's two judge sessions must pass the solver's answer and
+  fail its `fail_example` ("Judged outputs" in `local-tasks.md`), and their answers join the
+  receipts. It saves `qualified_local` or `rejected` with each problem named. The
   candidate holds each task's files (name, stored object, size), planted values and
   resolved expected values, the solver's results and the verdict of each output on them,
   and the programs' digests and images; the reply shows the start of each text file.
   Without a container the tool is refused as `sandbox_configuration_required`. Selection
   re-checks a saved design against these records without running anything again.
 - `select_local_candidate`: in local_discovery, bind an exact qualified task design and its
-  resources to this claim, propose `target_grade` A, B or C, and justify it with
+  resources to this claim, propose `target_grade` A, B, C or, for a design with a judged
+  output, D, and justify it with
   `oracle_independence`, `coverage`, `tolerance_basis`, `uncertainty` and
   `stronger_grade_considered`. `coverage` says which tasks use each of the claim's sections
   and what their outputs check. How many counting tasks each grade needs is owned by
@@ -619,7 +622,7 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   `replacement_rounds_remaining`, and `case_gap`: the proposal's task requirement against
   the tasks the critique counted, with a `summary` sentence that also names the
   critique's own grade whenever it is below the proposal, and the critique's
-  `coverage_gaps` and `departures`. **The coverage return.** A critique lists in `coverage_gaps`, whatever its
+  `coverage_gaps`, `departures` and `unsourced_rules`. **The coverage return.** A critique lists in `coverage_gaps`, whatever its
   grade, what the claim's sections say to do, check or conclude that no task tests
   (`rubric.coverage`). When it agrees with the proposal, the settled grade equalling it,
   and lists any, Python returns `local_grade_revision_required` instead of fixing the plan,
@@ -632,7 +635,7 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   critique lists in `departures` each situation the claim covers where the skill's
   procedure, followed literally, gives a different result from the reference solution and
   no task puts the difference outside its tolerance (`local-tasks.md`). While it lists any,
-  the settled grade stays below the proposal: A becomes B, B becomes C and C no grade. The
+  the settled grade stays below the proposal: A becomes B, B becomes C, and C or D no grade. The
   planner then exposes each departure in a revised design or accepts the lower grade.
   `local_design_unchanged`
   refuses a repeated proposal on a design already critiqued, spending neither a session
@@ -655,7 +658,9 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   operational failure, never a grade and never a scientific finding. A critique holds
   `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string per
   rubric criterion, in order), `objections`, `required_revisions`, `coverage_gaps` and
-  `departures` (each at most eight strings, empty when there are none), and, first,
+  `departures` (each at most eight strings, empty when there are none), `unsourced_rules`
+  (at most eight, each a `rule` quoted from the claim's sections and a `reason`; Python
+  marks one it cannot find there `quoted: false`), and, first,
   `task_checks`: one entry for every task ID in the packet and no other, each holding a yes
   or no `answer` with its `reason` for every question of the verdict table
   (`outside_claim`, `gives_away`, `job_decides`, `repeats`, `key_wrong`, `wrong_passes`), a `replacement`
@@ -664,21 +669,26 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   sections do not supply, which it then names (`local-tasks.md`). Python derives each
   task's verdict from its answers (`evidence-rubric.md`) and records `case_verdicts`: the
   verdict, the reasons of the answers that decided it, the replacement and the rule. An
-  assessment holds
-  `status`, `findings` (one string per documentary criterion), one to eight `citations`
-  naming packet references, and `limitations`, a single string. No string may be blank
+  assessment holds one to twelve `statements`, each a `statement`, its `verdict`
+  (`supported`, `contradicted` or `not_addressed`), and a `reference_ref` and `quote`,
+  both empty for one not addressed; `findings` (one string per documentary criterion); and
+  `limitations`, a single string. Python derives its `status` and its `citations` from the
+  statements ("Independent documentary path" in `local-contract.md`). A judge's reply holds
+  one `fact` and yes or no `answer` per criterion. No string may be blank
   and no object may carry a key its schema does not name. Python checks the reply against
   the same shape again before using it, and checks what a schema cannot: that every
-  citation quotes the packet exactly, a judgement that is never retried
-  (`assessor_citation_invalid`). Before schemas, Python parsed free text and learned its
+  quote of a supported or contradicted statement quotes the packet exactly, a judgement
+  that is never retried (`assessor_citation_invalid`). Before schemas, Python parsed free text and learned its
   tolerances one lost reply at a time: a Markdown code fence and a list-shaped field
   discarded three critiques in run a392ea65, a sixth finding cost run e035eef6 a grade A,
   and an empty extra key in a case verdict lost a claim in run 0a243b7e.
 - `execute_local_claim`: in local_ready, run every task of the fixed design for its audited
   trial count, each trial a fresh answer-blind subject session given the task's files and
   job, save each request before invocation, and read each trial's `/work/results.json` as
-  "Reading a trial's results" in `local-tasks.md` says. A score receipt holds each output's
-  expected value, the value found and that output's verdict, and the trial's
+  "Reading a trial's results" in `local-tasks.md` says, with two judge sessions for a judged
+  output, whose failure is an operational limitation. A score receipt holds each output's
+  expected value, the value found and that output's verdict, a judged output's answers per
+  criterion, and the trial's
   `run_problems` and `files_not_kept`. Accuracy, consistency, comparison status and scientific status are
   computed over the audit's `counted_cases`; the result lists the others under
   `uncounted_cases` with their verdicts, and their observations stay in the receipts. No
@@ -730,10 +740,11 @@ token and claim binding. The workflow matrix is authoritative.
 accepts bounded quote/reference pairs and limitations, pins a packet containing
 the exact claim and installed rubric, and starts a fresh host-selected assessor
 session. It excludes the planning conversation, proposed verdict and subject
-answers. Python validates the JSON assessment and exact citations. A completed
-assessment against the installed rubric is grade D with the assessor's status; no
-operator authorization is required and none would make the conclusion more than
-documentary. Synthetic fixture runs stay ungraded. Assessor unavailability is an
+answers. Python validates the JSON assessment and exact quotes. A completed
+assessment that addresses the claim is grade D with the status Python derives, and one
+that addresses none of its statements is grade U ("Independent documentary path" in
+`local-contract.md`); no operator authorization is required and none would make the
+conclusion more than documentary. Synthetic fixture runs stay ungraded. Assessor unavailability is an
 operational outcome. The planner cannot replace the assessor's verdict.
 
 `record_local_unverified` is legal in those same states. It means no acceptable

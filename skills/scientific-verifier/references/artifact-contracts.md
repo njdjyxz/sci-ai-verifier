@@ -419,12 +419,18 @@ level, first line and word count, and `set_aside`, each section no claim holds w
 task design's candidate (`method` `task`, `method_version` `local-task-comparison-1`) holds
 its `generator` and `solver`; per task its `files` (name, `object_ref`, bytes), `planted`
 values, `outputs` with their resolved `expected` values, the solver's `solver_results` and
-`solver_checks`; and `task_receipts` with the programs' digests, `generator_image_id` and
-`solver_image_id`, and each run's exit code. A task trial's score receipt holds `outputs`: each field's expected value,
-tolerance, the value found and its verdict, and for a number that passed far from the
-reference solution's result its `reference_result` and `off_reference` ("Reading a trial's
-results" in `local-tasks.md`), with `results_found` and the trial's `run_problems` and
-`files_not_kept`.
+`solver_checks`; a judged output also its `calibration`, the judges' verdicts on the
+solver's answer and on `fail_example`; and `task_receipts` with the programs' digests,
+`generator_image_id` and `solver_image_id`, each run's exit code, and `judge_runs`, each
+judged packet's digest with both judges' answers. A task trial's score receipt holds
+`outputs`: each field's expected value, tolerance, the value found and its verdict, for a
+judged output its `criteria` with both judges' answers and whether each is met, and for a
+number that passed far from the reference solution's result its `reference_result` and
+`off_reference` ("Reading a trial's results" in `local-tasks.md`), with `results_found` and
+the trial's `run_problems` and `files_not_kept`. A comparison result carries
+`unsourced_rules` from the critique that settled its grade, each with grade `U`. A
+documentary assessment holds the assessor's `statements` with the `status` and `citations`
+Python derived; a record whose assessment addresses no statement is grade U.
 
 The report card carries `environment_ref` and an `environment` summary, and
 report-card.md opens with an Environment line. It also carries `coverage`: each section of

@@ -257,6 +257,8 @@ def claim_view(run, number, claim, notes):
         "number": number, "id": claim_id, "claim": claim["claim"], "note": note, "record": record,
         "title": note.get("title") or (claim.get("sections") or [f"Claim {number}"])[0],
         "sections": claim.get("sections") or [], "grade": record.get("evidence_grade"),
+        # "Rules no source states" in evidence-rubric.md: grade U beside the grade, which does not cover them.
+        "unsourced": record.get("unsourced_rules") or [],
         "status": record.get("scientific_status"), "withheld": record.get("status_withheld_reason"),
         "accuracy": accuracy if isinstance(accuracy, dict) else None,
         "consistency": consistency if isinstance(consistency, dict) else None,
@@ -297,9 +299,12 @@ def task_view(index, case_id, rows, case, verdict, dropped, written, references)
 
 
 def shown(output, value):
-    """An expected or found value as a reader reads it: a number bare, anything else as JSON."""
+    """An expected or found value as a reader reads it: a number bare, a judged output's criteria as questions,
+    anything else as JSON."""
     if output.get("type") == "number" and isinstance(value, str):
         return value
+    if output.get("type") == "judged" and isinstance(value, list):
+        return "judged: " + " · ".join(str(item) for item in value)
     return json.dumps(value, ensure_ascii=False)
 
 
@@ -480,7 +485,8 @@ def summary_table(claims, run):
     for v in claims:
         acc = v["accuracy"]
         rows.append([
-            f'<a href="#claim-{v["number"]}">{v["number"]} · {e(v["title"])}</a>', badge(v["grade"]),
+            f'<a href="#claim-{v["number"]}">{v["number"]} · {e(v["title"])}</a>',
+            badge(v["grade"]) + (f' {badge("U")}<span class="dim"> ×{len(v["unsourced"])}</span>' if v["unsourced"] else ""),
             chip(v["status"], v["withheld"]),
             f'{acc["matched"]} of {acc["evaluated"]}' if acc else "–",
             e(v["consistency"]["label"]) if v["consistency"] else "–",
@@ -545,6 +551,14 @@ def task_details(t):
                      + '<div class="dim">The same bytes went to every try, read-only.</div>'))
     checked = []
     for o in t["outputs"]:
+        if o.get("type") == "judged":
+            # "Judged outputs" in local-tasks.md: two judges answer each question, each quoted from its source.
+            criteria = "".join(f'<li>{e(item.get("question"))}<blockquote>{e(item.get("source_quote"))}</blockquote></li>'
+                               for item in o.get("criteria") or [])
+            checked.append(f'<li><b>{e(o["field"])}</b> is judged by two AI sessions, each answering these questions; '
+                           f"it passes when both say yes to every one.<ul class='plain'>{criteria}</ul>"
+                           f'<div class="dim">A wrong answer the judges had to fail: {e(o.get("fail_example"))}</div></li>')
+            continue
         where = ("planted by Python's run of the generator" if o.get("source") == "planted"
                  else "quoted from " + link(o.get("url"), o.get("version") or o.get("url")))
         quote = f'<blockquote>{e(o.get("source_quote"))}</blockquote>' if o.get("source_quote") else ""
@@ -576,6 +590,9 @@ def task_details(t):
                         f'<td>{e(json.dumps(item.get("found"), ensure_ascii=False)) if item.get("present") else "missing"}'
                         + (f'<div class="dim">{float(item["off_reference"]):.1%} from the reference\'s '
                            f'{e(item["reference_result"])}</div>' if item.get("off_reference") is not None else "")
+                        + "".join(f'<div class="dim">{e(c["id"])} {"met" if c["met"] else "unmet" if c["met"] is False else "split"}'
+                                  f' ({e(", ".join(c["answers"]))}): {e(" | ".join(c["facts"]))}</div>'
+                                  for c in item.get("criteria") or [])
                         + f'</td><td>{chip(item.get("status"))}</td></tr>' for item in row.get("outputs") or [])
         problems = row.get("run_problems") or []
         tries.append(f'<div class="try"><b>Try {e(row.get("trial"))}</b> · {chip(row.get("comparison_status"))}'
@@ -676,6 +693,12 @@ def chapter(v, author):
              f'<span>Grading rounds: <b>{len([r for r in v["rounds"] if r["reviewer"]])}</b></span>',
              f'<span>Time: <b>{minutes(v["seconds"])}</b></span>', f'<span>Cost: <b>{money(v["cost"])}</b></span>']
     out.append('<div class="stats">' + "".join(stats) + "</div>")
+    if v["unsourced"]:
+        out.append(f'<p>{badge("U")} <span class="flag">Rules no source states:</span> the grade above does not cover '
+                   "these. No outside source states them, so no test could check them independently.</p><ul class='plain'>"
+                   + "".join(f'<li><blockquote>{e(item.get("rule"))}</blockquote><div class="dim">{e(item.get("reason"))}'
+                             + (" Not found verbatim in the skill." if item.get("quoted") is False else "")
+                             + "</div></li>" for item in v["unsourced"]) + "</ul>")
     if v["fault"]:
         out.append(f'<p><span class="flag">⚑ Stopped by a fault:</span> {e(v["fault"])}</p>')
     if v["departures"]:
@@ -723,6 +746,10 @@ def chapter(v, author):
             cited.append(f'<li><blockquote>{e(item.get("quote"))}</blockquote>'
                          + (f'<div class="dim">From {link(source.get("url"), source.get("version") or source.get("url"))}'
                             f'</div>' if source else "") + "</li>")
+        if assessment.get("statements"):
+            more.append("<h3>The claim, statement by statement</h3><ul class='plain'>" + "".join(
+                f'<li>{chip({"supported": "pass", "contradicted": "fail"}.get(item.get("verdict"), "inconclusive"))} '
+                f'{e(item.get("verdict"))}: {e(item.get("statement"))}</li>' for item in assessment["statements"]) + "</ul>")
         more.append("<h3>What the assessor cited</h3><ul class='plain'>" + "".join(cited) + "</ul>")
         more.append("<h3>What the assessor found</h3>" + "".join(f"<p>{e(f)}</p>" for f in assessment.get("findings") or []))
     if v["references"]:
@@ -894,6 +921,8 @@ def skeleton(run):
         result = [v["grade"] or "no grade", v["status"] or "not decided"]
         if acc:
             result.append(f'{acc["matched"]} of {acc["evaluated"]} counted answers right')
+        if v["unsourced"]:
+            result.append(f'U: {len(v["unsourced"])} rule{"" if len(v["unsourced"]) == 1 else "s"} no source states')
         claims[str(v["number"])] = {
             "section": ", ".join(v["sections"]), "claim_as_written": v["claim"].get("statement"),
             "result": " · ".join(result), "left_untested": v["untested"],

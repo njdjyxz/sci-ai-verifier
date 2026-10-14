@@ -29,7 +29,7 @@ def answer(given):
 class SyntheticRunner:
     """Stands in for the operator's container: the reference solution answers each task correctly."""
 
-    def __init__(self, settings, *, log=None, sandbox_factory=None):
+    def __init__(self, settings, *, log=None, sandbox_factory=None, solver_image=None, judge=None):
         pass
 
     def generate(self, code, arguments):

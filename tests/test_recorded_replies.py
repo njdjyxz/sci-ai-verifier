@@ -19,9 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sci_ai_verifier.claude_runner import NO_SUBSTITUTION, ClaudeCode, parse_events, refusal_category
 from sci_ai_verifier.common import Fault, canonical, digest, validate
-from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, REPLY_TOOL, TASK_CRITIQUE_REF, TASK_CRITIQUE_RUBRIC,
-                                         TASK_QUESTIONS, critique_tasks, task_critique_schema, validate_assessment,
-                                         validate_task_critique)
+from sci_ai_verifier.documentary import (CRITIC_TIMEOUT_SECONDS, JUDGE_RUBRIC, REPLY_TOOL, RUBRIC, TASK_CRITIQUE_REF,
+                                         TASK_CRITIQUE_RUBRIC, TASK_QUESTIONS, critique_tasks, judge_schema,
+                                         task_critique_schema, validate_assessment, validate_task_critique)
+from sci_ai_verifier.local_tasks import judged_verdict
 from sci_ai_verifier.local_candidates import SECRET_BYTES
 from sci_ai_verifier.local_config import load_configuration
 from test_claude_runner import IMAGE, FakeSandbox
@@ -33,7 +34,8 @@ RECORDED = ROOT / "tests/recorded"
 # recording maps to the key its refused reply added. The question critique and the claim-only answer
 # were given schemas retired with question tests on 2026-10-05; they stay as more live evidence of
 # Claude Code's correction loop, which every structured session relies on.
-STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "StructuredOutput",
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": None,
+                         "judge-structured.jsonl": "$PARAMETER_NAME",
                          "critic-structured.jsonl": "StructuredOutput", "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
 OTHER_RECORDINGS = ["subject-safety-refusal.jsonl", "planner-session-limit.jsonl",
@@ -144,33 +146,52 @@ class RecordedReplyTests(unittest.TestCase):
                 self.assertNotIn(stray, accepted)
                 self.assertFalse(final.get("is_error"))
 
-    def test_the_recorded_assessment_cites_its_own_real_packet(self):
+    def test_the_recorded_assessment_finds_sources_that_address_nothing_and_gives_u(self):
+        """Run 3f073fec's claim 3: a made-up "Hartwell-Nakamura" fade correction, assessed against a general blot
+        review that never names it. Under rubric v1 it settled at D, inconclusive; replayed under v2 every
+        statement is not addressed, so Python gives no_evidence, grade U ("Independent documentary path")."""
         raw, sent = recorded("assessor-structured.jsonl"), packet("assessor-packet.json")
+        self.assertEqual(sent["rubric"], RUBRIC)
         value = validate_assessment(parse_events(raw, expected_session=session_of(raw))["structured_output"], sent)
-        self.assertEqual(value["status"], "inconclusive")
-        # Every quote really is a substring of the packet it was given, not a paraphrase.
-        for citation in value["citations"]:
-            self.assertTrue(any(citation["reference_ref"] == item["reference_ref"]
-                                and citation["quote"] in item["quote"] for item in sent["evidence"]))
+        self.assertEqual(value["status"], "no_evidence")
+        self.assertEqual({item["verdict"] for item in value["statements"]}, {"not_addressed"})
+        self.assertTrue(any("Hartwell-Nakamura" in item["statement"] for item in value["statements"]))
+        self.assertEqual(value["citations"], [])
 
     def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
-        """Run cfe9e57a's claim 1 final packet, judged at xhigh by the pinned model under the live rubric. Its three
-        two-step tasks define their outputs as a phosphorylated fraction, which the test AI computed without the
-        skill; its answers drop them as leaked. Its first reply was wrapped in a stray key, refused and resent."""
+        """Run 3f073fec's claim 1 packet, a made-up QC score and cut-off whose tasks tested only its inputs,
+        judged at high by the pinned model under rubric v7. It lists the score and the 7.2 cut-off, each quoted
+        exactly from the claim's section, as rules no source states, and counts three of four tasks."""
         raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
         self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
+        sections = [item["text"] for item in sent["claim"]["sections"]]
         value = validate_task_critique(parse_events(raw, expected_session=session_of(raw))["structured_output"],
-                                       case_ids)
+                                       case_ids, sections)
         self.assertEqual((sent["proposed_grade"], value["supported_grade"]), ("A", "B"))
         self.assertEqual(len(value["findings"]), len(TASK_CRITIQUE_RUBRIC["criteria"]))
         # Python's verdicts from its answers ("Cases each grade requires" in evidence-rubric.md).
         self.assertEqual([(item["case_id"], item["verdict"]) for item in value["case_verdicts"]],
-                         list(zip(case_ids, ["counts", "leaked", "leaked", "leaked"])))
-        # The task that passed live at 1.4, where the skill's own formula gives 2.45.
-        unequal = value["task_checks"]["wbnorm-twostep-unequal"]["job_decides"]
-        self.assertEqual(unequal["answer"], "yes")
-        self.assertIn("phosphorylated fraction", unequal["reason"])
+                         list(zip(case_ids, ["counts", "counts", "duplicate", "counts"])))
+        rules = value["unsourced_rules"]
+        self.assertTrue(all(item["quoted"] for item in rules))
+        self.assertTrue(any("7.2" in item["rule"] for item in rules))
+        self.assertTrue(any("min(yield / 5, 1)" in item["rule"] for item in rules))
+
+    def test_two_recorded_judges_agree_on_a_real_trial_answer(self):
+        """A judged output's packet built from run 3f073fec's phospho-blocking task: the job, a real trial's answer
+        and two criteria quoted from the vendor guide the task was keyed to. Its first reply was wrapped in a
+        stray key, refused and resent ("Judged outputs" in local-tasks.md)."""
+        raw, sent = recorded("judge-structured.jsonl"), packet("judge-packet.json")
+        self.assertEqual(sent["rubric"], JUDGE_RUBRIC)
+        ids = [item["id"] for item in sent["criteria"]]
+        value = parse_events(raw, expected_session=session_of(raw))["structured_output"]
+        validate(value, judge_schema(ids), "judgment")
+        # Fact before answer, for every criterion; both say the answer meets them.
+        self.assertEqual(list(value["answers"]), ids)
+        self.assertEqual({item["answer"] for item in value["answers"].values()}, {"yes"})
+        output = {"criteria": [{"question": item["question"]} for item in sent["criteria"]]}
+        self.assertEqual(judged_verdict(output, [value, value])[0], "pass")
 
     def test_task_critique_end_to_end_over_a_replayed_recording(self):
         """critique_tasks with only the child process replaced: the recorded packet is exactly what it sends,
@@ -385,6 +406,7 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def base(self, **changes):
         return {"supported_grade": "B", "findings": ["f"] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
                 "objections": [], "required_revisions": [], "coverage_gaps": [], "departures": [],
+                "unsourced_rules": [],
                 "task_checks": {"t1": self.verdict(), "t2": self.verdict("gives_away", "Name the columns plainly.")},
                 **changes}
 
@@ -488,7 +510,7 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
         """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
         from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
-        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v6")
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v7")
         # Fixed questions, each tied to a row of the verdict table, which Python turns into the verdict.
         questions = TASK_CRITIQUE_RUBRIC["task_questions"]
         self.assertEqual(list(questions), [key for key, _, _ in TASK_QUESTIONS])

@@ -41,12 +41,12 @@ def _envelope(packet, rubric_ref, role):
 
 
 def critic_reply(packet, supported, *, findings=None, objections=(), required_revisions=(), rejected=None,
-                 coverage_gaps=(), departures=(), criteria=None):
+                 coverage_gaps=(), departures=(), criteria=None, unsourced_rules=()):
     """Shaped exactly as `documentary.critique_tasks` returns, including the "none" -> None mapping.
 
     Every task in the packet counts unless `rejected` maps its case ID to another verdict, which the reply gives
     by answering yes to the first question of that verdict; `criteria` maps a case ID to the rule its job gives
-    that the claim's sections do not.
+    that the claim's sections do not; `unsourced_rules` lists (rule, reason) pairs.
     """
     rejected, criteria = rejected or {}, criteria or {}
     case_ids = [case["case_id"] for case in packet["evidence"]["tasks"]]
@@ -62,15 +62,31 @@ def critic_reply(packet, supported, *, findings=None, objections=(), required_re
         "findings": list(findings) if findings else ["Fixture critique finding."] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
         "objections": list(objections), "required_revisions": list(required_revisions),
         "coverage_gaps": list(coverage_gaps), "departures": list(departures),
+        "unsourced_rules": [{"rule": rule, "reason": reason} for rule, reason in unsourced_rules],
         "task_checks": {key: check(key) for key in case_ids}},
-        case_ids)
+        case_ids, [item["text"] for item in packet["claim"].get("sections") or []])
     return {**value, **_envelope(packet, TASK_CRITIQUE_REF, "critic")}
 
 
 def assessor_reply(packet, status, citations, *, findings=None, limitations="Fixture documentary check only."):
-    """Shaped exactly as `documentary.assess` returns; citations are checked against the real packet."""
+    """Shaped exactly as `documentary.assess` returns; quotes are checked against the real packet.
+
+    The assessor gives statements and Python derives the status, so the double writes the statements that
+    yield `status`: every citation supported for `pass`, the first contradicted for `fail`, one supported and
+    one not addressed for `inconclusive`, and only one not addressed for `no_evidence`.
+    """
+    def judged(verdict, citation=None):
+        return {"statement": "Fixture statement.", "verdict": verdict,
+                "reference_ref": citation["reference_ref"] if citation else "", "quote": citation["quote"] if citation else ""}
+    citations = [dict(citation) for citation in citations]
+    statements = {"pass": [judged("supported", item) for item in citations],
+                  "fail": [judged("contradicted", item) for item in citations[:1]]
+                          + [judged("supported", item) for item in citations[1:]],
+                  "inconclusive": [judged("supported", item) for item in citations] + [judged("not_addressed")],
+                  "no_evidence": [judged("not_addressed")]}[status]
     value = validate_assessment({
-        "status": status,
+        "statements": statements,
         "findings": list(findings) if findings else ["Fixture assessment finding."] * len(RUBRIC["criteria"]),
-        "citations": [dict(citation) for citation in citations], "limitations": limitations}, packet)
+        "limitations": limitations}, packet)
+    assert value["status"] == status, (value["status"], status)
     return {"assessment": value, **_envelope(packet, RUBRIC_REF, "assessor")}

@@ -48,7 +48,9 @@ class ReportHtmlTests(unittest.TestCase):
                       "scope": "Covers the first rule. Not specified for anything else."}, "sections": ["Intro"],
             "record": {"evidence_grade": "B", "scientific_status": "fail", "candidate_ref": CANDIDATE,
                        "accuracy": {"evaluated": 3, "matched": 2}, "consistency": {"label": "split"},
-                       "uncounted_cases": [verdicts[1]], "limitations": ["recorded limit"]},
+                       "uncounted_cases": [verdicts[1]], "limitations": ["recorded limit"],
+                       "unsourced_rules": [{"rule": "Keep preps scoring 7.2 or higher.", "reason": "No source states it.",
+                                            "quoted": True, "grade": "U"}]},
             "audit": {"critique": {"case_verdicts": verdicts, "coverage_gaps": ["one fact untested"],
                                    "claim_probe": {"cases": [{"case_id": "c_choice", "outcome": "reached",
                                                               "samples": [{"answer": "2"}, {"answer": "2"}]}]}}},
@@ -59,7 +61,9 @@ class ReportHtmlTests(unittest.TestCase):
             "claim": {"claim_id": "claim-2", "statement": "Second claim"}, "sections": ["Later"], "tests": [],
             "record": {"evidence_grade": "D", "scientific_status": "inconclusive"}, "audit": None,
             "documentary_assessment": {"assessment": {"status": "inconclusive", "findings": ["a finding"],
-                                                      "citations": [{"quote": "cited words"}]}}}
+                                                      "citations": [{"quote": "cited words"}],
+                                                      "statements": [{"statement": "The method is cleared.",
+                                                                      "verdict": "not_addressed"}]}}}
         report = {"run_id": RUN, "claims": [tested, documentary], "workflow_log": {},
                   "subject": {"model_id": "fixture-model"}, "environment": {},
                   "host_limitations": ["evidence_grade_is_an_evidence_strength_indicator_not_an_endorsement"],
@@ -98,6 +102,18 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("A→B", page, "the planner's grade and the reviewer's, per round")
         self.assertIn("No tests ran", page)
         self.assertIn("1 of 3 sections of the skill had no claim: Untouched.", page)
+
+    def test_a_rule_no_source_states_shows_as_u_beside_the_grade(self):
+        """"Rules no source states" in evidence-rubric.md: a grade never stands for a rule nothing tested."""
+        page = self.render()
+        self.assertIn("Rules no source states:", page)
+        self.assertIn("Keep preps scoring 7.2 or higher.", page)
+        self.assertIn('class="badge g-U"', page)
+        # The notes the agent fills say so beside the grade, and the documentary claim shows its statements.
+        notes = report_html.skeleton(report_html.Run(self.workspace, RUN[:8]))
+        self.assertIn("U: 1 rule no source states", notes["claims"]["1"]["result"])
+        self.assertIn("The claim, statement by statement", page)
+        self.assertIn("not_addressed: The method is cleared.", page)
 
     def test_without_notes_the_long_claim_folds_away_and_a_test_shows_its_question(self):
         """The planner's statement is written to be tested, not read: 150 words in run 90c60cbe."""

@@ -1,0 +1,21 @@
+{
+ "job": "The primary antibody I will use on this membrane is a phospho-specific one, raised against phosphorylated ERK. The bench stocks 5% nonfat dried milk in TBST and 5% bovine serum albumin in TBST, and I have to block the membrane before I can go on. Write to /work/results.json a JSON object with `blocking_agent`, a string, naming which of the two stocked solutions I should block in, either BSA or milk; and `rejected_component`, a string, naming the constituent of the solution you did not choose that drove that decision.",
+ "answer": "Done. `/work/results.json` contains:\n\n```json\n{\n  \"blocking_agent\": \"BSA\",\n  \"rejected_component\": \"casein\"\n}\n```\n\n**Reasoning (per the skill's guidance on phospho-specific antibodies):** Block in 5% BSA in TBST, not 5% nonfat dried milk. Milk's dominant protein is **casein**, which is itself a phosphoprotein — its phosphorylated residues are recognized by phospho-specific antibodies such as anti-phospho-ERK, raising background across the membrane and masking the genuine phospho-ERK signal. BSA carries no such phosphoepitopes, so it blocks the membrane without competing for the antibody.",
+ "rubric": {
+  "id": "local-judge-v1",
+  "instruction": "Judge only whether the answer meets each criterion, reading it as the job asked for it. A criterion is met only when the answer itself states or does what its question asks; do not credit what it might have meant or what a reader could add. Each criterion's source_quote is the published source it rests on.",
+  "answers": "For every criterion, give first the fact from the answer that decides it, then yes or no."
+ },
+ "criteria": [
+  {
+   "id": "c1",
+   "question": "Does the answer say to block with BSA rather than milk for this phospho-specific antibody?",
+   "source_quote": "For example, BSA blocking solutions are preferred with biotin and AP antibody labels, and antiphosphoprotein antibodies, since milk contains casein, which is itself a phosphoprotein and biotin, thus interfering with the assay results."
+  },
+  {
+   "id": "c2",
+   "question": "Does the answer name casein in milk as what interferes with a phospho-specific antibody?",
+   "source_quote": "For example, BSA blocking solutions are preferred with biotin and AP antibody labels, and antiphosphoprotein antibodies, since milk contains casein, which is itself a phosphoprotein and biotin, thus interfering with the assay results."
+  }
+ ]
+}

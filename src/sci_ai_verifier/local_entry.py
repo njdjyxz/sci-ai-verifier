@@ -46,6 +46,8 @@ re-read one pinned document or committed artifact if you lose this message.
 3. Test each claim by running the skill, as local-tasks.md says: qualify_local_tasks with tasks a
    user of the claim's sections would do, input files your generator builds from a quoted model,
    and a reference solution that passes every output, every section of the claim used by a task.
+   Where the sections lead to an answer no fixed key captures, such as advice with several right
+   answers, use a judged output with criteria quoted from your sources; that design settles at D.
    Without a container, use a design of questions instead ("Claims" in the local contract).
    Then call select_local_candidate proposing exactly the ceiling Python reports for that
    design. Aiming lower is refused, and so is claiming more. An independent critique session

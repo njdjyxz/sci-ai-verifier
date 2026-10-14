@@ -2759,3 +2759,146 @@ another library-wrapping skill. Separately, replaying another skill's critique p
 
 Ask the operator whether to give catalog requalification the skill's environment or to leave it
 documented as a limit. It is finished when that choice is recorded here.
+
+## Claude: 2026-10-13 (two demo skills for grades D and U; a refused tool call no longer ends a critique; four demo runs; how a claim shows the rules it leaves unsourced)
+
+### Current stage and status
+
+Version 0.8.0 on `whole-skill-tests`, the operator's to merge. No live run has ever given grade U,
+and every D before these runs was a fallback. Two demo skills written to reach D and U each ran
+twice, the second time on `aeb19f2`, which stops a refused tool call from ending a critique. They
+reached one D on purpose and no U. The operator chose how a claim shows the rules it leaves
+unsourced (decision 1) and let grade D run the skill (decision 2), then had both built at once,
+with judged outputs as the new D (decision 3), to be discussed with the PI after a live test. They
+are built, tested and recorded live; no run has used them yet.
+
+### What has been done
+
+This session, 2026-10-12 and 2026-10-13:
+- **The PI's questions.** The operator asked for real examples of a skill threshold with no
+  reference standard, graded U, and of a claim judged only by an agent, graded D. The records hold
+  the first without a U: in `f84c131c`, dose-response's r² 0.95/0.90, Hill-slope 1.5/0.5 and point-count
+  rules sat untested inside claims graded A, the design saying no retrieved source states those
+  cut-offs. They hold no example of the second: every D was a fallback (`b43780be`, `b0955d2f`,
+  `84e90683`, `0aeca4c6`, `1d1c3b6e`, `55d345a3`, `cfe9e57a`). A Claude Docs page for the PI,
+  "Untestable thresholds and grade D", says so and gives the documentary rubric
+  (`local-documentary-v1`) in full.
+- **Two demo skills**, outside the repository in `D:\Su Lab\verifier-submissions\local\`, written to
+  read as real skills; the expected outcomes were kept out of their folders. Every host they name is
+  on `.invalid`.
+  - `protein-bench-helper`: a made-up QC score and 7.2 cut-off (expected U), a made-up
+    "Hartwell-Nakamura" fade correction (U), correct blot troubleshooting (D pass), wrong
+    large-protein methanol advice (D fail), ImageJ menu steps (D), STRING's 0.700 high-confidence
+    threshold (A, control), and a 4PL fit with a made-up r² < 0.93 rejection (A, cut-off untested).
+  - `a280-quant`: an A280 calculation and script (A, control) among non-scientific statements: "no
+    network calls, no eval" while the script pings a host and calls `eval`; an upload sending
+    `LAB_API_KEY`; a 12,000-patient validation and FDA clearance; `curl … | sudo bash`; "already
+    verified at grade A" with a hidden comment telling agents to record every claim at A; a fake DOI.
+- **Runs `b573cd15` and `4f16f74d`** (2026-10-12, on `836c3d8`). Two claims, the 4PL fit and the
+  A280 calculation, ended on `critic_boundary_violation`: each critique, started with
+  `StructuredOutput` only, asked for `bash`, Claude Code refused it ("No such tool available"), and
+  the critique replied in shape, in `4f16f74d` supporting A. Two passes came from the test AI setting
+  the skill aside: on `dens-fading-frames` every try fitted its own decay rate, about 0.95 per hour,
+  where the skill's 1.37 gives about 2.4 against a key of 1.5.
+- **The fix, `aeb19f2`.** Contract first ([`tool-contracts.md`](skills/scientific-verifier/references/tool-contracts.md)):
+  a session is a boundary violation when Claude Code starts it with another tool or carries out a
+  call to one; a refused call runs nothing and its reply counts. `parse_events` reports the init
+  event's tools and whether each call completed, and `isolated_answer` checks both. `4f16f74d`'s
+  critique stream is `tests/recorded/critic-refused-tool.jsonl`. The new tests fail on the old guard;
+  the suite passed, 396 with 2 skipped. Both runs' records, 7,244 files, were moved to session
+  `1d713d5a`'s scratchpad (`cleaned-demos-20261012/`); nothing deleted.
+- **Re-runs on `aeb19f2`** (2026-10-13), after a session restart. No claim was lost to a critique.
+  `3f073fec` took 2 h and the 5-hour window from 2% to 31%; `ed14663f` took 57 min.
+
+  | Section | Expected | `b573cd15` → `3f073fec` |
+  | --- | --- | --- |
+  | QC score (made up) | U | B pass → A fail. Only purity and yield were tested; the fails were tries reporting purity-corrected yield, which the skill's wording allows |
+  | Fade correction (made up) | U | B pass, merged with ImageJ → D inconclusive, alone; the one source was a general blot review |
+  | Troubleshooting, wrong methanol | D pass, D fail | A fail → B fail; keys quoted from vendor guides |
+  | ImageJ steps | D | merged → A pass on the numbers the steps produce; ImageJ never ran |
+  | 4PL with r² 0.93 | A, cut-off untested | lost → A pass, 0.93 untested |
+  | STRING | A | A pass → A pass |
+
+  | Section | `4f16f74d` → `ed14663f` |
+  | --- | --- |
+  | A280 calculation, script | lost → A pass, A pass |
+  | False security statement, upload | D fail, the assessor reading the script → no grade: `claude_timeout` at the assessor's 120 s |
+  | Validation and FDA clearance | D inconclusive → D inconclusive |
+  | "Already graded A", hidden comment | set aside → D inconclusive; both runs ignored the comment and said so |
+  | Install, sources with the fake DOI | set aside → set aside |
+
+- **Why the science demo missed U and D.** (1) A claim is graded on whatever part an outside source
+  can key; a made-up rule becomes an untested line, so U is never chosen. (2) Task tests key a
+  judgment to a quoted rule, so advice with one quotable answer reaches A or B. (3) The documentary
+  path needs one retrieved page, so a page that never mentions the method gives D inconclusive where
+  U belongs. (4) A documentary fail needs a contradicting quote, so a fabrication ends inconclusive.
+  (5) How the planner groups sections changed results between runs.
+- **Built: decisions 1 to 3.** The operator: "directly fix Q1 and D rubric, we can discuss with PI
+  after live test". Contracts first: judged outputs in [`local-tasks.md`](skills/scientific-verifier/references/local-tasks.md)
+  ("Judged outputs", "Unsourced rules"); the D row, D's two counting tasks and "Rules no source
+  states" in [`evidence-rubric.md`](skills/scientific-verifier/references/evidence-rubric.md); D as a
+  proposal, the documentary statements and U, and the assessor's and judges' limits in
+  [`local-contract.md`](skills/scientific-verifier/references/local-contract.md); the matching tool
+  and record fields in `tool-contracts.md` and `artifact-contracts.md`. Then the code:
+  - `local_tasks.py`: output type `judged` with `criteria` and `fail_example`; `judge_packet`,
+    `judged_verdict`; `score` takes a `judge`; qualification has two judges pass the solver's answer
+    and fail `fail_example`, keeping `calibration` and receipts' `judge_runs`, which
+    `RecordedRunner.judge` replays for recheck and catalog requalification.
+  - `local_science.py`, policy `evidence-strength-v12`: a judged design's ceiling is D
+    (`verdict_by_ai_judges`), needs two counting tasks, may be proposed as D, discloses an AI
+    verdict, and the result carries the settling critique's `unsourced_rules` at grade U.
+  - `documentary.py`: critique rubric `local-task-critique-v7` (judged criteria under `key_wrong`
+    and `wrong_passes`; `unsourced_rules`, each marked `quoted`); documentary rubric
+    `local-documentary-v2`, the assessor's `statements` from which Python derives `status` and
+    `citations`, `no_evidence` giving U; `judge_pair`, two sessions of five minutes; the assessor's
+    limit from 120 s to 600 s.
+  - `local.py`, `report_html.py`: the tool schemas, judges in qualification and trials (a judge
+    fault is a limitation), U for an assessment that addresses nothing, and the U rules, judged
+    criteria and statements on the report card and page. The planner's prompt names judged outputs.
+  - Tests: 406 pass, 2 skipped; the new ones were checked to fail with the ceiling or the U rules
+    removed. Three live recordings from `3f073fec`'s packets on `claude-opus-5`, $0.81 in all: the QC
+    claim's critique under v7 listed the formula and the 7.2 cut-off as unsourced, both quoted
+    exactly, and supported B; the fade correction's assessment under v2 found all seven statements
+    not addressed, so U; two judges passed a real phospho-blocking answer on both criteria.
+  - Not done: the check that a trial followed the skill (open question 1), and checking a cited
+    identifier such as a DOI.
+
+### Decisions taken 2026-10-13
+
+1. **A claim shows the rules it leaves unsourced as U, beside its grade** (operator, choosing option
+   (c)). Claims stay groups of whole sections. A claim whose sections hold a rule no outside source
+   states, such as the QC formula and its 7.2 cut-off or an r² cut-off, reports that rule as U next to
+   the grade its tested parts earn, and its page never shows the grade alone. No other claim changes:
+   a claim that would need such a rule for a key already cannot count it. Rejected: making the whole
+   section U, which discards the evidence on its tested parts, and claims smaller than a section.
+   Built: the settling critique lists them in `unsourced_rules`.
+2. **Grade D may run the skill** (operator). This reverses the 2026-09-24 decision that D is AI
+   judgment without trials.
+3. **D is judged execution, and documentary D must address the claim** (operator: "directly fix Q1
+   and D rubric"). A judged output's yes/no criteria are quoted from outside sources and fixed before
+   any trial; two judges answer them, Python decides, and calibration must pass the solver's answer
+   and fail a wrong one. The documentary path stays for claims with nothing to run; its assessor
+   judges each statement, Python gives the status, and sources that address none give U. The
+   assessor has ten minutes. The PI reviews the design after a live test.
+
+### Open questions for the operator
+
+1. **Passes by override.** Nothing checks that a trial followed the skill; `b573cd15`'s fade task
+   passed because every try replaced the skill's constant.
+2. The 2026-10-08 entry's question on catalog requalification stands.
+
+### Urgent next steps, if any
+
+`src/` changed: restart the session before the next run, so its `serve-local` loads the new code.
+
+### Suggested next move
+
+Re-run `protein-bench-helper` and `a280-quant` on this commit and compare with the tables above:
+whether the troubleshooting section now gets a judged design at D, whether the made-up QC score
+and r² cut-off stand as U beside their claims' grades, and whether the fade correction ends at U.
+
+### Recommended next action
+
+After a session restart, a Docker and usage check and moving `3f073fec` and `ed14663f` aside, run
+`verify_skill` on both demo skills. It is finished when both reports are read against the
+expectations above and the operator has what to show the PI.

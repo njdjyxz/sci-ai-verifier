@@ -19,15 +19,17 @@ from .common import Fault, canonical, digest, utc_now
 from .storage import atomic_write
 
 METHOD_VERSION = "local-task-comparison-1"
-TYPES = ("number", "text", "boolean", "set")
+TYPES = ("number", "text", "boolean", "set", "judged")
 MAX_TASKS = 6
 MAX_OUTPUTS = 12
+# "Judged outputs" in local-tasks.md: one per task, of at most this many criteria.
+MAX_CRITERIA = 6
 MAX_FILES = 20
 # The subject and the solver write here; Python reads it from the container's new files.
 RESULTS_FILE = "results.json"
 RESULTS_PATH = "/work/" + RESULTS_FILE
 FORMATS = {"number": "a JSON number", "text": "a JSON string", "boolean": "true or false",
-           "set": "a JSON array of strings, in any order"}
+           "set": "a JSON array of strings, in any order", "judged": "a JSON string, in your own words"}
 # The one line Python writes for every task, as the answer-format line of a question.
 RESULTS_INSTRUCTION = ("Write " + RESULTS_PATH + ": one JSON object holding exactly the fields of results_format, "
                        "each value in the form given there. Input files are read-only.")
@@ -71,6 +73,7 @@ def reference_refs(candidate):
     for case in candidate["cases"]:
         refs += [item["reference_ref"] for item in case.get("reference_files") or []]
         refs += [output["reference_ref"] for output in case["outputs"] if output.get("reference_ref")]
+        refs += [item["reference_ref"] for output in case["outputs"] for item in output.get("criteria") or []]
     return list(dict.fromkeys(refs))
 
 
@@ -87,7 +90,7 @@ def fits(kind, value):
     """True when a planted or reported JSON value has the shape of an output of `kind`."""
     if kind == "number":
         return decimal_text(value) is not None
-    if kind == "text":
+    if kind in ("text", "judged"):
         return isinstance(value, str) and bool(value.strip())
     if kind == "boolean":
         return isinstance(value, bool)
@@ -156,11 +159,35 @@ def read_results(files):
     return value, None
 
 
-def score(case, files):
+def judge_packet(job, output, answer):
+    """What a judge of one judged answer receives: the job, the answer and the criteria with their quotes,
+    never the skill, the claim or the planning ("Judged outputs" in local-tasks.md)."""
+    from .documentary import JUDGE_RUBRIC
+    return {"job": job, "answer": answer, "rubric": JUDGE_RUBRIC,
+            "criteria": [{"id": "c" + str(index), "question": item["question"], "source_quote": item["source_quote"]}
+                         for index, item in enumerate(output["criteria"], 1)]}
+
+
+def judged_verdict(output, replies):
+    """A judged output's verdict from two judges' answers: a criterion is met when both say yes, unmet when both
+    say no, undecided when they split; the output fails on an unmet one, passes when all are met."""
+    rows = []
+    for index, item in enumerate(output["criteria"], 1):
+        key = "c" + str(index)
+        answers = [reply["answers"][key]["answer"] for reply in replies]
+        rows.append({"id": key, "question": item["question"], "answers": answers,
+                     "facts": [reply["answers"][key]["fact"] for reply in replies],
+                     "met": True if set(answers) == {"yes"} else False if set(answers) == {"no"} else None})
+    met = [row["met"] for row in rows]
+    return ("fail" if False in met else "pass" if all(met) else "undecided"), rows
+
+
+def score(case, files, judge=None):
     """A trial's status and each output's verdict ("Reading a trial's results" in local-tasks.md).
 
     A wrong value of the right shape is a wrong result, so it fails the trial even when another field
-    is missing; a trial with nothing wrong and something missing or misshapen is `invalid`.
+    is missing; a trial with nothing wrong and something missing, misshapen or undecided is `invalid`.
+    `judge(packet)` returns two judges' replies for a judged output.
     """
     value, problem = read_results(files)
     reference = case.get("solver_results") if isinstance(case.get("solver_results"), dict) else {}
@@ -168,14 +195,23 @@ def score(case, files):
     for output in case["outputs"]:
         present = value is not None and output["field"] in value
         found = value.get(output["field"]) if present else None
-        verdict = check(output, present, found)
+        judged = {}
+        if output["type"] == "judged":
+            verdict = "invalid"
+            if present and fits("judged", found):
+                if judge is None:
+                    raise Fault("judge_unavailable", "A judged output needs its judge sessions.")
+                verdict, criteria = judged_verdict(output, judge(judge_packet(case["job"], output, found)))
+                judged = {"criteria": criteria}
+        else:
+            verdict = check(output, present, found)
         rows.append({"field": output["field"], "type": output["type"], "expected": output["expected"],
                      **({"tolerance": str(tolerance(output))} if output["type"] == "number" else {}),
-                     "present": present, "found": found if present else None, "status": verdict,
+                     "present": present, "found": found if present else None, "status": verdict, **judged,
                      **(off_reference(found, reference.get(output["field"]))
                         if verdict == "pass" and output["type"] == "number" else {})})
     statuses = {row["status"] for row in rows}
-    status = "fail" if "fail" in statuses else "invalid" if "invalid" in statuses else "pass"
+    status = "fail" if "fail" in statuses else "invalid" if statuses & {"invalid", "undecided"} else "pass"
     return {"status": status, "outputs": rows, "results_found": value is not None,
             **({"results_problem": problem} if problem else {})}
 
@@ -189,13 +225,19 @@ class SandboxRunner:
     image, the solver in `solver_image`, the image the trials use, when setup built the skill one
     ("The reference solution" in local-tasks.md)."""
 
-    def __init__(self, settings, *, log=None, sandbox_factory=None, solver_image=None):
+    def __init__(self, settings, *, log=None, sandbox_factory=None, solver_image=None, judge=None):
         if not settings.get("sandbox_image"):
             raise Fault("sandbox_configuration_required", "Task tests need the operator's pinned container image.")
         if sandbox_factory is None:
             from .sandbox import DockerSandbox as sandbox_factory
-        self.settings, self.log, self.factory = settings, log, sandbox_factory
+        self.settings, self.log, self.factory, self.judges = settings, log, sandbox_factory, judge
         self.solver_settings = {**settings, "sandbox_image": solver_image} if solver_image else settings
+
+    def judge(self, packet):
+        """Two judges' replies to one judged answer, from the judge sessions the caller supplied."""
+        if self.judges is None:
+            raise Fault("judge_unavailable", "A judged output needs judge sessions, and none were supplied.")
+        return self.judges(packet)
 
     def generate(self, code, arguments):
         with tempfile.TemporaryDirectory(prefix="sci-verifier-generator-") as temporary:
@@ -257,6 +299,14 @@ class RecordedRunner:
                 "results": run["results"].encode("utf-8") if isinstance(run["results"], str) else None,
                 "image_id": self.receipts.get("solver_image_id")}
 
+    def judge(self, packet):
+        """The judges' recorded answers to this exact packet; judging again would be a new judgment."""
+        key = digest(canonical(packet))
+        run = next((item for item in self.receipts.get("judge_runs", []) if item["key"] == key), None)
+        if run is None:
+            raise Fault("candidate_integrity", "A task design's judged answer or its recorded judges changed.", fatal=True)
+        return [{"answers": answers} for answers in run["answers"]]
+
 
 def quote_problem(references, ref, quote):
     """Why a quote does not stand, or None: it must occur exactly in a reference this claim fetched."""
@@ -278,6 +328,25 @@ def quoted_value_problem(kind, value, quote):
         return None if items and in_quote("set", value, quote) else \
             "a quoted set gives its items separated by commas, each found in the quote"
     return None if in_quote("term", value, quote) else "a quoted text's words must appear in its quote"
+
+
+def judged_problems(output, references):
+    """Why a judged output is not well formed, each as a phrase ("Judged outputs" in local-tasks.md)."""
+    problems = []
+    if any(key in output for key in ("planted", "value", "relative_tolerance", "absolute_tolerance",
+                                     "reference_ref", "source_quote")):
+        problems.append("a judged output takes criteria and fail_example, never planted, value, a tolerance or a "
+                        "quote of its own")
+    criteria = output.get("criteria") or []
+    if not 1 <= len(criteria) <= MAX_CRITERIA:
+        problems.append("a judged output needs one to " + str(MAX_CRITERIA) + " criteria")
+    for index, item in enumerate(criteria, 1):
+        problem = quote_problem(references, item.get("reference_ref"), item.get("source_quote"))
+        if problem:
+            problems.append("criterion " + str(index) + "'s source_quote " + problem)
+    if not (output.get("fail_example") or "").strip():
+        problems.append("a judged output needs a fail_example, a plausible wrong answer its criteria reject")
+    return problems
 
 
 def check_design(proposal, references, claim_sections, problems):
@@ -312,9 +381,17 @@ def check_design(proposal, references, claim_sections, problems):
         if len(set(fields)) != len(fields) or any(not FIELD.fullmatch(field) for field in fields):
             problems.append(label + "output fields need distinct names of letters, digits and underscores, "
                             "starting with a letter.")
+        if sum(output["type"] == "judged" for output in case["outputs"]) > 1:
+            problems.append(label + "a task has at most one judged output.")
         for output in case["outputs"]:
             where = label + "output " + output["field"] + ": "
             kind = output["type"]
+            if kind == "judged":
+                problems.extend(where + problem + "." for problem in judged_problems(output, references))
+                continue
+            if "criteria" in output or "fail_example" in output:
+                problems.append(where + "only a judged output takes criteria and fail_example.")
+                continue
             if ("planted" in output) == ("value" in output):
                 problems.append(where + "give exactly one of planted and value.")
                 continue
@@ -351,6 +428,12 @@ def check_design(proposal, references, claim_sections, problems):
     if unused:
         problems.append("No task uses the claim's sections " + ", ".join(unused) + "; every section of the claim is "
                         "used by at least one task (\"Tasks\" in local-tasks.md).")
+
+
+def unmet(criteria):
+    """The criteria two judges did not both find met, for a design problem's message."""
+    return ", ".join(row["id"] + (" unmet" if row["met"] is False else " split") for row in criteria
+                     if row["met"] is not True) or "every criterion met"
 
 
 def planted_from(stdout):
@@ -400,6 +483,10 @@ def build(case, generated, references, raw, problems):
         return None
     outputs = []
     for output in case["outputs"]:
+        if output["type"] == "judged":
+            # Its criteria stand where an expected value would; judges apply them ("Judged outputs").
+            outputs.append({**output, "expected": [item["question"] for item in output["criteria"]], "source": "judged"})
+            continue
         if "planted" in output:
             if output["planted"] not in planted or not fits(output["type"], planted[output["planted"]]):
                 problems.append(label + "output " + output["field"] + " names planted value " + repr(output["planted"])
@@ -430,7 +517,15 @@ def qualify(proposal, references, claim_sections, runner, raw):
     problems = []
     check_design(proposal, references, claim_sections, problems)
     cases, made = [], {}
-    generator_runs, solver_runs, images = [], [], {}
+    generator_runs, solver_runs, judge_runs, images = [], [], [], {}
+
+    def judge(packet):
+        """Two judges' replies, kept in the receipts so a saved design is rechecked without new sessions."""
+        replies = runner.judge(packet)
+        judge_runs.append({"key": digest(canonical(packet)), "answers": [reply["answers"] for reply in replies],
+                           "session_ids": [reply.get("session_id") for reply in replies]})
+        return replies
+
     def run(program, case_id, call):
         """One program run, or None with the design problem named when the program itself was at fault."""
         try:
@@ -474,12 +569,29 @@ def qualify(proposal, references, claim_sections, runner, raw):
                                                                                    in files.items()}})),
                                 "case_id": case["case_id"], "exit_code": solved["exit_code"], "stderr": solved["stderr"],
                                 "results": results.decode("utf-8", errors="replace") if results is not None else None})
-            verdict = score(task, {RESULTS_FILE: results} if results is not None else {})
+            verdict = score(task, {RESULTS_FILE: results} if results is not None else {}, judge=judge)
             task.update(solver_results=read_results({RESULTS_FILE: results} if results is not None else {})[0],
                         solver_checks=verdict["outputs"])
+            # The judges must pass the reference solution's answer and fail the planner's wrong one ("Judged
+            # outputs" in local-tasks.md); the first is the solver check above.
+            calibration = {}
+            for output, row in zip(outputs, verdict["outputs"]):
+                if output["type"] != "judged" or row["status"] != "pass":
+                    continue
+                example, criteria = judged_verdict(output, judge(judge_packet(case["job"], output, output["fail_example"])))
+                calibration[output["field"]] = {"reference": row["status"], "fail_example": example,
+                                                "fail_example_criteria": criteria}
+                if example != "fail":
+                    problems.append("Task " + case["case_id"] + ": the judges did not fail the fail_example of "
+                                    + output["field"] + " (" + unmet(criteria) + "); its criteria do not reject a "
+                                    "plausible wrong answer.")
+            if calibration:
+                task["calibration"] = calibration
             if verdict["status"] != "pass":
-                wrong = [row["field"] + " (expected " + json.dumps(row["expected"]) + ", found "
-                         + (json.dumps(row["found"]) if row["present"] else "nothing") + ")"
+                wrong = [row["field"] + (" (judged " + row["status"] + ": " + unmet(row["criteria"]) + ")"
+                                         if row.get("criteria") else
+                                         " (expected " + json.dumps(row["expected"]) + ", found "
+                                         + (json.dumps(row["found"]) if row["present"] else "nothing") + ")")
                          for row in verdict["outputs"] if row["status"] != "pass"]
                 problems.append("Task " + case["case_id"] + ": the reference solution does not pass"
                                 + (" (" + verdict["results_problem"] + (" Solver exit code " + str(solved["exit_code"])
@@ -495,7 +607,8 @@ def qualify(proposal, references, claim_sections, runner, raw):
                                    "solver_sha256": digest(proposal["solver"]["code"].encode("utf-8")),
                                    "generator_image_id": images.get("generator_image_id"),
                                    "solver_image_id": images.get("solver_image_id"),
-                                   "generator_runs": generator_runs, "solver_runs": solver_runs},
+                                   "generator_runs": generator_runs, "solver_runs": solver_runs,
+                                   **({"judge_runs": judge_runs} if judge_runs else {})},
                  "status": "rejected" if problems else "qualified_local", "scientific_approval": "provisional",
                  "qualification_problems": sorted(set(problems)), "controls": [],
                  "qualification_limitations": QUALIFICATION_LIMITS, "qualified_at": utc_now()}
@@ -506,7 +619,7 @@ def proposal_of(candidate):
     """The planner's proposal inside a saved task design, as qualification received it."""
     keys = ("case_id", "job", "sections", "arguments", "reference_files", "applicability")
     output_keys = ("field", "type", "planted", "value", "relative_tolerance", "absolute_tolerance",
-                   "reference_ref", "source_quote")
+                   "reference_ref", "source_quote", "criteria", "fail_example")
     return {**{key: candidate[key] for key in ("name", "scope", "limitations", "generator", "solver") if key in candidate},
             "cases": [{**{key: case[key] for key in keys if key in case},
                        "outputs": [{key: output[key] for key in output_keys if key in output}
@@ -559,6 +672,8 @@ def traceable(candidate, case):
     """True when every output's expected value traces to retrieved bytes: planted by the generator from
     its quoted model, a planted judgment also quoting its rule, or a quoted value as a complete token."""
     for output in case["outputs"]:
+        if output["type"] == "judged":
+            continue  # Its criteria were quoted exactly at qualification; judges, not a key, decide it.
         if "planted" in output:
             if not candidate.get("generator") or (output["type"] != "number" and not output.get("source_quote")):
                 return False
@@ -608,7 +723,14 @@ def critique_packet(claim, sections, candidate, references, args, ceiling, limit
                                    **{key: output[key] for key in ("relative_tolerance", "absolute_tolerance")
                                       if key in output},
                                    **({"quote": clip(output["source_quote"]), "url": url(output["reference_ref"])}
-                                      if output.get("source_quote") else {})}
+                                      if output.get("source_quote") else {}),
+                                   **({"criteria": [{"question": item["question"], "quote": clip(item["source_quote"]),
+                                                     "url": url(item["reference_ref"])} for item in output["criteria"]],
+                                       "fail_example": clip(output["fail_example"], 2000),
+                                       "calibration": {key: value for key, value in
+                                                       ((case.get("calibration") or {}).get(output["field"]) or {}).items()
+                                                       if key in ("reference", "fail_example")}}
+                                      if output["type"] == "judged" else {})}
                                   for output in case["outputs"]],
                       "solver_results": clip(case.get("solver_results"), 2000),
                       "applicability": clip(case["applicability"])})
@@ -632,7 +754,9 @@ def critique_packet(claim, sections, candidate, references, args, ceiling, limit
                                        "every trial receives, checked every quote exactly against the pinned "
                                        "reference bytes, checked that the tasks use every section of the claim, and "
                                        "ran the reference solution on each task, on whose results every output "
-                                       "passed. Judge whether this evidence is fit for this claim at the proposed "
+                                       "passed, two judges agreeing on each judged output, which they also failed "
+                                       "on its fail_example. Judge whether this evidence is fit for this claim at "
+                                       "the proposed "
                                        "grade, and give every task a verdict in case_verdicts. Python then "
                                        "recomputes the ceiling over the tasks you count, under "
                                        "rubric.case_requirements."}}

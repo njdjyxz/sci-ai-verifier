@@ -290,10 +290,14 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertIn("model_subject_trial_count_below_three",h.data["evidence_limits"])
         self.assertEqual(h.data["claim_states"][h.claim_id],"local_discovery")
         self.assertFalse(self.packets)
+        # D is proposed only for a judged design, so on this one it aims below the ceiling and is refused.
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=AssertionError("must not run")):
+            h.select(key,target_grade="D")
+        self.assertEqual((h.data["outcome"],h.data["reason"]),("local_grade_proposal_refused","below_evidence_ceiling"))
         # A grade outside the plan range is rejected by the published tool schema.
         response=h.runtime.call("select_local_candidate",{
             "run_id":h.data["run_id"],"state_token":h.data["state_token"],
-            "claim_id":h.claim_id,"candidate_ref":key,"target_grade":"D",
+            "claim_id":h.claim_id,"candidate_ref":key,"target_grade":"U",
             "applicability":"x","oracle_independence":"x","coverage":"x","tolerance_basis":"x",
             "uncertainty":"x","stronger_grade_considered":"x"})
         self.assertEqual(response["status"],"retryable")
@@ -1056,6 +1060,48 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertEqual(disclosed["rubric_ref"],RUBRIC_REF)
         self.assertEqual(h.data["report"]["claims"][0]["record"]["ai_involvement"],
                          {"orchestration":True,"evidence_generation":True,"verdict":True})
+
+    def test_sources_that_address_no_statement_give_u_not_d(self):
+        """Run 3f073fec's made-up fade correction got D, inconclusive, from a blot review that never named it."""
+        h=self.h
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.critic("none")):
+            h.select(self.key,target_grade="A")
+            h.select(self.key,target_grade="A")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        work=h.runtime.call("get_verifier_context",{"run_id":h.data["run_id"]})["data"]["local_work"][h.claim_id]
+        reference=work["reference_refs"][0]
+        with patch("sci_ai_verifier.documentary.assess",
+                   side_effect=lambda adapter,packet: assessor_reply(packet,"no_evidence",[])):
+            h.call("assess_local_documentary",claim_id=h.claim_id,
+                   evidence=[{"reference_ref":reference,"quote":fixture.REFERENCE}],
+                   limitations="Documentary consistency only.")
+        result=h.data["result"]
+        self.assertEqual((result["evidence_grade"],result["scientific_status"],result["status_withheld_reason"]),
+                         ("U",None,"no_reference_grade"))
+        self.assertEqual(result["documentary_status"],"no_evidence")
+        h.call("write_report_card")
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("grade U, not D",markdown)
+        self.assertIn("Statement (not_addressed)",markdown)
+
+    def test_a_rule_no_source_states_stands_as_u_beside_the_grade(self):
+        """Runs f84c131c, b573cd15 and 3f073fec graded claims on their sourced parts while a skill's own cut-off
+        went untested, shown only among the coverage gaps."""
+        h=self.h
+        rule=("A rule the skill states.","No reference states it and no search found one.")
+
+        def critique(adapter,packet):
+            return critic_reply(packet,"A",unsourced_rules=[rule])
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=critique):
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_plan_fixed")
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual([(item["rule"],item["grade"]) for item in h.data["result"]["unsourced_rules"]],
+                         [(rule[0],"U")])
+        h.call("write_report_card")
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Rules no source states, grade U",markdown)
+        self.assertIn("- U: "+rule[0],markdown)
 
 
 class GateTests(unittest.TestCase):

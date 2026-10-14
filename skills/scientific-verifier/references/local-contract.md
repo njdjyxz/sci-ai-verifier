@@ -142,7 +142,8 @@ Selection freezes source, subject/configuration, candidate, trial count, toleran
 and the installed evidence-strength policy (`scripts/local_policy.py` prints it) and writes a deterministic audit before
 execution. The grade is settled during that selection and requires no human review.
 
-The planner proposes `target_grade` A, B or C with an explicit justification.
+The planner proposes `target_grade` A, B, C or, for a design with a judged output, D, with
+an explicit justification.
 Python computes an **evidence ceiling** from facts it recorded itself. Only that
 ceiling, or a grade the last critique of the same design supported, may be proposed;
 both overclaiming and aiming low are refused before any session is spent:
@@ -158,6 +159,8 @@ both overclaiming and aiming low are refused before any session is spent:
   the same trial minimum.
 - **C** covers any other reproducible comparison, such as a design reused offline whose
   reference origin was never recorded.
+- **D** covers a design with a judged output (`local-tasks.md`): its criteria quote
+  retrieved references as A's values do, but judge sessions decide the verdict.
 
 Those are the reference and trial requirements. Each grade also needs a number of
 counting tasks, owned by "Cases each grade requires" in `evidence-rubric.md`.
@@ -210,7 +213,9 @@ paragraph under `select_local_candidate` in `tool-contracts.md` describes: a rep
 it goes back to the same session to be corrected, and a reply that judges the design is
 never re-rolled, whatever grade it gives. The critique session runs at effort `high`, Claude
 Code's default for its model, passed explicitly, has twenty minutes, and may write 2 MiB; the
-documentary assessor runs at the default and has two minutes and 256 KiB. Run `cfe9e57a`'s
+documentary assessor runs at the default and has ten minutes and 256 KiB, and each judge
+session five minutes. Run `ed14663f`'s assessor of a claim about a script's own code ran
+past the two minutes it had before. Run `cfe9e57a`'s
 critiques of two redesigned claims passed 256 KiB at `xhigh` and were cut off, which left both
 claims without tests. It ran at `xhigh` from 2026-10-07 until the operator set `high` again on
 2026-10-08, after run `50104eac` stopped on the subscription's session limit. The operator set `xhigh` on 2026-10-07 without a replay, so the
@@ -240,13 +245,18 @@ mechanical qualification nor catalog membership adds to it.
 
 ## Independent documentary path
 
-After an execution with no eligible A/B/C grade, the live local workflow enters
+After an execution with no eligible grade, the live local workflow enters
 `local_documentary`. The planner either supplies bounded cited evidence for a
 fresh assessor or records searches establishing no acceptable evidence. A new
 Claude session, selected by the host, receives the exact claim, source quotes,
 limitations and fixed rubric only. It has no tools or planning history. Its reply
-must contain a status, supported rubric findings and exact citations to the pinned
-packet.
+splits the claim into the statements it makes, marks each `supported`, `contradicted`
+or `not_addressed` with an exact quote from the pinned packet for each supported or
+contradicted one, and gives one finding per rubric criterion. Python gives the status:
+`fail` when a statement is contradicted, `pass` when every one is supported, otherwise
+`inconclusive`. When none is supported or contradicted, the sources do not address the
+claim, and it gets grade U, not D. Run `3f073fec`'s made-up fade correction got D from a
+general blot review that never named it.
 
 Its shape is enforced the same way as the critique's, so a reply outside it is corrected
 in the same session. A reply whose citations do not quote the pinned packet is never
@@ -255,8 +265,8 @@ until the answer is acceptable is grade shopping. The first assessment in shape 
 one that counts, whatever status it carries. A session that ends without one, or a
 missing assessment, is an operational failure.
 
-A completed assessment against the installed rubric is grade D with the assessor's
-status. Grade D is documentary consistency only; execution accuracy remains
+A completed assessment that addresses the claim is grade D with Python's status.
+Documentary D is consistency with sources only; execution accuracy remains
 unverified, and AI judgment is primary and disclosed. U/inconclusive is a separate
 no-evidence path; runtime failures never establish it. Both paths carry the evidence
 preconditions stated for `assess_local_documentary` and `record_local_unverified` in

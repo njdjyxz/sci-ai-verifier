@@ -61,16 +61,20 @@ def legal(state):
 
 def schemas(base, obj, string):
     from .local_science import PLANNER_JUSTIFICATION
-    from .local_tasks import MAX_OUTPUTS, MAX_TASKS, TYPES as TASK_TYPES
+    from .local_tasks import MAX_CRITERIA, MAX_OUTPUTS, MAX_TASKS, TYPES as TASK_TYPES
 
     def choice(values, maximum=100):
         return {"type": "string", "minLength": 1, "maxLength": maximum, "enum": list(values)}
 
     claim = {**base, "claim_id": string(80)}
-    # A task design ("Tasks" in local-tasks.md). Each case is a task; an output gives `planted` or `value`.
+    # A task design ("Tasks" in local-tasks.md). Each case is a task; an output gives `planted` or `value`,
+    # or, judged, `criteria` and `fail_example`.
+    criterion = obj({"question": string(1000), "reference_ref": string(64), "source_quote": string(8000)})
     output = obj({"field": string(60), "type": choice(TASK_TYPES, 10), "planted": string(60), "value": string(2000),
                   "relative_tolerance": string(20), "absolute_tolerance": string(20),
-                  "reference_ref": string(64), "source_quote": string(8000)}, required=["field", "type"])
+                  "reference_ref": string(64), "source_quote": string(8000),
+                  "criteria": {"type": "array", "minItems": 1, "maxItems": MAX_CRITERIA, "items": criterion},
+                  "fail_example": string(4000)}, required=["field", "type"])
     task = obj({"case_id": string(80), "job": string(8000),
                 "sections": {"type": "array", "minItems": 1, "maxItems": 40, "items": string(10)},
                 "arguments": string(8000),
@@ -94,7 +98,7 @@ def schemas(base, obj, string):
             "cases": {"type": "array", "minItems": 1, "maxItems": MAX_TASKS, "items": task}},
             required=[*claim, "name", "scope", "limitations", "solver", "cases"]),
         "select_local_candidate": obj({**claim, "candidate_ref": string(64), "applicability": string(8000),
-            "target_grade": choice(("A", "B", "C"), 1),
+            "target_grade": choice(("A", "B", "C", "D"), 1),
             **{key: string(JUSTIFICATION_TEXT) for key in PLANNER_JUSTIFICATION}}),
         "execute_local_claim": obj(claim),
         "record_local_limitation": obj({**claim, "code": choice(PLANNER_LIMITATIONS), "reason": string(8000)}),
@@ -246,8 +250,10 @@ def operate(store, state, name, args, subject):
     if name == "qualify_local_tasks":
         from . import local_tasks
         settings = settings_for(store, state)
+        from .documentary import judge_pair
         runner = local_tasks.SandboxRunner(settings, log=getattr(subject, "log", None),
-                                           solver_image=getattr(subject, "subject_image", None))
+                                           solver_image=getattr(subject, "subject_image", None),
+                                           judge=lambda packet: judge_pair(subject, packet))
         refs = {key: store.get_json(key) for key in work["reference_refs"]}
         proposal = {key: args[key] for key in ("name", "scope", "limitations", "generator", "solver", "cases")
                     if key in args}
@@ -439,9 +445,10 @@ def select(store, state, claim_id, work, args, subject):
     # The audit's settled ceiling is already the weakest of the proposal, the ceiling over
     # the tasks the critique counted, and its grade, so it is clamped to the ceiling. A
     # critique supporting D or none leaves it `None`: the design supports no *execution*
-    # grade, and acceptance reads it that way. Only A, B and C can be proposed, so an
-    # accepted "D" left a no-grade design unselectable: the planner of run b43780be could
-    # neither accept the verdict nor run the plan, only abandon it.
+    # grade, and acceptance reads it that way. Only A, B and C could be proposed for such a
+    # design, so an accepted "D" left it unselectable: the planner of run b43780be could
+    # neither accept the verdict nor run the plan, only abandon it. D is proposed only for a
+    # judged design, whose ceiling it is.
     accepted = previous["settled_ceiling"] if previous else None
     problem = proposal_problem(args["target_grade"], ceiling, accepted)
     if problem:
@@ -567,6 +574,8 @@ def select(store, state, claim_id, work, args, subject):
                 "required_revisions": critique["required_revisions"],
                 "coverage_gaps": gaps,
                 "departures": list(critique.get("departures") or []),
+                # Shown as grade U beside the claim's grade unless a source is found and a task tests them.
+                "unsourced_rules": list(critique.get("unsourced_rules") or []),
                 "case_replacements": rejected,
                 "rounds_remaining": MAX_ROUNDS - rounds,
                 "replacement_rounds_remaining": REPLACEMENT_ROUNDS - replacements_used - bool(rejected),
@@ -649,9 +658,11 @@ def documentary_record(store, state, claim_id, evidence, limitations, subject, r
                     "The independent assessment did not complete; this is not missing scientific evidence.") from error
     assessment_ref = keep(store, state, response)
     work["assessment_ref"] = assessment_ref
-    # A completed independent assessment against the installed rubric is grade D.
+    # A completed independent assessment that addresses the claim is grade D; one whose sources address none
+    # of its statements is U, with no verdict ("Independent documentary path" in local-contract.md).
     # Synthetic fixture observations never receive a grade.
     graded = not state["subject_config"]["synthetic"]
+    unaddressed = response["assessment"]["status"] == "no_evidence"
     # The planner's path compares documents and never runs the skill, so there is no
     # behaviour to measure: `not_applicable`. A fallback stands in for an execution that was
     # attempted and lost, which is what `not_obtained` says.
@@ -664,11 +675,14 @@ def documentary_record(store, state, claim_id, evidence, limitations, subject, r
         notes.insert(0, "Fallback documentary assessment after " + fallback_for["fault"] + ": " + fallback_for["reason"]
                      + " No execution evidence was obtained, so this grade is AI judgment of the reference quotes the"
                      " claim's planned cases were keyed to, not of the skill's behaviour.")
+    if unaddressed and graded:
+        notes.insert(1, "No supplied source addressed any statement of the claim, so it is grade U, not D.")
     record = {**retained, "kind": "local-documentary", "assessment_ref": assessment_ref, "packet_ref": packet_ref,
               "rubric_ref": RUBRIC_REF,
-              "scientific_status": response["assessment"]["status"] if graded else None,
-              "evidence_grade": "D" if graded else None,
-              "status_withheld_reason": None if graded else "synthetic_observations",
+              "scientific_status": response["assessment"]["status"] if graded and not unaddressed else None,
+              "evidence_grade": ("U" if unaddressed else "D") if graded else None,
+              "status_withheld_reason": ("synthetic_observations" if not graded
+                                         else "no_reference_grade" if unaddressed else None),
               "accuracy": unmeasured, "consistency": unmeasured, "completeness": unmeasured,
               # A fallback keeps the runner fault on its own axis, beside the grade.
               "fault": fallback_for["fault"] if fallback_for else None,
@@ -763,6 +777,7 @@ def execute(store, state, claim_id, subject, retry=False):
         raw=store.get(entry["digest"])
         source.append({"path":entry["path"],**({"content":raw.decode("utf-8")} if entry["encoding"]=="utf-8" else {"base64":base64.b64encode(raw).decode()})})
     from .local_tasks import score as score_task, task_input
+    from .documentary import judge_pair
     receipts, observations, scored_trials = [], [], []
     for index, (case,trial) in enumerate(((case,trial) for case in candidate["cases"] for trial in range(1,trials+1)),1):
         # A task gives its job, its files' paths and its output fields ("Tasks" in local-tasks.md).
@@ -831,11 +846,19 @@ def execute(store, state, claim_id, subject, retry=False):
                 work[pinned]=keep(store,state,answered)
             elif store.get_json(work[pinned])!=answered:
                 return limitation(store,state,claim_id,"subject_model_changed","Observed model identity changed within the frozen trial set.",receipts)
-        # Python reads the trial's results file itself ("Reading a trial's results", local-tasks.md).
+        # Python reads the trial's results file itself ("Reading a trial's results", local-tasks.md); two judge
+        # sessions read a judged output, and one that fails is ours, never the skill's.
+        try:
+            trial_score=score_task(case,{item["path"]:store.get(item["object_ref"]) for item in artifacts},
+                                   judge=lambda packet: judge_pair(subject, packet))
+        except (Fault, OSError) as error:
+            code = error.code if isinstance(error, Fault) else "judge_unavailable"
+            return limitation(store, state, claim_id, code, "A judge session for trial " + str(trial) + " of task "
+                              + case["case_id"] + " did not complete. This is an operational failure, not an "
+                              "absence of scientific evidence.", receipts)
         scored_trials.append({"index":index,"case":case,"trial":trial,"request_ref":request_ref,
                               "response_ref":response_ref,"models":models,"run_problems":response.get("run_problems",[]),
-                              "files_not_kept":response.get("files_not_kept",[]),
-                              "score":score_task(case,{item["path"]:store.get(item["object_ref"]) for item in artifacts})})
+                              "files_not_kept":response.get("files_not_kept",[]),"score":trial_score})
     # Tasks the critique did not count ran and stay in the receipts, but a task measuring
     # something other than the claim cannot pass or fail it.
     from .local_science import decide, rejected_cases
@@ -1125,6 +1148,12 @@ def report(store, state):
         lines.extend([
                       "Outcome: " + terminal.get("comparison_status", terminal.get("documentary_status",terminal.get("code",terminal.get("scientific_status") or "unavailable"))), "",
                       "Scientific status: "+cell(terminal.get("scientific_status") or "unassigned")+"; evidence grade: "+cell(terminal.get("evidence_grade") or "unassigned"),""])
+        if terminal.get("unsourced_rules"):
+            # "Rules no source states" in evidence-rubric.md: the grade above does not cover them.
+            lines.extend(["Rules no source states, grade U beside the grade above, which does not cover them:",""])
+            lines.extend("- U: "+cell(item["rule"])+(" (not found verbatim in the skill)" if not item.get("quoted", True) else "")
+                         +". "+cell(item["reason"]) for item in terminal["unsourced_rules"])
+            lines.append("")
         lines.extend(axis_lines(terminal, cell))
         if retry:
             first_attempt = "First attempt stopped by " + cell(retry["fault"]) + ": " + cell(retry["first_attempt"].get("reason", "")) + " "
@@ -1133,8 +1162,9 @@ def report(store, state):
                                            else "Not re-run: " + cell(retry["reason"])), ""])
         if fallback:
             lines.extend([("Fallback documentary assessment: no execution evidence was obtained, so a fresh AI session "
-                           "judged the claim against the quotes its task design rests on. Its grade D is AI judgment "
-                           "only." if fallback["status"] == "assessed"
+                           "judged the claim against the quotes its task design rests on. Its grade "
+                           + cell(terminal.get("evidence_grade") or "none") + " is AI judgment only."
+                           if fallback["status"] == "assessed"
                            else "No fallback documentary assessment: " + cell(fallback["reason"])), ""])
         if required_grade:
             lines.extend(["Required grade: "+required_grade+"; requirement "+("met" if meets_required else "not met"),""])
@@ -1212,7 +1242,10 @@ def report(store, state):
                           "| --- | --- | --- | --- | --- | --- |"])
             for case in tests:
                 misses = "; ".join(row["field"] + " " + row["status"] + " ("
-                                   + (row["expected"] if row["type"] == "number" else json.dumps(row["expected"]))
+                                   + ("judged: " + ", ".join(item["id"] + (" met" if item["met"] else " unmet" if item["met"] is False
+                                                                          else " split") for item in row["criteria"])
+                                      if row.get("criteria") else
+                                      row["expected"] if row["type"] == "number" else json.dumps(row["expected"]))
                                    + "; " + (json.dumps(row["found"]) if row["present"] else "missing") + ")"
                                    for row in case["outputs"] or [] if row["status"] != "pass")
                 lines.append("| " + cell(case["case_id"]) + " | " + cell(case["trial"]) + " | "
@@ -1241,6 +1274,8 @@ def report(store, state):
         if work.get("assessment_ref"):
             assessment=store.get_json(work["assessment_ref"])
             lines.extend(["","Independent documentary assessment (AI judgment):",""])
+            lines.extend("- Statement ("+cell(item["verdict"])+"): "+cell(item["statement"])
+                         for item in assessment["assessment"].get("statements") or [])
             lines.extend("- "+cell(finding) for finding in assessment["assessment"]["findings"])
             for citation in assessment["assessment"]["citations"]:
                 reference=store.get_json(citation["reference_ref"])

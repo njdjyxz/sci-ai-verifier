@@ -70,7 +70,9 @@ six tasks, and each runs for the run's trial count.
   the allowed values, such as `A` or `B`;
 - `boolean`: `true` or `false`;
 - `set`: a JSON array of strings, passing when it holds the same items in any order,
-  ignoring case and spacing.
+  ignoring case and spacing;
+- `judged`: a JSON string in the test AI's own words, checked by judges against written
+  criteria ("Judged outputs" below).
 
 A number's tolerance is `relative_tolerance` (a fraction of the expected value from 0 to 1,
 such as `0.35`) or `absolute_tolerance`, both decimal strings; with both, the wider passes, and
@@ -94,6 +96,25 @@ curve that never levels off, a saturated band, too few events), plant that probl
 task's input and ask whether it is present, and put a clean case beside it in the same
 input that must not be flagged: one `boolean` field for each. A task with no input files
 suits only guidance with nothing to compute, and states its scenario in the job.
+
+**Judged outputs.** Where the claim's sections lead to an answer no fixed key captures, such
+as a plan, advice with several right answers or an interpretation, an output may be
+`judged`. It holds `criteria`, one to six yes/no questions about the answer, each quoting
+the outside source it rests on in `reference_ref` and `source_quote`, and `fail_example`, a
+plausible wrong answer; no `planted`, `value` or tolerance. A rule only the skill states is
+never a criterion: it is an unsourced rule (below). A task has at most one judged output and
+keeps fixed outputs where it can. Two fresh judge sessions each read the job, the answer
+and the criteria with their quotes, never the skill, the claim or the planning, and answer
+every question yes or no with the fact it rests on. Python decides: a criterion is met when
+both answer yes, unmet when both answer no, and undecided when they split; the output
+passes when every criterion is met, fails when one is unmet, and is otherwise undecided.
+At qualification the judges must pass the reference solution's answer and fail
+`fail_example`, or the design is rejected, naming the criterion. Their answers are kept in
+the design's receipts, so a saved design is rechecked without new sessions. A judge session
+that fails is an operational fault, as a subject's is. AI judgment decides these verdicts,
+so a design with a judged output settles at grade D at most ("Cases each grade requires" in
+`evidence-rubric.md`). Run `b573cd15` keyed troubleshooting advice to one answer per task
+by ruling the others out in each record; a judged output tests such advice as it is given.
 
 ## Where expected values come from
 
@@ -156,9 +177,9 @@ Python reads `/work/results.json` from the trial's new files. The trial is:
 - `pass` when every output passes;
 - `fail` when some field holds a value of the right type that misses its expected value;
 - `invalid` when there is no such file, it is not one JSON object, or, with no value
-  wrong, a field is missing or a value has the wrong type.
+  wrong, a field is missing, a value has the wrong type or a judged output is undecided.
 
-The format is fixed, so no AI reader reads a task. Each trial's record keeps every
+The format is fixed, so no AI reads a fixed output; judges read only a judged one. Each trial's record keeps every
 output's expected value, the value found and its verdict. Status follows the rule of
 `local-contract.md` over every trial of every counting task, so one wrong result fails
 the claim, and the report shows which task and which field.
@@ -199,7 +220,8 @@ return under `select_local_candidate` in `tool-contracts.md` says.
 
 The critique sees the claim with the text of its sections, the design's generator and
 solver code, each task's job, sections, arguments, files (names, sizes, the start of each
-text file), planted values, outputs with their tolerances and quotes, and the solver's
+text file), planted values, outputs with their tolerances and quotes, each judged output's
+criteria, `fail_example` and the judges' verdicts at qualification, and the solver's
 results. Its rubric asks whether each expected value is right and independent of the
 skill, whether the tasks exercise the claim as a whole, whether the comparison is fair
 and exposes any departure of the skill from the reference solution, whether a stronger grade
@@ -207,3 +229,11 @@ was passed over, and whether earlier concerns are answered. For each task it ans
 questions, each tied to a row of the verdict table in "Cases each grade requires" of
 `evidence-rubric.md`, and Python gives the task the verdict of the first question answered
 yes, or `counts`.
+
+**Unsourced rules.** The critique also lists in `unsourced_rules` each rule, threshold,
+formula or named method the claim's sections state that no fetched reference states and no
+search in Python's record found a source for, quoted exactly from the sections, with what
+was sought. A rule a task tests against a quoted source is not one. The claim reports each
+as grade U beside its grade ("Rules no source states" in `evidence-rubric.md`). Runs
+`f84c131c`, `b573cd15` and `3f073fec` graded claims A and B on their sourced parts while a
+skill's own r² and QC cut-offs went untested, shown only among the coverage gaps.

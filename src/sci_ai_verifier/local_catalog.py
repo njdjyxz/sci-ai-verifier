@@ -120,12 +120,14 @@ def import_bundle(store,raw,settings,*,log=None):
 def requalify(candidate,refs,objects,settings,*,log=None):
     """A bundled task design qualified again on this machine: outputs recorded on another one are not
     evidence here. The generator must rebuild the bundled files and planted values exactly, and the
-    reference solution must pass every output on them again, in this machine's container."""
-    from .local_tasks import METHOD_VERSION,SandboxRunner,proposal_of,qualify
+    reference solution must pass every output on them again, in this machine's container. A judged output keeps
+    its recorded judges: judging it again would be a new judgment, not a check of the old one."""
+    from .local_tasks import METHOD_VERSION,RecordedRunner,SandboxRunner,proposal_of,qualify
     if candidate.get("method_version")!=METHOD_VERSION:
         raise ValueError()
     sections=sorted({name for case in candidate["cases"] for name in case["sections"]})
-    check,made=qualify(proposal_of(candidate),refs,sections,SandboxRunner(settings,log=log),objects.__getitem__)
+    runner=SandboxRunner(settings,log=log,judge=RecordedRunner(candidate,objects.__getitem__).judge)
+    check,made=qualify(proposal_of(candidate),refs,sections,runner,objects.__getitem__)
     rebuilt={case["case_id"]:case for case in check["cases"]}
     for case in candidate["cases"]:
         again=rebuilt.get(case["case_id"]) or {}

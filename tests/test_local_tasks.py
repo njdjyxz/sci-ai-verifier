@@ -35,9 +35,14 @@ class FakeRunner:
 
     made = []
 
-    def __init__(self, settings=None, *, log=None, sandbox_factory=None, solver_image=None):
+    def __init__(self, settings=None, *, log=None, sandbox_factory=None, solver_image=None, judge=None):
         self.generated, self.solved, self.faults, self.solver_image = [], [], {}, solver_image
+        self.judges, self.judged = judge or ponceau_judges, []
         FakeRunner.made.append(self)
+
+    def judge(self, packet):
+        self.judged.append(packet)
+        return self.judges(packet)
 
     def generate(self, code, arguments):
         self.generated.append(arguments)
@@ -65,10 +70,37 @@ class FakeRunner:
 
 def fit(files, given):
     """A correct analysis of the fixture table, answering every field the task asks for."""
-    rows = [line.split(",") for line in files["doses.csv"].decode().splitlines()[1:]]
-    slope = sum(float(response) / float(dose) for dose, response in rows) / len(rows)
-    found = {"slope": slope, "more_potent": "A", "flagged": False}
+    found = {"more_potent": "A", "flagged": False, "plan": "Stain the membrane with Ponceau S before anything else."}
+    if "doses.csv" in files:
+        rows = [line.split(",") for line in files["doses.csv"].decode().splitlines()[1:]]
+        found["slope"] = sum(float(response) / float(dose) for dose, response in rows) / len(rows)
     return {field: found[field] for field in given["results_format"]}
+
+
+GUIDE_RULE = "If the blot is blank, first check the transfer with a Ponceau S stain."
+GUIDE = {"url": "https://example.org/troubleshooting", "version": "v2", "license": "Unknown",
+         "text": "Fixture troubleshooting guide. " + GUIDE_RULE + " Then check the antibody.", "raw_ref": "raw-guide",
+         "origin": "retrieved_public_https"}
+
+
+def ponceau_judges(packet, answers=("yes", "yes")):
+    """Two judges that find the criterion met when the answer names a Ponceau S stain, else unmet; `answers`
+    overrides what each says for an answer that names it."""
+    named = "Ponceau" in packet["answer"]
+    return [{"answers": {item["id"]: {"fact": "The answer reads: " + packet["answer"][:60],
+                                      "answer": said if named else "no"} for item in packet["criteria"]},
+             "session_id": "judge-" + str(index)} for index, said in enumerate(answers, 1)]
+
+
+def judged_task(case_id, sections, **changes):
+    """A task whose answer judges check against one criterion quoted from the guide."""
+    return {"case_id": case_id, "job": "The blot in run " + case_id + " came out blank. Say what to do first.",
+            "sections": sections,
+            "outputs": [{"field": "plan", "type": "judged", "fail_example": "Double the primary antibody.",
+                         "criteria": [{"question": "Does the answer check the transfer, as a Ponceau S stain does, "
+                                                   "before anything else?", "reference_ref": "GUIDE",
+                                       "source_quote": GUIDE_RULE}], **changes}],
+            "applicability": "A blank blot, as the troubleshooting section meets it."}
 
 
 def task(case_id, sections, slope=2, **extra):
@@ -344,6 +376,141 @@ class TaskSubject:
                                "base64": base64.b64encode(raw).decode()} for raw in files],
                 "run_problems": ["missing Python module scipy"] if self.mode == "wrong" else [],
                 **({"files_not_kept": [{"path": "signals.csv", "bytes": 25000000}]} if self.mode == "large" else {})}
+
+
+class JudgedOutputTests(unittest.TestCase):
+    """"Judged outputs" in local-tasks.md: two judges check an answer against criteria quoted from a source."""
+
+    REFS = {**REFERENCES, "GUIDE": GUIDE}
+
+    def raw(self, ref):
+        return self.objects[ref]
+
+    def setUp(self):
+        self.objects = {}
+
+    def run_design(self, cases, runner=None):
+        runner = runner or FakeRunner()
+        candidate, made = qualify(design(cases), self.REFS, ["S1", "S2"], runner, self.raw)
+        self.objects.update(made)
+        return candidate, runner
+
+    def test_two_judges_decide_each_criterion_and_a_split_leaves_it_undecided(self):
+        case = {"job": "Say what to do first.", "outputs": [
+            {"field": "plan", "type": "judged", "expected": ["q"], "criteria": [
+                {"question": "q", "reference_ref": "GUIDE", "source_quote": GUIDE_RULE}]}]}
+
+        def scored(answer, answers=("yes", "yes")):
+            return score(case, {RESULTS_FILE: json.dumps({"plan": answer}).encode()},
+                         judge=lambda packet: ponceau_judges(packet, answers))
+        self.assertEqual(scored("Run a Ponceau S stain.")["status"], "pass")
+        self.assertEqual(scored("Use more antibody.")["status"], "fail")
+        # One judge yes and one no: undecided, which reads as invalid for the trial, never as a pass.
+        split = scored("Run a Ponceau S stain.", ("yes", "no"))
+        self.assertEqual((split["status"], split["outputs"][0]["status"]), ("invalid", "undecided"))
+        self.assertEqual(split["outputs"][0]["criteria"][0]["met"], None)
+        # A missing or misshapen answer is invalid without any judge, and judging needs judges.
+        self.assertEqual(score(case, {RESULTS_FILE: b'{"plan": 3}'})["status"], "invalid")
+        with self.assertRaises(Fault) as caught:
+            score(case, {RESULTS_FILE: b'{"plan": "Ponceau"}'})
+        self.assertEqual(caught.exception.code, "judge_unavailable")
+        # The judges see the job, the answer and the criteria with their quotes, never the skill or the claim.
+        packet = local_tasks.judge_packet(case["job"], case["outputs"][0], "An answer.")
+        self.assertEqual(set(packet), {"job", "answer", "rubric", "criteria"})
+        self.assertEqual(packet["criteria"], [{"id": "c1", "question": "q", "source_quote": GUIDE_RULE}])
+
+    def test_a_judged_output_is_refused_for_each_rule_it_breaks(self):
+        broken = judged_task("t1", ["S1"])
+        broken["outputs"][0].update(fail_example="", criteria=[
+            {"question": "q", "reference_ref": "GUIDE", "source_quote": "A rule the guide never states."}])
+        broken["outputs"].append({**judged_task("t9", ["S1"])["outputs"][0], "field": "second"})
+        broken["outputs"].append({"field": "n", "type": "number", "value": "2.5", "reference_ref": "REF",
+                                  "source_quote": PAGE, "fail_example": "3"})
+        noisy = judged_task("t2", ["S2"], planted="slope")
+        problems = []
+        local_tasks.check_design(design([broken, noisy]), self.REFS, ["S1", "S2"], problems)
+        text = "\n".join(problems)
+        for expected in ("criterion 1's source_quote must be quoted exactly", "needs a fail_example",
+                         "at most one judged output", "only a judged output takes criteria",
+                         "never planted, value, a tolerance or a quote of its own"):
+            self.assertIn(expected, text)
+
+    def test_judges_must_pass_the_solver_and_fail_the_wrong_answer_before_a_design_qualifies(self):
+        candidate, runner = self.run_design([judged_task("t1", ["S1"]), task("t2", ["S2"], slope=4)])
+        self.assertEqual(candidate["status"], "qualified_local", candidate["qualification_problems"])
+        first = candidate["cases"][0]
+        self.assertEqual((first["outputs"][0]["source"], first["outputs"][0]["expected"]),
+                         ("judged", [first["outputs"][0]["criteria"][0]["question"]]))
+        self.assertEqual({key: first["calibration"]["plan"][key] for key in ("reference", "fail_example")},
+                         {"reference": "pass", "fail_example": "fail"})
+        # Both judgments are kept, so the saved design is rechecked without any new judge session.
+        self.assertEqual(len(candidate["task_receipts"]["judge_runs"]), 2)
+        self.assertEqual([packet["answer"] for packet in runner.judged],
+                         ["Stain the membrane with Ponceau S before anything else.", "Double the primary antibody."])
+        self.assertIs(recheck(candidate, self.REFS, self.raw), candidate)
+        tampered = json.loads(json.dumps(candidate))
+        tampered["cases"][0]["outputs"][0]["fail_example"] = "Another wrong answer."
+        with self.assertRaises(Fault) as caught:
+            recheck(tampered, self.REFS, self.raw)
+        self.assertEqual(caught.exception.code, "candidate_integrity")
+        # A wrong answer the judges pass shows the criteria reject nothing, so the design is refused.
+        lenient = FakeRunner(judge=lambda packet: [{"answers": {item["id"]: {"fact": "f", "answer": "yes"}
+                                                                for item in packet["criteria"]}}] * 2)
+        refused, _ = self.run_design([judged_task("t1", ["S1"]), task("t2", ["S2"], slope=4)], lenient)
+        self.assertEqual(refused["status"], "rejected")
+        self.assertIn("the judges did not fail the fail_example of plan", "\n".join(refused["qualification_problems"]))
+
+    def test_a_judged_design_settles_at_d_at_most_and_discloses_its_ai_verdict(self):
+        from sci_ai_verifier.local_science import audit, decide, evidence_ceiling
+        candidate, _ = self.run_design([judged_task("t1", ["S1"]), judged_task("t2", ["S2"])])
+        ceiling, limits = evidence_ceiling(candidate, self.REFS, 3)
+        self.assertEqual(ceiling, "D")
+        self.assertIn("verdict_by_ai_judges", limits)
+        # D needs two counting tasks, so a missing third is never what limits it.
+        self.assertNotIn("fewer_than_three_counting_tasks", limits)
+        selection = {"target_grade": "D", "trials_per_case": 3, "source_digest": "s", "environment_digest": "e",
+                     **{key: "x" for key in ("oracle_independence", "coverage", "tolerance_basis", "uncertainty",
+                                             "stronger_grade_considered")}}
+        verdicts = [{"case_id": case["case_id"], "verdict": "counts"} for case in candidate["cases"]]
+        records = {}
+        for supported, settled in (("D", "D"), ("A", "D"), (None, None)):
+            records[supported] = audit(candidate, {"scope": "s"}, {"max_subject_calls": 64}, selection, self.REFS,
+                                       critique={"supported_grade": supported, "case_verdicts": verdicts,
+                                                 "departures": []})
+            self.assertEqual(records[supported]["settled_ceiling"], settled)
+        observations = [{"case_id": case["case_id"], "trial": trial, "comparison_status": "pass", "model_ids": ["m"]}
+                        for case in candidate["cases"] for trial in (1, 2, 3)]
+        result = decide(records["D"], observations, candidate["cases"], 3)
+        self.assertEqual((result["evidence_grade"], result["scientific_status"]), ("D", "pass"))
+        self.assertTrue(result["ai_involvement"]["verdict"])
+        self.assertIn("judged by two AI sessions", result["ai_involvement"]["evidence_generation"])
+
+
+class UnsourcedRuleTests(unittest.TestCase):
+    """"Rules no source states" in evidence-rubric.md: the critique lists them and the claim shows them as U."""
+
+    def test_the_critique_quotes_each_rule_and_the_result_carries_it_as_grade_u(self):
+        from sci_ai_verifier.local_science import audit, decide
+        candidate = {"cases": [{"case_id": "t" + str(n), "outputs": [{"type": "number", "planted": "slope"}]}
+                               for n in (1, 2, 3)], "generator": {"reference_ref": "REF"}, "method_version": "m"}
+        packet = {"claim": {"sections": [{"section": "S2", "heading": "QC", "text": "Carry forward only preps "
+                                          "scoring\n7.2 or higher."}]},
+                  "evidence": {"tasks": [{"case_id": "t" + str(n)} for n in (1, 2, 3)]}}
+        reply = critic_reply(packet, "A", unsourced_rules=[("Carry forward only preps scoring 7.2 or higher.",
+                                                            "No reference states this cut-off."),
+                                                           ("A rule the skill never states.", "Searched; none.")])
+        self.assertEqual([item["quoted"] for item in reply["unsourced_rules"]], [True, False])
+        selection = {"target_grade": "A", "trials_per_case": 3, "source_digest": "s", "environment_digest": "e",
+                     **{key: "x" for key in ("oracle_independence", "coverage", "tolerance_basis", "uncertainty",
+                                             "stronger_grade_considered")}}
+        record = audit(candidate, {"scope": "s"}, {"max_subject_calls": 64}, selection, REFERENCES, critique=reply)
+        observations = [{"case_id": case["case_id"], "trial": trial, "comparison_status": "pass", "model_ids": ["m"]}
+                        for case in candidate["cases"] for trial in (1, 2, 3)]
+        result = decide(record, observations, candidate["cases"], 3)
+        # The grade covers what its tasks tested; the rule they could not test stands beside it as U.
+        self.assertEqual(result["evidence_grade"], "A")
+        self.assertEqual([(item["grade"], item["quoted"]) for item in result["unsourced_rules"]],
+                         [("U", True), ("U", False)])
 
 
 class FlowTests(unittest.TestCase):

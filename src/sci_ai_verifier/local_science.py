@@ -25,6 +25,9 @@ TASK_MINIMUM = 2
 CASE_REASONS = {"fewer_than_two_counting_tasks", "fewer_than_three_counting_tasks"}
 # Reasons that keep a reference out of A but still allow B.
 EXTERNAL_REASONS = {"expected_answers_not_independently_retrieved"}
+# AI judgment decides a judged output, so a design holding one supports D at most ("Judged outputs" in
+# local-tasks.md).
+JUDGED_REASON = "verdict_by_ai_judges"
 # Revisions a claim may spend replacing tasks the critique did not count.
 REPLACEMENT_ROUNDS = 2
 # The grade a departure the critique lists holds a proposal to; below C there is no execution grade
@@ -40,12 +43,12 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v11",
+    "id": "evidence-strength-v12",
     "minimum_tasks": TASK_MINIMUM,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
     "replacement_rounds": REPLACEMENT_ROUNDS,
-    "tasks": {"A": TASK_DIRECT, "B": TASK_MINIMUM, "C": TASK_MINIMUM,
+    "tasks": {"A": TASK_DIRECT, "B": TASK_MINIMUM, "C": TASK_MINIMUM, "D": TASK_MINIMUM,
               "counted": "tasks the independent critique answered no to every question about; before a "
                          "critique, every task"},
     "proposal": "each round proposes the current evidence ceiling, or accepts the grade the "
@@ -59,7 +62,10 @@ POLICY = {
     "aggregation_rule": AGGREGATION_RULE,
     "verdict": "all tasks unanimously pass; any failed trial fails, whatever the others; otherwise any invalid "
                "trial is inconclusive",
-    "reading": "Python reads each trial's results file and checks every output; no AI reads a trial",
+    "reading": "Python reads each trial's results file and checks every fixed output; two judge sessions read a "
+               "judged output, met where both agree yes, unmet where both agree no, undecided otherwise, which "
+               "counts as invalid",
+    "unsourced_rules": "a rule the critique finds no source for is reported as grade U beside the claim's grade",
     "status_withheld": "no_reference_grade, synthetic_observations, not_executed, "
                        "unattributable_observations, incomplete_coverage",
     "axes": "grade reports the reference and test bundle only; accuracy, consistency, "
@@ -74,7 +80,9 @@ POLICY = {
         "B": "expected values quoted from an operator-imported pinned dataset; three trials; two counting tasks",
         "C": "reproducible comparison whose references are weaker, such as a design reused offline whose "
              "reference origin was never recorded; two counting tasks",
-        "D": "documentary assessment of cited sources against the fixed rubric; no execution accuracy",
+        "D": "a task design with a judged output, whose criteria are quoted from references Python retrieved and "
+             "whose verdicts two judge sessions decide; two counting tasks. Or a documentary assessment of cited "
+             "sources against the fixed rubric that addresses the claim; no execution accuracy",
     },
 }
 POLICY_REF = digest(canonical(POLICY))
@@ -139,11 +147,16 @@ def evidence_ceiling(candidate, references, trials, counted=None):
         reasons.append("expected_answers_not_independently_retrieved")
     if not all(traceable(candidate, case) for case in candidate["cases"]):
         reasons.append("expected_value_not_token_exact_in_source")
+    if judged_design(candidate["cases"]):
+        reasons.append(JUDGED_REASON)
     # Names the subject's trial count: a local subject is always a fresh model session and is
     # never deterministic, so a single trial cannot tell a right skill from a sometimes-right one.
     if trials < STRONG_TRIALS:
         reasons.append("model_subject_trial_count_below_three")
     cases, case_reasons = case_grade(candidate, counted)
+    if JUDGED_REASON in reasons:
+        # D needs two counting tasks, so a third is never what limits it.
+        case_reasons = [reason for reason in case_reasons if reason != "fewer_than_three_counting_tasks"]
     return weaker(reference_grade(reasons), cases), sorted(set(reasons) | set(case_reasons))
 
 
@@ -151,11 +164,18 @@ def reference_grade(reasons):
     """The grade the reference and trial facts alone support, whatever the tasks: the first half of
     `evidence_ceiling`, which also reads it back from a recorded audit's limiting reasons."""
     blocking = set(reasons) - CASE_REASONS
+    if JUDGED_REASON in blocking:
+        return "D"
     if not blocking:
         return "A"
     if blocking <= EXTERNAL_REASONS:
         return "B"
     return "C"
+
+
+def judged_design(cases):
+    """True when a task holds a judged output, whose verdict AI judges decide."""
+    return any(output["type"] == "judged" for case in cases for output in case["outputs"])
 
 
 def size_limit(audit_record, candidate):
@@ -180,8 +200,8 @@ def proposal_problem(target, ceiling, accepted=None):
     which misreports the evidence just as badly. Callers report the reason as an
     ordinary outcome, so neither mistake spends the run's repair budget.
     """
-    if target not in ("A", "B", "C"):
-        raise Fault("grade_proposal_invalid", "Propose target grade A, B or C for an execution plan.",
+    if target not in ORDER:
+        raise Fault("grade_proposal_invalid", "Propose target grade A, B, C or, for a judged design, D.",
                     ["target_grade"])
     if ceiling is None:
         return "no_supported_execution_grade"
@@ -244,14 +264,15 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
         problems.append("plan_exceeds_call_budget")
     ceiling, limits = evidence_ceiling(candidate, references, selection["trials_per_case"])
     proposed = selection["target_grade"]
-    # A critique answering D says this execution design supports no execution grade.
-    # D is established by the documentary path, never by a comparison record.
+    # For a design with no judged output, a critique answering D says it supports no execution grade:
+    # Python's fixed checks decide its verdicts, so it is never AI-judged D. A judged design's is D at most.
     supported = critique["supported_grade"] if critique else None
+    graded = ORDER if judged_design(candidate["cases"]) else ("A", "B", "C")
     # Python applies the task count itself, so a critique that rejected tasks cannot
     # still settle a grade those rejections leave unsupported.
     counted = counted_cases(critique)
     case_ceiling, case_limits = evidence_ceiling(candidate, references, selection["trials_per_case"], counted)
-    settled = weaker(weaker(proposed, supported if supported in ("A", "B", "C") else None), case_ceiling)
+    settled = weaker(weaker(proposed, supported if supported in graded else None), case_ceiling)
     # Run 2bef9e0d's critique worked out that the skill's two-step formula passed only inside the tolerance,
     # agreed with A, and listed it as a coverage gap. A departure now holds the grade below the proposal.
     held = bool(judged and critique and critique.get("departures"))
@@ -352,8 +373,11 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     if not constant:
         execution_reasons.append("observed_model_identity_changed")
     unanimous = sum(1 for row in per_case if row["agreement"] == 1)
-    sourced = ("a reference Python retrieved." if audit_record["evidence_ceiling"] == "A"
+    sourced = ("a reference Python retrieved." if audit_record["evidence_ceiling"] in ("A", "D")
                else "a pinned source, not produced by AI.")
+    # "Rules no source states" in evidence-rubric.md: what the settling critique found no source for.
+    unsourced = [{"rule": item["rule"], "reason": item["reason"], "quoted": item.get("quoted", True), "grade": "U"}
+                 for item in (audit_record.get("critique") or {}).get("unsourced_rules") or []]
     return {
         "scientific_status": status, "status_withheld_reason": withheld,
         "evidence_grade": grade,
@@ -377,16 +401,17 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
         "next_target_grade": None if grade else "D",
         "trial_counts": {"planned": planned, "attempted": planned, "obtained": evaluated,
                          "evaluated": evaluated, "invalid": counts["invalid"], "missing": 0},
-        "case_agreement": per_case, "observed_model_ids": models,
+        "case_agreement": per_case, "observed_model_ids": models, "unsourced_rules": unsourced,
         "ai_involvement": {"orchestration": True, "evidence_generation": task_generation(cases, sourced),
-                           # Python's fixed checks read every trial; no AI judges a result.
-                           "verdict": False},
+                           # Python's fixed checks read every trial, except a judged output, which judges decide.
+                           "verdict": judged_design(cases)},
     }
 
 
 def task_generation(cases, sourced):
     """What a task design's expected values rest on, for the result's AI-involvement disclosure."""
-    outputs = [output for case in cases for output in case["outputs"]]
+    judged = [output for case in cases for output in case["outputs"] if output["type"] == "judged"]
+    outputs = [output for case in cases for output in case["outputs"] if output["type"] != "judged"]
     planted = sum(output.get("source") == "planted" for output in outputs)
     text = ("The planner designed the tasks, wrote the generator that built their input files and the reference "
             "solution that checked them, and chose the tolerances. ")
@@ -395,5 +420,8 @@ def task_generation(cases, sourced):
                  "that generator on a model quoted from " + sourced[:-1] + "; a planted judgment, such as whether a "
                  "problem is present, also quotes the rule it follows. ")
     if planted < len(outputs):
-        text += ("The other values are" if planted else "Every expected value is") + " quoted from " + sourced
+        text += ("The other values are" if planted else "Every expected value is") + " quoted from " + sourced + " "
+    if judged:
+        text += (str(len(judged)) + " answer" + (" was" if len(judged) == 1 else "s were") + " judged by two AI "
+                 "sessions against criteria the planner wrote, each quoted from " + sourced)
     return text.strip()
