@@ -43,7 +43,7 @@ AGGREGATION_RULE = "unanimity"
 # that actually changed, so the limit bounds real revisions rather than repetition.
 MAX_ROUNDS = len(GRADES)
 POLICY = {
-    "id": "evidence-strength-v12",
+    "id": "evidence-strength-v13",
     "minimum_tasks": TASK_MINIMUM,
     "strong_grade_minimum_trials": STRONG_TRIALS,
     "negotiation_rounds": MAX_ROUNDS,
@@ -65,7 +65,8 @@ POLICY = {
     "reading": "Python reads each trial's results file and checks every fixed output; two judge sessions read a "
                "judged output, met where both agree yes, unmet where both agree no, undecided otherwise, which "
                "counts as invalid",
-    "unsourced_rules": "a rule the critique finds no source for is reported as grade U beside the claim's grade",
+    "unsourced_rules": "a rule the critique finds no source for after a search sought one is reported as grade U "
+                       "beside the claim's grade; one no search sought is reported as not looked up, with no grade",
     "status_withheld": "no_reference_grade, synthetic_observations, not_executed, "
                        "unattributable_observations, incomplete_coverage",
     "axes": "grade reports the reference and test bundle only; accuracy, consistency, "
@@ -375,8 +376,10 @@ def decide(audit_record, observations, cases, trials, *, synthetic=False):
     unanimous = sum(1 for row in per_case if row["agreement"] == 1)
     sourced = ("a reference Python retrieved." if audit_record["evidence_ceiling"] in ("A", "D")
                else "a pinned source, not produced by AI.")
-    # "Rules no source states" in evidence-rubric.md: what the settling critique found no source for.
-    unsourced = [{"rule": item["rule"], "reason": item["reason"], "quoted": item.get("quoted", True), "grade": "U"}
+    # "Rules no source states" in evidence-rubric.md: what the settling critique found no source for. U only after
+    # a search sought one; a critique before rubric v8 did not say, and its rules stay U as they were reported.
+    unsourced = [{"rule": item["rule"], "reason": item["reason"], "quoted": item.get("quoted", True),
+                  "searched": item.get("searched", True), "grade": "U" if item.get("searched", True) else None}
                  for item in (audit_record.get("critique") or {}).get("unsourced_rules") or []]
     return {
         "scientific_status": status, "status_withheld_reason": withheld,

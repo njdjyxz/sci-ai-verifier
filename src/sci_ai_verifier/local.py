@@ -1167,12 +1167,18 @@ def report(store, state):
         lines.extend([
                       "Outcome: " + terminal.get("comparison_status", terminal.get("documentary_status",terminal.get("code",terminal.get("scientific_status") or "unavailable"))), "",
                       "Scientific status: "+cell(terminal.get("scientific_status") or "unassigned")+"; evidence grade: "+cell(terminal.get("evidence_grade") or "unassigned"),""])
-        if terminal.get("unsourced_rules"):
-            # "Rules no source states" in evidence-rubric.md: the grade above does not cover them.
-            lines.extend(["Rules no source states, grade U beside the grade above, which does not cover them:",""])
-            lines.extend("- U: "+cell(item["rule"])+(" (not found verbatim in the skill)" if not item.get("quoted", True) else "")
-                         +". "+cell(item["reason"]) for item in terminal["unsourced_rules"])
-            lines.append("")
+        # "Rules no source states" in evidence-rubric.md: the grade above covers neither kind.
+        for label, heading, kept in (
+                ("U", "Rules this run sought a source for and found none, grade U beside the grade above, which does "
+                      "not cover them:", True),
+                ("Not looked up", "Rules no search in this run sought a source for, so no grade; the grade above does "
+                                  "not cover them either:", False)):
+            rules = [item for item in terminal.get("unsourced_rules") or [] if item.get("searched", True) is kept]
+            if rules:
+                lines.extend([heading, ""])
+                lines.extend("- "+label+": "+cell(item["rule"])+(" (not found verbatim in the skill)" if not item.get("quoted", True) else "")
+                             +". "+cell(item["reason"]) for item in rules)
+                lines.append("")
         lines.extend(axis_lines(terminal, cell))
         if retry:
             first_attempt = "First attempt stopped by " + cell(retry["fault"]) + ": " + cell(retry["first_attempt"].get("reason", "")) + " "
@@ -1256,6 +1262,13 @@ def report(store, state):
                 lines.extend(["Passed on tolerance only, more than 0.5% from the reference solution's result: "
                               +"; ".join(cell(case_id)+" (up to "+format(value,".1%")+")" for case_id,value in off.items())
                               +".",""])
+            # "Near misses" in local-tasks.md: a fail this close to its range is marked, never passed.
+            near=[case["case_id"]+" trial "+str(case["trial"])+" ("+row["field"]+" "+json.dumps(row["found"])+" against "
+                  +str(row["expected"])+" ± "+str(row.get("tolerance"))+")"
+                  for case in tests for row in case["outputs"] or [] if row.get("near_miss")]
+            if near:
+                lines.extend(["Failed on a near miss, within one and a half times the tolerance: "+cell("; ".join(near))
+                              +". Status and grade stand; check whether the tolerance left room for honest measurement.",""])
             # "Disagreements" in local-tasks.md: the test AI's view beside the verdict, which it never moves.
             said=[case for case in tests if case["disagreement"]]
             if said:

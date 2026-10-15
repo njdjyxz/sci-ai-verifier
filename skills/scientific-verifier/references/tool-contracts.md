@@ -659,8 +659,8 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string per
   rubric criterion, in order), `objections`, `required_revisions`, `coverage_gaps` and
   `departures` (each at most eight strings, empty when there are none), `unsourced_rules`
-  (at most eight, each a `rule` quoted from the claim's sections and a `reason`; Python
-  marks one it cannot find there `quoted: false`), and, first,
+  (at most eight, each a `rule` quoted from the claim's sections, a `reason` and `searched`;
+  Python marks one it cannot find there `quoted: false`), and, first,
   `task_checks`: one entry for every task ID in the packet and no other, each holding a yes
   or no `answer` with its `reason` for every question of the verdict table
   (`outside_claim`, `gives_away`, `job_decides`, `repeats`, `key_wrong`, `wrong_passes`), a `replacement`

@@ -49,6 +49,8 @@ VERDICTS=("supported","contradicted","not_addressed")
 # re-check wrote that the wording "settles that one output" and answered no, as another output still needed the skill.
 # v7 judges a judged output's criteria under key_wrong and wrong_passes, and lists unsourced_rules: runs f84c131c,
 # b573cd15 and 3f073fec graded claims on their sourced parts while a skill's own cut-offs went untested.
+# v8 says whether a search sought each unsourced rule: run 5f7062fa tested a blocking rule against a source that
+# run 72bb6e51 did not find and graded U, and a rule no search sought is not looked up, not U.
 TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table's order
     ("outside_claim", "beyond_scope",
      "Does the task ask for work or a conclusion the claim's sections never give, so that a subject correctly "
@@ -77,7 +79,7 @@ TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table'
      "unit, an inverted ratio or the wrong order of steps, pass every output of the task within its tolerance, even "
      "one the task was not built to catch? For a judged output: would a plausible wrong answer meet every criterion? "
      "Name it. If you can name one that passes, the answer is yes."))
-TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v7","criteria":[
+TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v8","criteria":[
         "Whether each task's expected values are right and independent of the skill: the generator implements "
         "evidence.generator.model_quote and plants what each output expects, each quote supports its output, each "
         "judged output's criteria follow from their quotes, and none rests on the skill's own text",
@@ -158,9 +160,11 @@ TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v7","criteria":[
         "unsourced_rules":"List in unsourced_rules each rule, threshold, formula or named method the claim's "
         "sections state that no reference in evidence.references states and python_checked.search_record shows "
         "no source found for, such as a skill's own quality cut-off. Quote it exactly from the claim's sections in "
-        "rule, and say in reason what was sought. A rule a task tests against a quoted source is not unsourced. "
-        "The reader sees each as grade U beside the claim's grade; it does not by itself lower your grade. Leave "
-        "it empty when there is none."}
+        "rule, and say in reason what was sought. Set searched true only when python_checked.search_record holds a "
+        "search or fetch that sought a source for that rule, and false when nothing in it did. A rule a task tests "
+        "against a quoted source is not unsourced. The reader sees a searched rule as grade U beside the claim's "
+        "grade and one never sought as not looked up; neither by itself lowers your grade. Leave it empty when "
+        "there is none."}
 TASK_CRITIQUE_REF=digest(canonical(TASK_CRITIQUE_RUBRIC))
 # Run 26312681's packets were 20 to 23 KB, and a task design's live packet 17 KB on 2026-10-05. The
 # tool schemas allow a design whose packet is larger, about 2.3 MB at every maximum, so selection
@@ -248,7 +252,11 @@ def task_critique_schema(case_ids):
                             "description": "Rules the claim's sections state that no source states, as "
                                            "rubric.unsourced_rules asks; empty if there is none.",
                             "items": strict({"rule": text(600, "Quoted exactly from the claim's sections."),
-                                             "reason": text(1000, "What was sought, and why no source states it.")})},
+                                             "reason": text(1000, "What was sought, and why no source states it."),
+                                             "searched": {"type": "boolean",
+                                                          "description": "Whether a search or fetch in "
+                                                                         "python_checked.search_record sought a "
+                                                                         "source for this rule."}})},
         "supported_grade": {"type": "string", "enum": list(TASK_CRITIQUE_RUBRIC["grades"]), "maxLength": 4,
                             "description": "The strongest grade this evidence actually supports, given your answers."}})
 

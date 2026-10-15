@@ -426,11 +426,13 @@ judged packet's digest with both judges' answers. A task trial's score receipt h
 `outputs`: each field's expected value, tolerance, the value found and its verdict, for a
 judged output its `criteria` with both judges' answers and whether each is met, and for a
 number that passed far from the reference solution's result its `reference_result` and
-`off_reference` ("Reading a trial's results" in `local-tasks.md`), with `results_found` and
+`off_reference`, and for one that failed within one and a half times its tolerance
+`near_miss` ("Reading a trial's results" in `local-tasks.md`), with `results_found` and
 the trial's `run_problems` and `files_not_kept`. Each task trial in a report card claim's
 `tests` also carries `disagreement`, read from the trial's final message ("Disagreements" in
 `local-tasks.md`), or null. A comparison result carries
-`unsourced_rules` from the critique that settled its grade, each with grade `U`. A
+`unsourced_rules` from the critique that settled its grade, each with `searched` and, when
+searched, grade `U`; a rule never sought has no grade. A
 documentary assessment holds the assessor's `statements` with the `status` and `citations`
 Python derived; a record whose assessment addresses no statement is grade U.
 

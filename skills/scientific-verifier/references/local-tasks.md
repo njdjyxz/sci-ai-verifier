@@ -206,6 +206,15 @@ for honest variation. In run `f84c131c` every answer was within 0.18% of its ref
 result; in `2bef9e0d` the four tasks that hid a departure were 2.4 to 5.5% off, and every
 other task within 0.01%.
 
+**Near misses.** Python also marks each number that failed by at most half its allowed
+difference beyond it, so within one and a half times the tolerance of the expected value: its
+record keeps `near_miss`, and the report marks the task as failing on a near miss. Status and
+grade stay. The mark asks the reader whether the tolerance left room for honest measurement
+before reading the fail as the skill's. In run `0d15e36c`, two of three tries measured a band
+ratio from a noisy blot image at 0.53 where 0.54 to 0.66 passed, and the third got 0.58; all
+three followed the same steps. Across six runs, 49 of 51 numbers measured from images were
+within 3.3% of their key.
+
 **Disagreements.** Python keeps what follows the last `Disagreement with the skill:` line
 of the trial's final message, at most 2,000 characters, as the trial's `disagreement`. A
 message without that line, or one whose line says `none`, has none. The report lists each
@@ -252,7 +261,10 @@ yes, or `counts`.
 **Unsourced rules.** The critique also lists in `unsourced_rules` each rule, threshold,
 formula or named method the claim's sections state that no fetched reference states and no
 search in Python's record found a source for, quoted exactly from the sections, with what
-was sought. A rule a task tests against a quoted source is not one. The claim reports each
-as grade U beside its grade ("Rules no source states" in `evidence-rubric.md`). Runs
+was sought, and in `searched` whether a search or fetch in Python's record sought a source
+for it. A rule a task tests against a quoted source is not one. The claim reports a rule
+sought and not found as grade U, and one never sought as not looked up, with no grade, beside
+its grade ("Rules no source states" in `evidence-rubric.md`). So a rule the planner expects
+to be the skill's own earns U only after a search for it. Runs
 `f84c131c`, `b573cd15` and `3f073fec` graded claims A and B on their sourced parts while a
 skill's own r² and QC cut-offs went untested, shown only among the coverage gaps.

@@ -184,6 +184,19 @@ class RulesTests(unittest.TestCase):
         self.assertNotIn("off_reference", far[1])
         self.assertNotIn("off_reference", rows(5.0)[0])
 
+    def test_a_fail_close_to_its_range_is_marked_a_near_miss_and_still_fails(self):
+        """Run 0d15e36c: band ratios of 0.53 measured from a noisy image, where 0.54 to 0.66 passed."""
+        case = {"outputs": [{"field": "fold", "type": "number", "expected": "0.6", "absolute_tolerance": "0.06"},
+                            {"field": "pick", "type": "text", "expected": "A"}]}
+
+        def row(fold, pick="A"):
+            return score(case, {RESULTS_FILE: json.dumps({"fold": fold, "pick": pick}).encode()})["outputs"]
+        self.assertEqual((row(0.531)[0]["status"], row(0.531)[0].get("near_miss")), ("fail", True))
+        self.assertEqual(row(0.69)[0].get("near_miss"), True)  # exactly one and a half tolerances out
+        self.assertNotIn("near_miss", row(0.509)[0])  # further than that is a plain fail
+        self.assertNotIn("near_miss", row(0.58)[0])  # a pass is never one
+        self.assertNotIn("near_miss", row(0.6, "B")[1])  # nor a text that misses
+
     def test_the_subject_input_never_holds_an_expected_value(self):
         case = {"job": "Fit the table.", "files": [{"name": "doses.csv"}],
                 "outputs": [{"field": "slope", "type": "number", "planted": "slope", "expected": "2.5"}]}
@@ -498,8 +511,9 @@ class UnsourcedRuleTests(unittest.TestCase):
                   "evidence": {"tasks": [{"case_id": "t" + str(n)} for n in (1, 2, 3)]}}
         reply = critic_reply(packet, "A", unsourced_rules=[("Carry forward only preps scoring 7.2 or higher.",
                                                             "No reference states this cut-off."),
-                                                           ("A rule the skill never states.", "Searched; none.")])
-        self.assertEqual([item["quoted"] for item in reply["unsourced_rules"]], [True, False])
+                                                           ("A rule the skill never states.", "Searched; none."),
+                                                           ("Carry forward only preps", "No search sought it.", False)])
+        self.assertEqual([item["quoted"] for item in reply["unsourced_rules"]], [True, False, True])
         selection = {"target_grade": "A", "trials_per_case": 3, "source_digest": "s", "environment_digest": "e",
                      **{key: "x" for key in ("oracle_independence", "coverage", "tolerance_basis", "uncertainty",
                                              "stronger_grade_considered")}}
@@ -507,10 +521,16 @@ class UnsourcedRuleTests(unittest.TestCase):
         observations = [{"case_id": case["case_id"], "trial": trial, "comparison_status": "pass", "model_ids": ["m"]}
                         for case in candidate["cases"] for trial in (1, 2, 3)]
         result = decide(record, observations, candidate["cases"], 3)
-        # The grade covers what its tasks tested; the rule they could not test stands beside it as U.
+        # The grade covers what its tasks tested; a rule they could not test stands beside it as U when the run
+        # sought a source and found none, and as not looked up, with no grade, when nothing sought one.
         self.assertEqual(result["evidence_grade"], "A")
-        self.assertEqual([(item["grade"], item["quoted"]) for item in result["unsourced_rules"]],
-                         [("U", True), ("U", False)])
+        self.assertEqual([(item["grade"], item["quoted"], item["searched"]) for item in result["unsourced_rules"]],
+                         [("U", True, True), ("U", False, True), (None, True, False)])
+        # A critique from before rubric v8 said nothing of searching; its rules stay U as they were reported.
+        old = {**record, "critique": {**record["critique"], "unsourced_rules": [
+            {"rule": "Carry forward only preps", "reason": "None.", "quoted": True}]}}
+        self.assertEqual([item["grade"] for item in decide(old, observations, candidate["cases"], 3)["unsourced_rules"]],
+                         ["U"])
 
 
 class DisagreementTests(unittest.TestCase):

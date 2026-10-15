@@ -51,7 +51,9 @@ class ReportHtmlTests(unittest.TestCase):
                        "accuracy": {"evaluated": 3, "matched": 2}, "consistency": {"label": "split"},
                        "uncounted_cases": [verdicts[1]], "limitations": ["recorded limit"],
                        "unsourced_rules": [{"rule": "Keep preps scoring 7.2 or higher.", "reason": "No source states it.",
-                                            "quoted": True, "grade": "U"}]},
+                                            "quoted": True, "grade": "U"},
+                                           {"rule": "Re-purify anything below 7.2.", "reason": "No search sought it.",
+                                            "quoted": True, "searched": False, "grade": None}]},
             "audit": {"critique": {"case_verdicts": verdicts, "coverage_gaps": ["one fact untested"],
                                    "claim_probe": {"cases": [{"case_id": "c_choice", "outcome": "reached",
                                                               "samples": [{"answer": "2"}, {"answer": "2"}]}]}}},
@@ -110,14 +112,31 @@ class ReportHtmlTests(unittest.TestCase):
     def test_a_rule_no_source_states_shows_as_u_beside_the_grade(self):
         """"Rules no source states" in evidence-rubric.md: a grade never stands for a rule nothing tested."""
         page = self.render()
-        self.assertIn("Rules no source states:", page)
+        # U says the run looked and found none, never that none exists; a rule nothing sought has no grade.
+        self.assertIn("Rules no source was found for:</span> this run looked for a source and found none", page)
+        self.assertIn("That does not show that none exists.", page)
         self.assertIn("Keep preps scoring 7.2 or higher.", page)
-        self.assertIn('class="badge g-U"', page)
+        self.assertIn("Rules not looked up:</span> no search in this run sought a source", page)
+        self.assertIn("Re-purify anything below 7.2.", page)
+        self.assertIn('>U</span><span class="dim"> ×1</span>', page)  # the badge counts U rules only
         # The notes the agent fills say so beside the grade, and the documentary claim shows its statements.
         notes = report_html.skeleton(report_html.Run(self.workspace, RUN[:8]))
-        self.assertIn("U: 1 rule no source states", notes["claims"]["1"]["result"])
+        self.assertIn("U: 1 rule no source was found for · 1 rule not looked up", notes["claims"]["1"]["result"])
         self.assertIn("The claim, statement by statement", page)
         self.assertIn("not_addressed: The method is cleared.", page)
+
+    def test_a_near_miss_is_flagged_beside_a_fail_that_stands(self):
+        """"Near misses" in local-tasks.md: run 0d15e36c's 0.53 where 0.54 to 0.66 passed."""
+        output = {"field": "fold", "type": "number", "expected": "0.6", "absolute_tolerance": "0.06"}
+        rows = [{"case_id": "t1", "trial": n, "observed": "done", "comparison_status": status, "counted": True,
+                 "input": "Measure the blot.", "expected": {"fold": "0.6"},
+                 "outputs": [{**output, "present": True, "found": found, "status": status, **extra}]}
+                for n, found, status, extra in ((1, 0.531, "fail", {"near_miss": True}), (2, 0.58, "pass", {}))]
+        task = report_html.task_view(1, "t1", rows, {"outputs": [output]}, {}, None, {}, {})
+        self.assertTrue(task["near_miss"])
+        self.assertIn("Near miss: within one and a half times the tolerance.", report_html.test_details(task))
+        view = {**report_html.views(report_html.Run(self.workspace, RUN[:8]), {})[0], "tests": [task], "tasks": True}
+        self.assertIn("Failed on a near miss:</span> t1. An answer missed its range", report_html.chapter(view, "Claude"))
 
     def test_safety_findings_show_once_for_the_skill_with_broken_promises_first(self):
         """"Safety findings" in local-contract.md: facts about the skill as software, beside the grades."""

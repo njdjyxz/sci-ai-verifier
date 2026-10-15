@@ -131,6 +131,31 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("- Contradiction (network promise): notes.md:1 promises",markdown)
         self.assertIn("- network: scripts/tool.py:2 urllib.request.urlopen to x.example.invalid",markdown)
 
+    def test_a_near_miss_is_reported_and_the_fail_stands(self):
+        """"Near misses" in local-tasks.md: a fail within one and a half tolerances is marked, never passed."""
+        h=self.h
+        original=h.subject.observe
+
+        def observe(**request):
+            observation=original(**request)
+            if len(h.subject.requests)>1:
+                return observation
+            value=json.loads(base64.b64decode(observation["artifacts"][0]["base64"]))["value"]+0.0000012
+            raw=fixture.results(value)
+            return {**observation,"artifacts":[{"path":fixture.RESULTS_FILE,"sha256":digest(raw),"bytes":len(raw),
+                                                "base64":base64.b64encode(raw).decode()}]}
+        h.subject.observe=observe
+        h.ready()
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual(h.data["result"]["comparison_status"],"fail")
+        h.call("write_report_card")
+        trials=h.data["report"]["claims"][0]["tests"]
+        self.assertEqual([row.get("near_miss") for trial in trials for row in trial["outputs"]],
+                         [True]+[None]*(len(trials)-1))
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Failed on a near miss, within one and a half times the tolerance: "+trials[0]["case_id"]+" trial 1",
+                      markdown)
+
     def test_a_trial_s_disagreement_with_the_skill_is_reported_and_moves_no_verdict(self):
         h=self.h
         original=h.subject.observe
@@ -1132,19 +1157,23 @@ class GradeNegotiationTests(unittest.TestCase):
         went untested, shown only among the coverage gaps."""
         h=self.h
         rule=("A rule the skill states.","No reference states it and no search found one.")
+        unsought=("Another rule the skill states.","No search in the record sought a source for it.",False)
 
         def critique(adapter,packet):
-            return critic_reply(packet,"A",unsourced_rules=[rule])
+            return critic_reply(packet,"A",unsourced_rules=[rule,unsought])
         with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=critique):
             h.select(self.key,target_grade="A")
         self.assertEqual(h.data["outcome"],"local_plan_fixed")
         h.call("execute_local_claim",claim_id=h.claim_id)
         self.assertEqual([(item["rule"],item["grade"]) for item in h.data["result"]["unsourced_rules"]],
-                         [(rule[0],"U")])
+                         [(rule[0],"U"),(unsought[0],None)])
         h.call("write_report_card")
         markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
-        self.assertIn("Rules no source states, grade U",markdown)
+        self.assertIn("Rules this run sought a source for and found none, grade U",markdown)
         self.assertIn("- U: "+rule[0],markdown)
+        # "Rules no source states" in evidence-rubric.md: a rule never sought is not looked up, with no grade.
+        self.assertIn("Rules no search in this run sought a source for, so no grade",markdown)
+        self.assertIn("- Not looked up: "+unsought[0],markdown)
 
 
 class GateTests(unittest.TestCase):

@@ -46,7 +46,8 @@ def critic_reply(packet, supported, *, findings=None, objections=(), required_re
 
     Every task in the packet counts unless `rejected` maps its case ID to another verdict, which the reply gives
     by answering yes to the first question of that verdict; `criteria` maps a case ID to the rule its job gives
-    that the claim's sections do not; `unsourced_rules` lists (rule, reason) pairs.
+    that the claim's sections do not; `unsourced_rules` lists (rule, reason) pairs, or (rule, reason, searched)
+    for a rule no search sought, which is otherwise taken as searched.
     """
     rejected, criteria = rejected or {}, criteria or {}
     case_ids = [case["case_id"] for case in packet["evidence"]["tasks"]]
@@ -62,7 +63,8 @@ def critic_reply(packet, supported, *, findings=None, objections=(), required_re
         "findings": list(findings) if findings else ["Fixture critique finding."] * len(TASK_CRITIQUE_RUBRIC["criteria"]),
         "objections": list(objections), "required_revisions": list(required_revisions),
         "coverage_gaps": list(coverage_gaps), "departures": list(departures),
-        "unsourced_rules": [{"rule": rule, "reason": reason} for rule, reason in unsourced_rules],
+        "unsourced_rules": [{"rule": rule, "reason": reason, "searched": searched[0] if searched else True}
+                            for rule, reason, *searched in unsourced_rules],
         "task_checks": {key: check(key) for key in case_ids}},
         case_ids, [item["text"] for item in packet["claim"].get("sections") or []])
     return {**value, **_envelope(packet, TASK_CRITIQUE_REF, "critic")}

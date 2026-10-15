@@ -160,8 +160,9 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
         """Run 3f073fec's claim 1 packet, a made-up QC score and cut-off whose tasks tested only its inputs,
-        judged at high by the pinned model under rubric v7. It lists the score and the 7.2 cut-off, each quoted
-        exactly from the claim's section, as rules no source states, and counts three of four tasks."""
+        judged at high by the pinned model under rubric v8. It lists the score and the 7.2 cut-off, each quoted
+        exactly from the claim's section, as rules no source states, says no search sought either, so they are
+        not looked up rather than U, and counts three of four tasks."""
         raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
         self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
@@ -177,6 +178,8 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertTrue(all(item["quoted"] for item in rules))
         self.assertTrue(any("7.2" in item["rule"] for item in rules))
         self.assertTrue(any("min(yield / 5, 1)" in item["rule"] for item in rules))
+        # The run's search record holds no search for either, as the v7 recording's reasons also said.
+        self.assertEqual({item["searched"] for item in rules}, {False})
 
     def test_two_recorded_judges_agree_on_a_real_trial_answer(self):
         """A judged output's packet built from run 3f073fec's phospho-blocking task: the job, a real trial's answer
@@ -510,7 +513,9 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
         """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
         from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
-        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v7")
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v8")
+        # U only after a search sought a source ("Rules no source states" in evidence-rubric.md).
+        self.assertIn("Set searched true only when", TASK_CRITIQUE_RUBRIC["unsourced_rules"])
         # Fixed questions, each tied to a row of the verdict table, which Python turns into the verdict.
         questions = TASK_CRITIQUE_RUBRIC["task_questions"]
         self.assertEqual(list(questions), [key for key, _, _ in TASK_QUESTIONS])

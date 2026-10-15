@@ -146,6 +146,14 @@ def check(output, present, found):
 # marked, never failed. Every answer in run f84c131c was within 0.18% of its reference result; the four tasks
 # of run 2bef9e0d that hid the skill's departure from the reference were 2.4 to 5.5% off.
 REFERENCE_MARGIN = Decimal("0.005")
+# "Near misses" in local-tasks.md: a fail within this many tolerances of the key is marked, never passed.
+NEAR_MISS = Decimal("1.5")
+
+
+def near_miss(output, found):
+    """A failing number within NEAR_MISS times its tolerance of the expected value ("Near misses" in local-tasks.md).
+    Run 0d15e36c failed a claim on two tries 2% outside a band ratio's range, measured from a noisy image."""
+    return abs(Decimal(decimal_text(found)) - Decimal(output["expected"])) <= NEAR_MISS * tolerance(output)
 
 
 def off_reference(found, result):
@@ -231,7 +239,9 @@ def score(case, files, judge=None):
                      **({"tolerance": str(tolerance(output))} if output["type"] == "number" else {}),
                      "present": present, "found": found if present else None, "status": verdict, **judged,
                      **(off_reference(found, reference.get(output["field"]))
-                        if verdict == "pass" and output["type"] == "number" else {})})
+                        if verdict == "pass" and output["type"] == "number" else {}),
+                     **({"near_miss": True} if verdict == "fail" and output["type"] == "number"
+                        and near_miss(output, found) else {})})
     statuses = {row["status"] for row in rows}
     status = "fail" if "fail" in statuses else "invalid" if statuses & {"invalid", "undecided"} else "pass"
     return {"status": status, "outputs": rows, "results_found": value is not None,

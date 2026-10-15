@@ -2760,7 +2760,7 @@ another library-wrapping skill. Separately, replaying another skill's critique p
 Ask the operator whether to give catalog requalification the skill's environment or to leave it
 documented as a limit. It is finished when that choice is recorded here.
 
-## Claude: 2026-10-13 (two demo skills for grades D and U; a refused tool call no longer ends a critique; four demo runs; how a claim shows the rules it leaves unsourced; judged D and U live on both demos; the tester follows the skill and its disagreements are reported; safety findings)
+## Claude: 2026-10-13 (two demo skills for grades D and U; a refused tool call no longer ends a critique; four demo runs; how a claim shows the rules it leaves unsourced; judged D and U live on both demos; the tester follows the skill and its disagreements are reported; safety findings; U split and near misses)
 
 ### Current stage and status
 
@@ -2774,7 +2774,8 @@ are built, and the live test ran on `dbd837e` (`5f7062fa`, `50074a5f`): U and th
 designed, but three claims passed although the skill's text was wrong, because the test AI did not
 follow it. A scan of every kept run found the same in a real skill. A replay with the tester told
 to follow the skill turned all 12 such trials into fails, and the instruction is now built, with the
-tester's disagreements on the report (decision 4). No full run has used it yet.
+tester's disagreements on the report (decision 4), with safety findings (decision 5). Committed as
+`5e90373`. A live re-run of both demos and the western blot skill left no pass by override.
 
 ### What has been done
 
@@ -2996,6 +2997,70 @@ This session, 2026-10-12 and 2026-10-13:
   - Tests: 419 pass, 2 skipped. Of eight deliberate breaks, the first round missed one: no test used a
     connection call. A test now does, and all eight are caught.
   - A preview of run `50074a5f`'s page with the scan rendered both broken promises and the table.
+- **Committed and pushed as `5e90373`; live test on it** (operator: "commit and push, then rerun the
+  test", 2026-10-14). The pushed range was `836c3d8..5e90373`, so `aeb19f2` and `dbd837e` went up too.
+  Before the runs, after the session restart, `5f7062fa` and `50074a5f` (11,185 files: runs, trial
+  records, two attempts, 17 candidates, pages) were moved to session `1d713d5a`'s scratchpad
+  `cleaned-livetest-20261014/`; nothing was deleted. The three runs took 310 min and cost $95.18 at
+  API prices, and the 5-hour window reached 32% before the third.
+
+  | Section | Before | Now |
+  | --- | --- | --- |
+  | Demo QC score (`72bb6e51`, with ImageJ) | A pass, U ×3 | A pass, U ×3 (formula, 7.2, re-purify) |
+  | Demo wrong methanol advice | **D pass by override** | **D fail**: 3 of 3 tries followed the skill, each stating the right fix |
+  | Demo fade correction | A pass by override (merged) | alone, documentary **D fail**: sources contradict a fixed-rate correction |
+  | Demo 4PL, r² 0.93 | A pass, U | A pass, U for 0.93; two tries noted that log-scale fitting is better |
+  | Demo STRING | A pass | A pass; U for the ÷1000 step, which this run quoted no source for |
+  | a280 core and script (`7cfc4df5`) | A pass, A pass | A pass, A pass |
+  | a280 security | **A pass by override** | ended by the planner as not testable; **safety findings show both promises broken** |
+  | a280 validation | D fail | D fail |
+  | Western blot normalization (`0d15e36c`) | **A pass by override** | **A fail**: `two_step_table` 3 of 3 followed Step B (0.36, 3.6, 1.38 against 0.55, 2.4, 1.25), as the planner predicted |
+  | Western blot aggregation | A pass | A pass |
+  | Western blot problems | A pass | A fail on a near miss: `missing_band_high_background` gave 0.53, 0.58, 0.53 against 0.54–0.66 |
+  | Western blot decision framework | (critique) | B pass; the uncounted two-step task failed 3 of 3 on Step B |
+
+  What it shows:
+  - No pass by override remains. Every wrong step a counted task reached failed, and the
+    disagreements gave the right answer beside it.
+  - Disagreements are accurate. The ones beside passing trials were side remarks: n = 1, helper tools
+    that don't exist, log-scale fits.
+  - Three things to look at:
+    1. Every `7cfc4df5` trial, 27 of 27, repeated the same whole-skill warnings, so that page lists
+       27 long, near-identical blocks.
+    2. U means "no source this run found". Here it included standard practice (BSA for phospho
+       blots, a positive control) and STRING's ÷1000, while the page says "no outside source states
+       them".
+    3. The western blot problems claim failed on how each try boxed bands in an image. All three
+       followed the same steps, so its 10% tolerance looks too tight rather than the skill wrong. It
+       is one task, so it is not a rule yet.
+- **Evidence on image tolerances** (operator asked about problems 2 and 3, 2026-10-15). Across six runs,
+  49 of 51 numbers measured from images were within 3.3% of their key. Only `0d15e36c`'s two ratios
+  measured from a noisy blot image spread wider: up to 9% on one task and 11.6% on the other. So no
+  rule was built for tolerances.
+- **Built: U split and near misses** (operator: "a and b for problem 2, near-miss flag for problem 3").
+  Contracts first:
+  - `evidence-rubric.md` owns the new meaning of U: the run sought a source and found none, which is
+    not proof that none exists; a rule nothing sought is "not looked up", with no grade.
+  - `local-tasks.md` adds `searched` to "Unsourced rules", and a planner-facing sentence that a rule
+    earns U only after a search for it. It also adds "Near misses".
+  - `tool-contracts.md` and `artifact-contracts.md` gain the matching fields.
+
+  In the code:
+  - Critique rubric `local-task-critique-v8` and policy `evidence-strength-v13`.
+  - Each unsourced rule carries `searched`. The result grades it U only when searched; critiques from
+    before v8 keep U.
+  - The report card and the page show two lists: U, with wording that U is not proof of absence, and
+    "not looked up". The badge counts U only.
+  - `local_tasks.score` marks a failing number within 1.5 times its tolerance with `near_miss`. The
+    report card and the page flag the task, the try table notes it, and the notes guide names it.
+    Status and grade never read it.
+  - Tests: 422 pass, 2 skipped. All eight deliberate breaks were caught, after one break of mine that
+    left the asserted text intact was replaced.
+  - Live re-recording under v8 ($0.57): grade B and the same verdicts as under v7. The QC formula
+    and the 7.2 cut-off came back `searched: false`, so they are now "not looked up" rather than U,
+    because that run's planner never searched for them.
+  - Pages rendered before this change keep U for every unsourced rule. They show no near misses,
+    because the mark is made when a trial is scored.
 
 ### Decisions taken 2026-10-14
 
@@ -3004,6 +3069,8 @@ This session, 2026-10-12 and 2026-10-13:
    disagreements are shown beside the verdicts and never move status or grade.
 5. **Facts about the skill as software are safety findings, not claims** (operator, after asking to
    check only scientific statements). Python lists them on the report with no grade.
+6. **U means a search found no source; a rule never sought is not looked up; a near miss is marked**
+   (operator, 2026-10-15). None of these changes status, and only U is a grade.
 
 ### Decisions taken 2026-10-13
 
@@ -3031,10 +3098,15 @@ This session, 2026-10-12 and 2026-10-13:
    skill's text is. Decided and built (decision 4): the tester follows the skill as written, and its
    disagreements are reported. A false statement about the skill's own code, such as "no network
    calls", is now a safety finding (decision 5). Still open: should the planner set aside sections
-   that are about the software and not the science, as the operator suggested? Until then such a
-   section can still become a claim and pass, as `50074a5f`'s security claim did at A, while the
-   safety findings on the same page show the promise broken.
-2. The 2026-10-08 entry's question on catalog requalification stands.
+   that are about the software and not the science, as the operator suggested? In `7cfc4df5` the
+   planner ended the security claim itself as not testable, but nothing makes it do so every time.
+2. **Repeated whole-skill disagreements** (live test, above): every `7cfc4df5` trial gave the same
+   warnings, so the page lists 27 near-identical blocks. Decision 6 settled the other two
+   observations.
+3. **Made-up rules may now show as not looked up.** A planner that never searches for a skill's own
+   cut-off leaves it ungraded. `local-tasks.md` now tells the planner that U needs a search; a run
+   will show whether it searches.
+4. The 2026-10-08 entry's question on catalog requalification stands.
 
 ### Urgent next steps, if any
 
@@ -3042,12 +3114,11 @@ This session, 2026-10-12 and 2026-10-13:
 
 ### Suggested next move
 
-Decide open question 1, whether the planner sets aside sections about the software. Then show the PI
-the two pages, the override scan, the replay and the safety findings.
+Show the PI the three pages (`72bb6e51`, `7cfc4df5`, `0d15e36c`) with the override scan, the replay,
+the safety findings and decision 6, and settle open questions 1 to 3.
 
 ### Recommended next action
 
-After a session restart, a Docker and usage check, and moving `5f7062fa` and `50074a5f` aside, re-run
-`protein-bench-helper`, `a280-quant` and `western-blot-quantification`. It is finished when each
-report shows no pass by override, lists the test AI's disagreements and carries safety findings (for
-`a280-quant`, both broken promises), or shows where any of these fails.
+The operator chooses which of open questions 1 to 3 to act on. Open question 3 needs one run of the
+science demo after a restart, to see whether the planner now searches for the skill's own cut-offs. It
+is finished when each question is decided or deliberately left, and recorded here.

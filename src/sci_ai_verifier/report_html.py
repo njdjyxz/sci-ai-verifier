@@ -44,8 +44,9 @@ HOST = {"managed_host_configuration_is_trusted": "The verifier trusts the comput
 GUIDE = ("Fill in the empty fields below in plain words and short sentences, for a reader who has not seen the "
          "skill. Do not quote the skill. skill.name: a short plain name. skill.summary: 3 to 5 sentences on what "
          "the skill does. For each claim: title, 2 to 5 words; says, 2 to 4 sentences on what the claim says; "
-         "summary, 2 to 4 sentences on how it did, naming any test that failed, did not count or passed on "
-         "tolerance only, what the test AI said is wrong with the skill, and any fact left untested. For each test: asks, the question or task in one short plain sentence; review, only if you checked a "
+         "summary, 2 to 4 sentences on how it did, naming any test that failed, failed on a near miss, did not count "
+         "or passed on tolerance only, what the test AI said is wrong with the skill, and any fact left untested. "
+         "For each test: asks, the question or task in one short plain sentence; review, only if you checked a "
          "failed or odd test, saying whether the question, the key or the skill was at fault. cautions: short "
          "sentences the reader should know. by: your name; author: who wrote this text, and when. Leave every "
          "other field as it is, then run the render command to update the page.")
@@ -259,8 +260,10 @@ def claim_view(run, number, claim, notes):
         "number": number, "id": claim_id, "claim": claim["claim"], "note": note, "record": record,
         "title": note.get("title") or (claim.get("sections") or [f"Claim {number}"])[0],
         "sections": claim.get("sections") or [], "grade": record.get("evidence_grade"),
-        # "Rules no source states" in evidence-rubric.md: grade U beside the grade, which does not cover them.
-        "unsourced": record.get("unsourced_rules") or [],
+        # "Rules no source states" in evidence-rubric.md: U when the run sought a source and found none, not looked
+        # up when nothing sought one. The grade covers neither.
+        "unsourced": [item for item in record.get("unsourced_rules") or [] if item.get("searched", True)],
+        "unlooked": [item for item in record.get("unsourced_rules") or [] if not item.get("searched", True)],
         "status": record.get("scientific_status"), "withheld": record.get("status_withheld_reason"),
         "accuracy": accuracy if isinstance(accuracy, dict) else None,
         "consistency": consistency if isinstance(consistency, dict) else None,
@@ -289,6 +292,7 @@ def task_view(index, case_id, rows, case, verdict, dropped, written, references)
             if item.get("off_reference") is not None]
     return {"kind": "task", "number": index, "case_id": case_id, "method": "task", "options": [],
             "criterion_given": verdict.get("criterion_given") or "", "off_reference": max(gaps) if gaps else None,
+            "near_miss": any(item.get("near_miss") for row in rows for item in row.get("outputs") or []),
             "asks": written.get("asks"), "review": written.get("review"), "question": rows[0].get("input", ""),
             "expected": rows[0].get("expected") or {}, "outputs": outputs, "files": rows[0].get("files") or [],
             "sections": rows[0].get("sections") or [], "planted": case.get("planted"),
@@ -593,6 +597,8 @@ def task_details(t):
                         f'<td>{e(json.dumps(item.get("found"), ensure_ascii=False)) if item.get("present") else "missing"}'
                         + (f'<div class="dim">{float(item["off_reference"]):.1%} from the reference\'s '
                            f'{e(item["reference_result"])}</div>' if item.get("off_reference") is not None else "")
+                        + ('<div class="dim">Near miss: within one and a half times the tolerance.</div>'
+                           if item.get("near_miss") else "")
                         + "".join(f'<div class="dim">{e(c["id"])} {"met" if c["met"] else "unmet" if c["met"] is False else "split"}'
                                   f' ({e(", ".join(c["answers"]))}): {e(" | ".join(c["facts"]))}</div>'
                                   for c in item.get("criteria") or [])
@@ -696,12 +702,17 @@ def chapter(v, author):
              f'<span>Grading rounds: <b>{len([r for r in v["rounds"] if r["reviewer"]])}</b></span>',
              f'<span>Time: <b>{minutes(v["seconds"])}</b></span>', f'<span>Cost: <b>{money(v["cost"])}</b></span>']
     out.append('<div class="stats">' + "".join(stats) + "</div>")
-    if v["unsourced"]:
-        out.append(f'<p>{badge("U")} <span class="flag">Rules no source states:</span> the grade above does not cover '
-                   "these. No outside source states them, so no test could check them independently.</p><ul class='plain'>"
-                   + "".join(f'<li><blockquote>{e(item.get("rule"))}</blockquote><div class="dim">{e(item.get("reason"))}'
-                             + (" Not found verbatim in the skill." if item.get("quoted") is False else "")
-                             + "</div></li>" for item in v["unsourced"]) + "</ul>")
+    for rules, head in ((v["unsourced"], f'{badge("U")} <span class="flag">Rules no source was found for:</span> this run '
+                         "looked for a source and found none, so no test could check them independently. That does not "
+                         "show that none exists. The grade above does not cover them."),
+                        (v["unlooked"], '<span class="flag">Rules not looked up:</span> no search in this run sought a '
+                         "source for these, so whether one exists is unknown. They carry no grade, and the grade above "
+                         "does not cover them.")):
+        if rules:
+            out.append(f"<p>{head}</p><ul class='plain'>"
+                       + "".join(f'<li><blockquote>{e(item.get("rule"))}</blockquote><div class="dim">{e(item.get("reason"))}'
+                                 + (" Not found verbatim in the skill." if item.get("quoted") is False else "")
+                                 + "</div></li>" for item in rules) + "</ul>")
     if v["fault"]:
         out.append(f'<p><span class="flag">⚑ Stopped by a fault:</span> {e(v["fault"])}</p>')
     if v["departures"]:
@@ -713,6 +724,12 @@ def chapter(v, author):
         out.append('<p><span class="flag">⚑ Passed on tolerance only:</span> ' + e(", ".join(near))
                    + ". The skill's answers were more than 0.5% from the reference solution's, inside a tolerance "
                    "meant for honest variation.</p>")
+    # "Near misses" in local-tasks.md: marked beside a fail that stands.
+    missed = [t["case_id"] for t in v["tests"] if t.get("near_miss")]
+    if missed:
+        out.append('<p><span class="flag">⚑ Failed on a near miss:</span> ' + e(", ".join(missed))
+                   + ". An answer missed its range by at most half the tolerance again. The fail stands; check whether "
+                   "the range left room for honest measurement before reading it as the skill's.</p>")
     if v["run_problems"]:
         out.append('<p><span class="flag">⚑ While running the skill</span>, the test AI met: '
                    + e("; ".join(v["run_problems"])) + ". The skill may not run as shipped on this computer.</p>")
@@ -978,7 +995,9 @@ def skeleton(run):
         if acc:
             result.append(f'{acc["matched"]} of {acc["evaluated"]} counted answers right')
         if v["unsourced"]:
-            result.append(f'U: {len(v["unsourced"])} rule{"" if len(v["unsourced"]) == 1 else "s"} no source states')
+            result.append(f'U: {len(v["unsourced"])} rule{"" if len(v["unsourced"]) == 1 else "s"} no source was found for')
+        if v["unlooked"]:
+            result.append(f'{len(v["unlooked"])} rule{"" if len(v["unlooked"]) == 1 else "s"} not looked up')
         claims[str(v["number"])] = {
             "section": ", ".join(v["sections"]), "claim_as_written": v["claim"].get("statement"),
             "result": " · ".join(result), "left_untested": v["untested"],

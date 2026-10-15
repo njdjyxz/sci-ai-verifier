@@ -42,7 +42,7 @@ grade before it reads accuracy.
 
 The examples are common matches rather than automatic assignments. The same claim may receive different grades depending on the available oracle, independence, scientific validity, coverage, uncertainty, and relationship between evidence and the exact claim.
 
-**Rules no source states.** A grade covers what its tests checked. A rule, threshold, formula or named method a claim states that no source states, such as a skill's own quality cut-off, cannot be tested independently: checking that the skill obeys it is self-consistency, which is U. The claim reports each such rule as U beside its grade, so a grade never stands for a rule nothing tested. `local-tasks.md` says how the local profile finds them.
+**Rules no source states.** A grade covers what its tests checked. A rule, threshold, formula or named method a claim states that no source the run found states, such as a skill's own quality cut-off, cannot be tested independently: checking that the skill obeys it is self-consistency, which is U. U records that the run sought a source and found none, not that none exists: run `5f7062fa` tested a blocking rule against a source that run `72bb6e51` did not find, and graded it U. A rule no search sought a source for is reported as not looked up, with no grade. The claim reports both beside its grade, so a grade never stands for a rule nothing tested. `local-tasks.md` says how the local profile finds them.
 
 ## Cases each grade requires
 
