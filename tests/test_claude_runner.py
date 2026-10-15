@@ -146,8 +146,13 @@ class RunnerTests(unittest.TestCase):
                                                          {"path": "scripts/fit.py", "content": "print('fit')"}])
             self.assertEqual((plugin / "skills/submitted/scripts/fit.py").read_text(), "print('fit')")
             self.assertEqual([pin["path"] for pin in pins], ["SKILL.md", "scripts/fit.py"])
+        # An exclamation mark that is itself inline code is text, as in run eaf7da1a's biopython reference.
+        with tempfile.TemporaryDirectory() as temporary:
+            stage_skill(Path(temporary), [{"path": "SKILL.md", "content": "Plain skill"},
+                                          {"path": "notes.md", "content": "`#`, `;`, or `!` comment lines are ignored"}])
         for filename, content in (("SKILL.md", "!`echo evil`"), ("SKILL.md", "```!\necho evil\n```"),
-                                  ("notes.md", "!`echo evil`"), (".claude/settings.json", "{}")):
+                                  ("notes.md", "!`echo evil`"), ("notes.md", "Run it: !`ls -l` first"),
+                                  (".claude/settings.json", "{}")):
             with tempfile.TemporaryDirectory() as temporary, self.assertRaises(Fault):
                 source = [{"path": "SKILL.md", "content": "Plain skill"}]
                 if filename == "SKILL.md":

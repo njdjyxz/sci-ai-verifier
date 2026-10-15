@@ -25,6 +25,10 @@ from .storage import atomic_write, no_links
 # were tested on.
 MIN_VERSION = (2, 1, 268)
 SUBJECT_SKILL = "verifier-subject:submitted"
+# A dynamic shell directive ("Subject boundary" in local-contract.md): `!` before a backtick-quoted command, or a
+# fence opened with ```!. An exclamation mark that is itself inline code is text: run eaf7da1a's biopython skill
+# wrote "`!` comment lines are ignored", and the plain byte test refused every trial.
+SHELL_DIRECTIVE = re.compile(rb"(?<!`)!`[^`\n]+`|```!")
 
 
 def terminate_tree(process):
@@ -291,7 +295,7 @@ def stage_skill(directory, source):
         raw=source_bytes(item)
         if (not valid_relative(relative) or any(part.startswith(".") for part in path.parts)
                 or any(part.casefold() in {"claude.md", "claude.local.md", "agents.md"} for part in path.parts)
-                or (path.suffix.lower()==".md" and (b"!`" in raw or b"```!" in raw))
+                or (path.suffix.lower()==".md" and SHELL_DIRECTIVE.search(raw))
                 or SECRET_BYTES.search(raw)):
             raise Fault("unsupported_subject", "Submitted configuration or dynamic shell directives cannot be enabled.")
         payload = ("---\nname: submitted\ndescription: Execute the pinned submitted skill on the given input.\n---\n\n" + body).encode("utf-8") if relative == "SKILL.md" else raw

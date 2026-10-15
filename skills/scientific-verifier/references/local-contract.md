@@ -18,7 +18,10 @@ subject MCP server exposes commands inside this container. The native Claude
 CLI remains on the host and has no host shell or host Read tool in this mode.
 It must invoke the pinned submitted Skill before producing its answer.
 Scripts, binary input and generated regular files are supported. Submitted
-hooks, settings and dynamic skill shell directives are never enabled. Generated
+hooks, settings and dynamic skill shell directives are never enabled. A Markdown file holding
+one, `!` before a command in backticks or a fence opened with three backticks and `!`, is
+refused. An exclamation mark that is itself inline code is text. Run `eaf7da1a`'s biopython
+skill wrote "`!` comment lines are ignored", and every trial was refused. Generated
 files are size/path/credential checked and saved as content-addressed evidence.
 Container cleanup occurs on success, failure and interruption, with a bounded
 container lifetime as a backstop. This is not a claim of VM-level isolation.
