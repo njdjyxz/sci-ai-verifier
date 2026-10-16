@@ -3181,6 +3181,25 @@ This session, 2026-10-12 and 2026-10-13:
    "two or more") can repeat a skill's error;
    (b) a cut-off the planner never searches for ends as not looked up, not U (F6);
    (c) a doc promise such as one-based record IDs is untested unless a task reads it (F3).
+   **Deferred by the operator on 2026-10-16** ("let's not fix this tonight"), after a scan.
+   - Scan of the nine runs with disagreements: 13 counted tests passed with at least 2 of 3 tries
+     disagreeing.
+     - Only one disputed the rule its key rests on (Lipinski, `86d4e632`).
+     - Three were about a step the test used without changing the answer (the planted Dice and
+       exact-mass bugs, Ward linkage).
+     - Nine were about other parts of the skill: all eight `7cfc4df5` tests, whose every trial warned
+       about the false security section, and one blot checklist note.
+   - So "hold the grade when tries disagree" would fire 13 times for 1 dispute.
+   - Options on the table:
+     1. (a) A display-only flag "testers disputed this test", with no grade change and no AI.
+     2. (b) My recommendation: a judged dispute check, run only when 2 or more tries disagree on a
+        passing counted test. Two fresh judges read the job, the expected values with their quotes, and
+        the disagreements. Both answering that a key or its rule is wrong holds the claim below A and
+        marks it disputed. It reuses the judge setup, costs about $0.05 to $0.10 per flagged test, and
+        needs one live recording.
+     3. Fix 2: the critique asks whether the quote states the whole decision rule, including how many
+        criteria must fail. It catches Lipinski before trials; rubric v9, one re-recording (about $1).
+   - Nothing was built.
 
 ### Urgent next steps, if any
 
