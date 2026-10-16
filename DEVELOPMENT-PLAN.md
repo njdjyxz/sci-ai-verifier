@@ -3096,6 +3096,34 @@ This session, 2026-10-12 and 2026-10-13:
        "`!` comment lines are ignored". Fixed in `116b861` (contract "Subject boundary" in
        `local-contract.md`, `SHELL_DIRECTIVE`, a test, a mutation check). Its planner had spent about
        $15 before the first trial.
+- **Negative cases** (operator: a soft negative from an unreviewed library and a hard negative with
+  designed flaws, 2026-10-15 evening, unattended).
+  - **Soft negative, first skill:** `examples\rdkit-cheminformatics-community`, from FridrichMethod/
+    awesome-skills, an auto-synced 2,000+ skill collection. Attempt `ad48b141` stopped at setup: it
+    installs `rdkit-pypi`, RDKit's deprecated package, which has no Python 3.12 wheel.
+  - **Soft negative, second skill:** `examples\rdkit-cheminformatics-rosetta`, from xjtulyc/awesome-
+    rosetta-skills. Run `86d4e632` (99 min, $35.70) settled five claims at A, all pass, 45 of 45.
+    - The testers' disagreements found three real flaws no test scored: a Lipinski rule that fails
+      any single violation (Lipinski tolerates one), Ward linkage on Tanimoto distances, and an SDF
+      loader that drops failed records silently.
+    - One U: the 0.4 and 0.85 similarity cut-offs.
+    - **Verifier miss:** the planner's key and the critique both applied the quoted four Lipinski limits
+      as "any violation fails", the skill's own error. The quote held the limits but not the
+      "two or more" condition, and Python checks only that a quote exists.
+  - **Hard negative:** `local\rdkit-flawed`, the K-Dense rdkit skill (`b31d38cf`: A, A, B, all pass)
+    with seven flaws planted by `make_rdkit_flawed.py` in session `1d713d5a`'s scratchpad; the answer
+    key is kept there, out of the skill. Run `32534b7d` (88 min, $25.68) failed all three claims at
+    A, 16 of 30.
+
+  | Flaw | Caught by |
+  | --- | --- |
+  | F2: `tanimoto` computes Dice | a failing test (an extra hit), and 12 disagreements |
+  | F4: "similarity 1.0 is an identity test" | two failing tests, and 6 disagreements |
+  | F5: Lipinski donor and acceptor limits swapped | two failing tests, and 6 disagreements |
+  | F7: offline promise, script pings a host | the safety contradiction |
+  | F1: `MW` is the exact mass | 3 disagreements only; no answer changed |
+  | F6: made-up 0.65 "field-standard" cut-off | not looked up (no search), so no U |
+  | F3: zero-based record IDs | missed; no task read record numbers |
 
 ### Decisions taken 2026-10-14
 
@@ -3148,6 +3176,11 @@ This session, 2026-10-12 and 2026-10-13:
    (b) `runlog.emit` could retry `os.replace` on a Windows `PermissionError` rather than end the claim;
    (c) whether `--python` in an install command may be treated as harmless (pydeseq2);
    (d) wheels-only builds exclude every skill that depends on datamol (medchem).
+6. **Negative-case gaps:**
+   (a) a key built from a quote that lists a rule's numbers but not its condition (Lipinski's
+   "two or more") can repeat a skill's error;
+   (b) a cut-off the planner never searches for ends as not looked up, not U (F6);
+   (c) a doc promise such as one-based record IDs is untested unless a task reads it (F3).
 
 ### Urgent next steps, if any
 
@@ -3157,9 +3190,9 @@ session or run `scripts/verify.py verify` directly.
 ### Suggested next move
 
 Show the PI the demo pages (`72bb6e51`, `7cfc4df5`, `0d15e36c`) and the three new skills (`b31d38cf`,
-`d2b54156`, `f1e6e90b`), and settle open questions 1 to 5.
+`d2b54156`, `f1e6e90b`), and settle open questions 1 to 6. The negative-case pages are `86d4e632` (soft) and `32534b7d` (hard).
 
 ### Recommended next action
 
-The operator chooses which of open questions 1 to 5 to act on. It is finished when each is decided or
+The operator chooses which of open questions 1 to 6 to act on. It is finished when each is decided or
 deliberately left, and recorded here.
