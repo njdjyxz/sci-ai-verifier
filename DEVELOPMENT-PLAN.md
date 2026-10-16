@@ -3061,6 +3061,41 @@ This session, 2026-10-12 and 2026-10-13:
     because that run's planner never searched for them.
   - Pages rendered before this change keep U for every unsourced rule. They show no near misses,
     because the mark is made when a trial is scored.
+- **Three new skills, verified unattended** (operator: "complete 3 new large biological/chemical skill
+  verification", 2026-10-15, at work).
+  - Setup:
+    - Skills downloaded byte-exact from K-Dense `scientific-agent-skills` at `a1043ef5`, through the
+      scripps-ai-enablement catalog, into `verifier-submissions\examples\`, with manifest entries.
+    - Runs went through `scripts/verify.py verify`, with the registration's arguments, in a fresh
+      background process, so they used the current code without a session restart.
+    - The session was kept awake. HTML notes were written for every page.
+  - **medchem** was not run: its pinned `datamol==0.13.0` needs `nglview>=3.1`, published only as an
+    sdist, and the environment build downloads wheels only. It stopped at setup with no session
+    spent.
+  - **pydeseq2** was not run: its one install command passes `--python .venv-pydeseq2/bin/python`,
+    which the declaration parser rejects as `unsupported_option`, so the trials would lack PyDESeq2.
+    Its packages do resolve as wheels.
+
+  | Skill | Run | Claims | Trials | Time, cost |
+  | --- | --- | --- | --- | --- |
+  | rdkit (11 files) | `b31d38cf` | A, A, B, all pass | 36 of 36; 30 of 30 counted | 99 min, $32.11 |
+  | scikit-bio (3 files) | `d2b54156` | 5 at A, all pass | 60 of 60; 48 of 48 counted | 121 min, $43.89 |
+  | biopython (9 files) | `f1e6e90b` | 4 at A, all pass | 57 of 57; 54 of 54 counted | 125 min, $43.20 |
+
+  - No near miss, no disagreement and no safety contradiction in any of them.
+  - U under v8 behaves as intended. rdkit had 0 U and 11 not looked up, mostly RDKit documentation
+    details. scikit-bio had 1 U, a negative-branch default the run searched for and did not find, and
+    15 not looked up. biopython had 5 not looked up.
+  - Two runs were lost on the way:
+    1. **`74000d89`** (scikit-bio) ended claims 3 and 5 as `workflow_log_unavailable`. My progress
+       monitor read `workflow.jsonl` while the run rewrote it with `atomic_write`, and Windows refuses
+       `os.replace` onto an open file. The monitor now only lists the events folder. The run's three
+       finished claims (A, B, A, all pass) stand on its page.
+    2. **`eaf7da1a`** (biopython) failed every claim's first trial as `unsupported_subject`. The staging
+       guard refused any Markdown holding the bytes `` !` ``, and `references/sequence_io.md` writes
+       "`!` comment lines are ignored". Fixed in `116b861` (contract "Subject boundary" in
+       `local-contract.md`, `SHELL_DIRECTIVE`, a test, a mutation check). Its planner had spent about
+       $15 before the first trial.
 
 ### Decisions taken 2026-10-14
 
@@ -3107,18 +3142,24 @@ This session, 2026-10-12 and 2026-10-13:
    cut-off leaves it ungraded. `local-tasks.md` now tells the planner that U needs a search; a run
    will show whether it searches.
 4. The 2026-10-08 entry's question on catalog requalification stands.
+5. **Four verifier gaps** from the unattended runs, each the operator's to rank:
+   (a) staging runs only at the first trial, after the whole plan, so a refused skill should be
+   caught at setup;
+   (b) `runlog.emit` could retry `os.replace` on a Windows `PermissionError` rather than end the claim;
+   (c) whether `--python` in an install command may be treated as harmless (pydeseq2);
+   (d) wheels-only builds exclude every skill that depends on datamol (medchem).
 
 ### Urgent next steps, if any
 
-`src/` changed: restart the session before the next run, so its `serve-local` loads the new code.
+`src/` changed (`116b861`): a session's `serve-local` started before it runs old code; restart the
+session or run `scripts/verify.py verify` directly.
 
 ### Suggested next move
 
-Show the PI the three pages (`72bb6e51`, `7cfc4df5`, `0d15e36c`) with the override scan, the replay,
-the safety findings and decision 6, and settle open questions 1 to 3.
+Show the PI the demo pages (`72bb6e51`, `7cfc4df5`, `0d15e36c`) and the three new skills (`b31d38cf`,
+`d2b54156`, `f1e6e90b`), and settle open questions 1 to 5.
 
 ### Recommended next action
 
-The operator chooses which of open questions 1 to 3 to act on. Open question 3 needs one run of the
-science demo after a restart, to see whether the planner now searches for the skill's own cut-offs. It
-is finished when each question is decided or deliberately left, and recorded here.
+The operator chooses which of open questions 1 to 5 to act on. It is finished when each is decided or
+deliberately left, and recorded here.
