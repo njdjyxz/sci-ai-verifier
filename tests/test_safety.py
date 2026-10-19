@@ -105,6 +105,28 @@ class SafetyScanTests(unittest.TestCase):
         self.assertEqual(len(record["findings"]), MAX_FINDINGS)
         self.assertTrue(record["truncated"])
 
+    def test_a_crafted_file_cannot_stall_the_scan(self):
+        """The scan runs at report time, after every trial is paid for, so each pattern reads a bounded
+        stretch and each file yields at most the findings the report lists."""
+        import time
+        started = time.perf_counter()
+        unclosed = scan([("notes.md", "<!--" * 20000)])
+        self.assertEqual([item["kind"] for item in unclosed["findings"]], ["hidden comment"])
+        long_line = scan([("notes.md", "pip install a " * 20000 + "\n" + "curl x " * 20000)])
+        self.assertEqual(long_line["findings"], [])
+        many = scan([("notes.md", "​" * 300000), ("more.md", "\n".join(["Makes no network calls."] * 5000))])
+        self.assertTrue(many["truncated"])
+        self.assertLess(time.perf_counter() - started, 3)
+        # A comment's line is still right, found by bisection rather than a count per finding.
+        record = scan([("notes.md", "a\nb\n<!-- c -->\nd\n<!-- e -->")])
+        self.assertEqual([item["line"] for item in record["findings"]], [3, 5])
+
+    def test_a_command_built_from_hundreds_of_nested_expressions_does_not_crash_the_scan(self):
+        code = "import subprocess\nsubprocess.run([" + "+".join(['"a"'] * 600) + "])\n"
+        record = scan([("tool.py", code)])
+        self.assertEqual([item["kind"] for item in record["findings"]], ["runs commands"])
+        self.assertEqual(record["findings"][0]["detail"], "subprocess.run")
+
 
 if __name__ == "__main__":
     unittest.main()

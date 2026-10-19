@@ -1101,10 +1101,18 @@ def report(store, state):
                            + ("; set aside: " + "; ".join(item["section"] + " " + item["heading"] + " (" + item["reason"]
                                                           + ")" for item in aside) if aside else "") + "."), ""])
     # "Safety findings" in local-contract.md: facts about the skill as software, read and never run, with no grade.
-    from .safety import scan as safety_scan
-    safety = safety_scan([(entry["path"], store.get(entry["digest"]).decode("utf-8"))
-                          for entry in snapshot["files"] if entry["encoding"] == "utf-8"])
-    if safety["findings"]:
+    from .safety import POLICY as SAFETY_POLICY, scan as safety_scan
+    texts = [(entry["path"], store.get(entry["digest"]).decode("utf-8"))
+             for entry in snapshot["files"] if entry["encoding"] == "utf-8"]
+    try:
+        safety = safety_scan(texts)
+    except Exception as error:  # noqa: BLE001 -- the report of a finished run is never lost to its reading aid
+        safety = {"policy": SAFETY_POLICY, "files_read": len(texts), "contradictions": [], "findings": [],
+                  "truncated": False, "scan_failed": type(error).__name__}
+    if safety.get("scan_failed"):
+        lines.extend(["Safety findings: the scan of the skill's " + str(safety["files_read"]) + " text files failed ("
+                      + cell(safety["scan_failed"]) + "), so none are listed.", ""])
+    elif safety["findings"]:
         lines.extend(["Safety findings: Python read the skill's " + str(safety["files_read"]) + " text files and ran none "
                       "of them. These are facts about the skill as software and carry no grade:", ""])
         lines.extend("- Contradiction (" + cell(item["kind"]) + "): " + cell(item["path"]) + ":" + str(item["line"])

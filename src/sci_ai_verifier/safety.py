@@ -5,6 +5,8 @@ They describe the skill as software. No grade, status or claim reads them.
 
 import ast
 import re
+from bisect import bisect_right
+from itertools import islice
 from urllib.parse import urlsplit
 
 from .common import fenced_blocks
@@ -12,6 +14,10 @@ from .common import fenced_blocks
 POLICY = "local-safety-scan-1"
 MAX_FINDINGS = 100
 DETAIL_CHARS = 300
+# The scan runs at report time over every text file of the skill, so a crafted file must not stall it:
+# each pattern reads a bounded stretch, each file yields at most the findings the report can list, and
+# a comment's body is read only this far.
+COMMENT_CHARS = 20000
 NETWORK_ROOTS = {"requests", "httpx", "aiohttp", "urllib3", "socket", "ftplib", "smtplib", "paramiko", "websocket",
                  "websockets", "pycurl"}
 NETWORK_MODULES = NETWORK_ROOTS | {"urllib.request", "http.client"}
@@ -21,10 +27,9 @@ PROCESS_CALLS = {"os.system", "os.popen", "os.execv", "os.execvp", "os.execl", "
 DYNAMIC_CALLS = {"eval", "exec", "compile"}
 CREDENTIAL = re.compile(r"(?i)key|token|secret|passw|credential")
 URL = re.compile(r"https?://[^\s'\"<>)\]]+")
-DOWNLOAD_AND_RUN = re.compile(r"(?i)(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b|bash\s+<\(\s*(curl|wget)"
+DOWNLOAD_AND_RUN = re.compile(r"(?i)(curl|wget)\b[^\n|]{0,400}\|\s*(sudo\s+)?(ba|z|da)?sh\b|bash\s+<\(\s*(curl|wget)"
                               r"|iex\s*\(\s*(iwr|irm|invoke-webrequest)")
-INSTALL_FROM_URL = re.compile(r"(?i)pip3?\s+install\s+[^\n]*(https?://|git\+)")
-COMMENT = re.compile(r"<!--(.*?)-->", re.S)
+INSTALL_FROM_URL = re.compile(r"(?i)pip3?\s+install\s+[^\n]{0,400}(https?://|git\+)")
 TO_AGENTS = re.compile(r"(?i)\b(agents?|assistants?|AI|LLMs?|models?|verif\w*|reviewers?|claude|gpt)\b")
 INVISIBLE = re.compile("[​-‏‪-‮⁠-⁤﻿]")
 # A promise names what does not happen; "offline filters" in an EEG guide is not one.
@@ -113,7 +118,10 @@ def python_facts(code, path, *, instructions, offset=0):
                 found.append(fact("dynamic code", path, line, full + " of a computed name"))
             elif full.startswith("subprocess.") or full in PROCESS_CALLS:
                 command = node.args[0] if node.args else None
-                shown = ast.unparse(command) if isinstance(command, (ast.Constant, ast.List, ast.Tuple)) else ""
+                try:
+                    shown = ast.unparse(command) if isinstance(command, (ast.Constant, ast.List, ast.Tuple)) else ""
+                except (RecursionError, ValueError):
+                    shown = ""  # A command built from hundreds of nested expressions parses but does not unparse.
                 found.append(fact("runs commands", path, line, full + (" " + shown if shown else "")))
             elif full.split(".")[-1] in NETWORK_CALLS and (full.split(".")[0] in NETWORK_ROOTS or any(
                     full.startswith(module + ".") for module in NETWORK_MODULES)):
@@ -133,29 +141,41 @@ def python_facts(code, path, *, instructions, offset=0):
     return found
 
 
+def comments(text):
+    """Each HTML comment's start and body, found in one pass; an unclosed one runs to the end of the file."""
+    position = 0
+    while (start := text.find("<!--", position)) >= 0:
+        end = text.find("-->", start + 4)
+        yield start, text[start + 4:(end if end >= 0 else len(text))][:COMMENT_CHARS]
+        if end < 0:
+            return
+        position = end + 3
+
+
 def text_facts(text, path):
     found = []
+    newlines = [index for index, character in enumerate(text) if character == "\n"]
+    most = MAX_FINDINGS + 1
 
     def line_of(index):
-        return text.count("\n", 0, index) + 1
+        return bisect_right(newlines, index - 1) + 1
 
     def whole_line(match):
         start = text.rfind("\n", 0, match.start()) + 1
         end = text.find("\n", match.end())
         return text[start:end if end >= 0 else len(text)]
 
-    for match in DOWNLOAD_AND_RUN.finditer(text):
+    for match in islice(DOWNLOAD_AND_RUN.finditer(text), most):
         found.append(fact("download and run", path, line_of(match.start()), whole_line(match)))
-    for match in INSTALL_FROM_URL.finditer(text):
+    for match in islice(INSTALL_FROM_URL.finditer(text), most):
         found.append(fact("install from a URL", path, line_of(match.start()), whole_line(match)))
     if not path.endswith(".py"):
-        for match in COMMENT.finditer(text):
-            body = match.group(1)
+        for start, body in islice(comments(text), most):
             found.append(fact("hidden comment to agents" if TO_AGENTS.search(body) else "hidden comment",
-                              path, line_of(match.start()), body))
-    for match in INVISIBLE.finditer(text):
+                              path, line_of(start), body))
+    for match in islice(INVISIBLE.finditer(text), most):
         found.append(fact("invisible character", path, line_of(match.start()), "U+%04X" % ord(match.group(0))))
     for kind, pattern in (("network promise", NETWORK_PROMISE), ("eval promise", DYNAMIC_PROMISE)):
-        for line in sorted({line_of(match.start()): match for match in pattern.finditer(text)}.items()):
+        for line in sorted({line_of(match.start()): match for match in islice(pattern.finditer(text), most)}.items()):
             found.append(fact(kind, path, line[0], whole_line(line[1])))
     return found

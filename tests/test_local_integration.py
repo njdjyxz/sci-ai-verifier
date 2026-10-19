@@ -131,6 +131,19 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("- Contradiction (network promise): notes.md:1 promises",markdown)
         self.assertIn("- network: scripts/tool.py:2 urllib.request.urlopen to x.example.invalid",markdown)
 
+    def test_a_scan_that_fails_never_loses_the_report(self):
+        """The scan is a reading aid run at report time, after every trial is paid for."""
+        h=self.h
+        h.ready()
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        with patch("sci_ai_verifier.safety.scan",side_effect=RecursionError("fixture")):
+            h.call("write_report_card")
+        safety=h.data["report"]["safety"]
+        self.assertEqual((safety["scan_failed"],safety["findings"],safety["contradictions"]),("RecursionError",[],[]))
+        self.assertTrue(h.data["report"]["verification_complete"])
+        self.assertIn("Safety findings: the scan of the skill's 1 text files failed (RecursionError)",
+                      Path(h.data["report_markdown_path"]).read_text(encoding="utf-8"))
+
     def test_a_near_miss_is_reported_and_the_fail_stands(self):
         """"Near misses" in local-tasks.md: a fail within one and a half tolerances is marked, never passed."""
         h=self.h
