@@ -519,7 +519,11 @@ thread waiting for the process logs its stream, so a slow log costs time, never 
 A write reads back only event files it has not verified or whose size or modification
 time has changed, and those must still verify. In run d416f79d every write re-read
 every earlier event, a write took 0.94 s by the 2,100th, and readers that logged as they
-read left two finished claim-only answers unread.
+read left two finished claim-only answers unread. A write extends a projection that
+holds every earlier event and rewrites one that does not. Windows will not let a write
+replace a file a reader holds open, so a refused replace is retried briefly and a
+projection still held is left to the next write: the event file is the record. Run
+74000d89 ended two claims when a monitor held workflow.jsonl open.
 A run the runner closes early records who stopped it and why, in the categories of
 `artifact-contracts.md`: `cancelled` only for the operator's cancellation, `timeout`
 for the attempt deadline, and otherwise `agent_unavailable` with the planner's own

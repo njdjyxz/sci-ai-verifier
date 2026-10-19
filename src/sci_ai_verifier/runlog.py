@@ -76,11 +76,12 @@ def locked(path):
 
 
 def timeline(item):
-    """One event's lines in the JSONL and Markdown projections, and its digest."""
+    """One event's bytes in the JSONL and Markdown projections, and its digest."""
     detail = json.dumps(item["data"], ensure_ascii=False, sort_keys=True)
     # Indented JSON stays inert even if untrusted output contains Markdown fences/HTML.
+    lines = [f'{item["sequence"]}. {item["created_at"]} - {item["event"]}', "", "       "+detail, ""]
     return {"digest": item["digest"], "jsonl": canonical(item)+b"\n",
-            "markdown": [f'{item["sequence"]}. {item["created_at"]} - {item["event"]}', "", "       "+detail, ""]}
+            "markdown": ("\n"+"\n".join(lines)).encode("utf-8")}
 
 
 class WorkflowLog:
@@ -110,6 +111,9 @@ class WorkflowLog:
         # Each event file already verified, in sequence, with the size and modification time it
         # had then and its timeline lines. Only a new or changed file is read back.
         self.verified = []
+        self.header = "\n".join(["# Verification workflow", "", "Attempt: "+self.attempt_id, "",
+                                 "Observable activity only. Scientific state and results remain in the run journal.",
+                                 ""]).encode("utf-8")
 
     @property
     def paths(self):
@@ -166,18 +170,33 @@ class WorkflowLog:
                     raise Fault("workflow_log_corrupted", "A workflow sequence already exists.")
                 atomic_write(target, payload)
                 # The next write verifies this file as it is on disk, like any other.
-                entries = [*self.verified, timeline(record)]
-                atomic_write(self.directory/"workflow.jsonl", b"".join(entry["jsonl"] for entry in entries))
-                lines = ["# Verification workflow", "", "Attempt: "+self.attempt_id, "",
-                         "Observable activity only. Scientific state and results remain in the run journal.", ""]
-                for entry in entries:
-                    lines += entry["markdown"]
-                atomic_write(self.directory/"workflow.md", "\n".join(lines).encode("utf-8"))
+                self.project([*self.verified, timeline(record)])
                 if self.control:
                     self.control.notify(event)
                 return record
         except (OSError, ValueError, UnicodeError) as error:
             raise Fault("workflow_log_unavailable", "Workflow log storage is unavailable.") from None
+
+    def project(self, entries):
+        """Extend each readable projection by the newest event, or rewrite it when it does not hold
+        exactly the earlier ones ("Acceptance" in local-contract.md).
+
+        Rewriting both projections on every event cost run d416f79d a second per write by its
+        2,100th event, and replacing a file a reader held open ended two of run 74000d89's claims.
+        Appending does neither. A projection that still cannot be written is left to the next
+        write, which rewrites it whole: the event file is the record, the projection a reading aid.
+        """
+        for name, header, key in (("workflow.jsonl", b"", "jsonl"), ("workflow.md", self.header, "markdown")):
+            path = no_links(self.directory/name)
+            before = len(header)+sum(len(entry[key]) for entry in entries[:-1])
+            try:
+                if len(entries) > 1 and path.is_file() and path.stat().st_size == before:
+                    with path.open("ab") as handle:
+                        handle.write(entries[-1][key])
+                else:
+                    atomic_write(path, header+b"".join(entry[key] for entry in entries))
+            except OSError:
+                pass
 
 
 class StreamLog:

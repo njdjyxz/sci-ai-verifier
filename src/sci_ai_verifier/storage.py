@@ -271,6 +271,13 @@ def file_lock(fileno):
             lambda: fcntl.flock(fileno, fcntl.LOCK_UN))
 
 
+# Windows refuses to replace a file another process holds open without delete sharing, as a
+# reader of workflow.jsonl does for the moment it reads it. Run 74000d89 lost two claims to one
+# such moment; a replace is retried for about this long before it fails.
+REPLACE_ATTEMPTS = 10
+REPLACE_PAUSE_SECONDS = 0.2
+
+
 def atomic_write(path, data):
     path = no_links(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,7 +287,14 @@ def atomic_write(path, data):
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(name, path)
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                os.replace(name, path)
+                break
+            except PermissionError:
+                if attempt == REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(REPLACE_PAUSE_SECONDS)
     finally:
         if os.path.exists(name):
             os.unlink(name)

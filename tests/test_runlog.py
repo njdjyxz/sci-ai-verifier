@@ -157,6 +157,91 @@ class LogTests(unittest.TestCase):
             self.assertEqual([item["sequence"] for item in records], list(range(1, 34)))
             self.assertEqual([item["previous_digest"] for item in records[1:]], [item["digest"] for item in records[:-1]])
 
+    @staticmethod
+    def sequences(log):
+        return [json.loads(line)["sequence"] for line in Path(log.paths["jsonl_path"]).read_bytes().splitlines()]
+
+    def test_a_projection_is_extended_and_rewritten_only_when_it_is_not_whole(self):
+        """Run d416f79d rewrote both projections on every event, and a write took a second by the 2,100th."""
+        with tempfile.TemporaryDirectory() as directory:
+            log = WorkflowLog(directory)
+            log.emit("first")
+            replaced, real = [], os.replace
+
+            def counting(source, target):
+                replaced.append(Path(target).name)
+                return real(source, target)
+            with patch("sci_ai_verifier.storage.os.replace", counting):
+                log.emit("second")
+                log.emit("third")
+                # Another writer, such as the subject server, finds the projections whole and extends them too.
+                WorkflowLog(directory, attempt_id=log.attempt_id).emit("fourth")
+            self.assertEqual(replaced, ["00000002.json", "00000003.json", "00000004.json"])
+            self.assertEqual(self.sequences(log), [1, 2, 3, 4])
+            # Extended or rewritten, a projection holds the same bytes.
+            other = WorkflowLog(directory, attempt_id=log.attempt_id)
+            other.verify()
+            self.assertEqual(Path(log.paths["jsonl_path"]).read_bytes(), b"".join(entry["jsonl"] for entry in other.verified))
+            self.assertEqual(Path(log.paths["markdown_path"]).read_bytes(),
+                             other.header + b"".join(entry["markdown"] for entry in other.verified))
+            self.assertIn("4. ", Path(log.paths["markdown_path"]).read_text(encoding="utf-8"))
+            # A projection left short, as a stopped write leaves it, is rewritten whole.
+            Path(log.paths["jsonl_path"]).write_bytes(Path(log.paths["jsonl_path"]).read_bytes()[:-5])
+            log.emit("fifth")
+            self.assertEqual(self.sequences(log), [1, 2, 3, 4, 5])
+
+    def test_a_replace_a_reader_refuses_is_retried(self):
+        """Windows refuses to replace a file another process holds open; run 74000d89 lost two claims to a
+        monitor reading workflow.jsonl at the wrong moment."""
+        refusals, real = [PermissionError(13, "held"), PermissionError(13, "held")], os.replace
+
+        def flaky(source, target):
+            if refusals and Path(target).name == "workflow.jsonl":
+                raise refusals.pop()
+            return real(source, target)
+        with tempfile.TemporaryDirectory() as directory, patch("sci_ai_verifier.storage.os.replace", flaky), \
+                patch("sci_ai_verifier.storage.REPLACE_PAUSE_SECONDS", 0):
+            log = WorkflowLog(directory)
+            log.emit("first")
+            self.assertEqual(refusals, [])
+            self.assertEqual(self.sequences(log), [1])
+
+    def test_a_projection_that_stays_held_is_left_to_the_next_write(self):
+        """The event file is the record; a projection a reader keeps open is a reading aid that can wait."""
+        held, real = {"jsonl": True}, os.replace
+
+        def refusing(source, target):
+            if held["jsonl"] and Path(target).name == "workflow.jsonl":
+                raise PermissionError(13, "held")
+            return real(source, target)
+        with tempfile.TemporaryDirectory() as directory, patch("sci_ai_verifier.storage.os.replace", refusing), \
+                patch("sci_ai_verifier.storage.REPLACE_PAUSE_SECONDS", 0):
+            log = WorkflowLog(directory)
+            record = log.emit("first")
+            self.assertEqual(record["sequence"], 1)
+            self.assertTrue((log.directory / "events/00000001.json").is_file())
+            self.assertFalse(Path(log.paths["jsonl_path"]).exists())
+            self.assertIn("1. ", Path(log.paths["markdown_path"]).read_text(encoding="utf-8"))
+            held["jsonl"] = False
+            log.emit("second")
+            self.assertEqual(self.sequences(log), [1, 2])
+
+    @unittest.skipUnless(os.name == "nt", "Windows sharing rules")
+    def test_a_reader_holding_the_projection_open_never_stops_a_write(self):
+        with tempfile.TemporaryDirectory() as directory, patch("sci_ai_verifier.storage.REPLACE_PAUSE_SECONDS", 0.01):
+            log = WorkflowLog(directory)
+            log.emit("first")
+            path = Path(log.paths["jsonl_path"])
+            with path.open("rb") as reader:
+                log.emit("second")  # extended beside the open handle
+                self.assertEqual(self.sequences(log), [1, 2])
+                with path.open("r+b") as handle:
+                    handle.truncate(len(path.read_bytes()) - 3)  # a stopped write's leftovers
+                log.emit("third")  # the rewrite is refused while the reader holds the file, and waits
+                self.assertEqual(reader.read()[:1], b"{")
+            log.emit("fourth")
+            self.assertEqual(self.sequences(log), [1, 2, 3, 4])
+
     def test_log_write_failure_stops_child_process(self):
         def observer(name, chunk):
             raise Fault("workflow_log_unavailable", "disk unavailable")
