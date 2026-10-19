@@ -87,6 +87,75 @@ class SandboxTests(unittest.TestCase):
             with self.box() as box:
                 box.collect()
 
+    def test_a_docker_client_fault_is_the_sandboxs_and_not_the_subjects(self):
+        """A docker command that hung was reported as the subject reaching its per-trial limit."""
+        with patch("shutil.which",return_value="docker.exe"),self.box() as box:
+            real=self.process
+            for raised,expected in (("claude_timeout","sandbox_timeout"),("claude_output_limit","sandbox_output_limit"),
+                                    ("claude_unavailable","sandbox_unavailable")):
+                def failing(command,raised=raised,**kwargs):
+                    if "exec" in command:
+                        raise Fault(raised,"fixture")
+                    return real(command,**kwargs)
+                box.process=failing
+                with self.subTest(raised=raised),self.assertRaises(Fault) as caught:
+                    box.command("python3 x.py",timeout=5)
+                self.assertEqual(caught.exception.code,expected)
+                self.assertIn("exec -i, 5 s",str(caught.exception))
+            box.process=real
+
+    def test_a_stopped_engine_is_named_as_such_at_preflight(self):
+        """A stopped Docker Desktop was reported as the pinned image being absent."""
+        def answer(stderr):
+            def process(command,**kwargs):
+                if "context" in command:
+                    return 0,canonical(self.endpoint),b""
+                return 1,b"",stderr
+            return process
+        down=(b'error during connect: Get "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/images/x/json": '
+              b'open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.')
+        with patch("shutil.which",return_value="docker.exe"),self.assertRaises(Fault) as caught:
+            DockerSandbox(self.directory,self.settings,process=answer(down)).preflight()
+        self.assertEqual(caught.exception.code,"sandbox_unavailable")
+        self.assertIn("Docker is not running",str(caught.exception))
+        with patch("shutil.which",return_value="docker.exe"),self.assertRaises(Fault) as caught:
+            DockerSandbox(self.directory,self.settings,process=answer(b"Error response from daemon: No such image: x")).preflight()
+        self.assertEqual(caught.exception.code,"sandbox_image_unavailable")
+
+    def test_artifact_names_a_host_cannot_save_are_refused(self):
+        """A generated file is saved under the run's artifact directory on the host, so a device name, a
+        control character or a long path would fail the write after the trial was paid for."""
+        for path in ("nul.txt","out/CON","a\x01b.txt","x"*151+".txt"):
+            self.files=[{"path":path,"base64":base64.b64encode(b"x").decode()}]
+            with self.subTest(path=path),patch("shutil.which",return_value="docker.exe"),self.assertRaises(Fault) as caught:
+                with self.box() as box:
+                    box.collect()
+            self.assertEqual(caught.exception.code,"sandbox_artifacts_invalid")
+        self.files=[{"path":"out/console.txt","base64":base64.b64encode(b"x").decode()}]
+        with patch("shutil.which",return_value="docker.exe"),self.box() as box:
+            self.assertEqual([item["path"] for item in box.collect()[0]],["out/console.txt"])
+
+    def test_a_staged_file_still_held_never_fails_the_trial(self):
+        """Docker Desktop can hold a bind-mounted file for a moment after the container is removed; a raise
+        from the cleanup replaced the trial's own outcome."""
+        import shutil
+        events=[]
+
+        class Log:
+            def emit(self,event,**data):
+                events.append(event)
+        (self.directory/"readable.txt").write_text("original")
+        with patch("shutil.which",return_value="docker.exe"),patch("sci_ai_verifier.claude_runner.CLEANUP_PAUSE",0):
+            box=DockerSandbox(self.directory,self.settings,process=self.process,log=Log())
+            with box:
+                staged=box.source
+                self.addCleanup(shutil.rmtree,staged.parent,True)
+                with (staged/"readable.txt").open("rb"):
+                    box.close()
+        self.assertIsNone(box.staging)
+        if staged.exists():  # Windows: the open handle kept it; it was logged and left, never raised
+            self.assertIn("temporary_cleanup_incomplete",events)
+
     def test_a_file_past_the_limits_is_left_behind_only_beside_the_kept_results(self):
         """Run 55d345a3's skill wrote a 4 MiB signal table beside its results, which voided the claim."""
         self.files=[{"path":"results.json","base64":base64.b64encode(b"{}").decode()}]

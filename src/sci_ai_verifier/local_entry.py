@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from .agent import ConfigurationError, Runtime
 from .claude_runner import (NO_SUBSTITUTION, ClaudeCode, prepare_workspace, isolated_environment, parse_events,
-                            session_directory, staging_problem, sweep_stale_directories)
+                            session_directory, staging_problem, stop_reason, sweep_stale_directories)
 from .common import Fault, canonical
 from .local import DEADLINE_ENV, OPERATIONS
 from .local_candidates import safe_payload
@@ -83,24 +83,8 @@ def planner_prompt(runtime, run_id, created):
     return task + "\n\n" + "\n\n".join(documents)
 
 
-def planner_stop(raw):
-    """What the planner's own last `result` event reported, when its process failed.
-
-    Run 7f88fbef's planner exited on the subscription session limit. The reason sat in
-    this event, and the run was recorded as the operator's cancellation.
-    """
-    for line in reversed(raw.splitlines()):
-        try:
-            event = json.loads(line)
-        except (ValueError, UnicodeError):
-            continue
-        if isinstance(event, dict) and event.get("type") == "result":
-            reason = str(event.get("terminal_reason") or ("error" if event.get("is_error") else "ended"))
-            if event.get("api_error_status"):
-                reason += " (HTTP " + str(event["api_error_status"]) + ")"
-            text = " ".join(str(event.get("result") or "").split())[:300]
-            return reason + (": " + text if text else "")
-    return None
+# The planner's own last reported stop, read the same way as a subject's (run 7f88fbef).
+planner_stop = stop_reason
 
 
 PROBE_PROMPT = "Reply with the single word OK."

@@ -119,6 +119,21 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "sandbox_configuration_required")
         self.assertEqual(len(directories), 2)
 
+    def test_an_incomplete_subject_names_the_clis_own_stop_reason(self):
+        """A subject's rate limit or turn limit was folded into one incomplete-observation message."""
+        def limited(command, **kwargs):
+            session = command[command.index("--session-id") + 1]
+            events = [{"type": "assistant", "message": {"model": "m", "content": [{"type": "text", "text": "x"}]}},
+                      {"type": "result", "subtype": "success", "is_error": True, "session_id": session,
+                       "terminal_reason": "api_error", "api_error_status": 429, "result": "You've hit your session limit."}]
+            return 1, b"\n".join(canonical(event) for event in events), b""
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}), \
+                patch("sci_ai_verifier.sandbox.DockerSandbox", FakeSandbox), self.assertRaises(Fault) as caught:
+            ClaudeCode(process=limited, settings={**load_configuration(), "sandbox_image": IMAGE}).observe(
+                source=[{"path": "SKILL.md", "content": "Plain"}], case_input={"task": "t"}, config={}, timeout_seconds=2)
+        self.assertEqual(caught.exception.code, "claude_incomplete")
+        self.assertIn("api_error (HTTP 429): You've hit your session limit.", str(caught.exception))
+
     def test_bare_is_api_only_and_controller_has_no_file_tools(self):
         for auth in ("subscription", "api"):
             command = ClaudeCode(auth=auth).command(Path("work"), "session", controller=True, mcp=Path("mcp.json"))

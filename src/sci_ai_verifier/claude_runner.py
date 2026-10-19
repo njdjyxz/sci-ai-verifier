@@ -199,6 +199,24 @@ def extended_path(path):
     return "\\\\?\\" + text if os.name == "nt" and re.match(r"[A-Za-z]:\\", text) else str(path)
 
 
+def remove_directory(path, log=None):
+    """Remove a temporary directory with bounded retries, through `extended_path`; what still cannot be
+    removed is logged and left, never raised. Docker Desktop can hold a bind-mounted file for a moment
+    after its container is removed, as a child of the CLI can after the CLI exits."""
+    path = Path(path)
+    for _ in range(CLEANUP_ATTEMPTS):
+        shutil.rmtree(extended_path(path), ignore_errors=True)
+        if not path.exists():
+            return True
+        time.sleep(CLEANUP_PAUSE)
+    if log:
+        try:
+            log.emit("temporary_cleanup_incomplete", path=str(path), attempts=CLEANUP_ATTEMPTS)
+        except Fault:
+            pass  # A diagnostic that cannot be written must not fail a finished run.
+    return False
+
+
 @contextmanager
 def session_directory(prefix, log=None):
     """A temporary directory for one Claude process, removed with bounded retries.
@@ -215,17 +233,7 @@ def session_directory(prefix, log=None):
     try:
         yield str(path)
     finally:
-        for _ in range(CLEANUP_ATTEMPTS):
-            shutil.rmtree(extended_path(path), ignore_errors=True)
-            if not path.exists():
-                break
-            time.sleep(CLEANUP_PAUSE)
-        else:
-            if log:
-                try:
-                    log.emit("temporary_cleanup_incomplete", path=str(path), attempts=CLEANUP_ATTEMPTS)
-                except Fault:
-                    pass  # A diagnostic that cannot be written must not fail a finished run.
+        remove_directory(path, log)
 
 
 STALE_PREFIX = "sci-verifier-"
@@ -344,6 +352,27 @@ def stage_skill(directory, source):
 NO_SUBSTITUTION = {"CLAUDE_CODE_NO_MODEL_FALLBACK": "1", "CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK": "1"}
 # A notice the CLI writes itself, such as a refusal message; it is not a model.
 SYNTHETIC_MODEL = "<synthetic>"
+
+
+def stop_reason(raw):
+    """What a session's own last `result` event reported, when its process failed; None without one.
+
+    Run 7f88fbef's planner exited on the subscription session limit. The reason sat in this
+    event, and the run was recorded as the operator's cancellation. A subject trial's own
+    reason, a rate limit or a turn limit, was folded into one incomplete-observation message.
+    """
+    for line in reversed(raw.splitlines()):
+        try:
+            event = json.loads(line)
+        except (ValueError, UnicodeError):
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            reason = str(event.get("terminal_reason") or event.get("subtype") or ("error" if event.get("is_error") else "ended"))
+            if event.get("api_error_status"):
+                reason += " (HTTP " + str(event["api_error_status"]) + ")"
+            text = " ".join(str(event.get("result") or "").split())[:300]
+            return reason + (": " + text if text else "")
+    return None
 
 
 def refusal_events(raw):
@@ -607,7 +636,9 @@ class ClaudeCode:
                 if refused:
                     raise Fault("subject_refused", "The subject provider refused this case on safety grounds ("
                                 + refused + ").")
-                raise Fault("claude_incomplete", "Claude Code exited without a complete observation.")
+                stop = stop_reason(raw)
+                raise Fault("claude_incomplete", "Claude Code exited without a complete observation"
+                            + (". Its last result reported " + stop + "." if stop else "."))
             extra=["mcp__subject__run_command"]
             if self.settings["allowed_subject_hosts"]:
                 extra.append("mcp__subject__fetch_resource")

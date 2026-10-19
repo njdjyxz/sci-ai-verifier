@@ -39,6 +39,21 @@ def valid_relative(path):
                     and not p.endswith((" ", ".")) for p in parts))
 
 
+# Names Windows reserves for devices, with any extension: a file called `nul.txt` cannot be saved.
+RESERVED_STEMS = {"con", "prn", "aux", "nul", *("com" + digit for digit in "123456789"),
+                  *("lpt" + digit for digit in "123456789")}
+PORTABLE_LENGTH = 150
+
+
+def portable_relative(path, max_length=PORTABLE_LENGTH):
+    """A relative path a generated file may be saved under on any host: `valid_relative`, no control
+    character, no device name, and short enough to sit under a run's artifact directory within
+    Windows' path limit."""
+    return (valid_relative(path) and len(path) <= max_length
+            and not any(ord(character) < 32 or ord(character) == 127 for character in path)
+            and all(part.split(".")[0].lower() not in RESERVED_STEMS for part in PurePosixPath(path).parts))
+
+
 def authorize(source_path, source_root):
     # Resolve only after checking all existing path components for links.
     path = no_links(source_path)

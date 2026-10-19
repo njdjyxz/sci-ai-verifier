@@ -812,12 +812,13 @@ def execute(store, state, claim_id, subject, retry=False):
                           + str(settings["subject_timeout_seconds"]) + " s (subject_timeout_seconds) before the subject answered. "
                           "The limit is the verifier's setting, not a property of the skill; a longer limit may let this case finish.")
             else:
-                reason = "Subject execution did not return a complete verified observation."
+                reason = ("Subject execution did not return a complete verified observation"
+                          + (": " + str(error) if isinstance(error, Fault) else "."))
             return limitation(store, state, claim_id, code, reason, receipts)
         artifacts=[]
         for item in response.pop("artifacts",[]):
-            from .ingest import valid_relative
-            if not valid_relative(item["path"]):
+            from .ingest import portable_relative
+            if not portable_relative(item["path"]):
                 raise Fault("artifact_invalid","Artifact paths must stay within the trial output directory.",fatal=True)
             raw=base64.b64decode(item["base64"],validate=True)
             if digest(raw)!=item["sha256"]:
@@ -898,7 +899,7 @@ RETRY_FAULTS = {"subject_refused", "subject_model_changed", "subject_unavailable
                 "skill_invocation_unverified", "claude_incomplete", "claude_protocol_error",
                 "claude_identity_error", "claude_timeout", "claude_output_limit", "claude_unavailable",
                 "sandbox_unavailable", "sandbox_image_unavailable", "sandbox_start_failed",
-                "sandbox_not_started", "sandbox_timeout", "sandbox_source_unavailable"}
+                "sandbox_not_started", "sandbox_timeout", "sandbox_output_limit", "sandbox_source_unavailable"}
 # A trial runs the skill on its task's files, so the re-run budgets five minutes for each, half the
 # default per-trial limit, and five more for the report.
 RETRY_SECONDS_PER_TRIAL = 300

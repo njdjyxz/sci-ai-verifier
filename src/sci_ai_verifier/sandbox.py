@@ -10,10 +10,19 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
-from .claude_runner import run_process
+from .claude_runner import remove_directory, run_process
 from .common import Fault, canonical, digest
-from .ingest import SECRET_BYTES, valid_relative
+from .ingest import SECRET_BYTES, portable_relative, valid_relative
 from .storage import no_links,atomic_write
+
+# What the docker client says when the engine is stopped or unreachable; a stopped Docker Desktop
+# used to be reported as the pinned image being absent.
+DAEMON_DOWN = re.compile(rb"(?i)error during connect|cannot connect to the docker daemon|daemon is not running"
+                         rb"|docker desktop|dockerDesktopLinuxEngine|open //\./pipe/|connection refused")
+# A docker command's own faults, so a hung or missing client is never reported as the subject's timeout.
+CLIENT_FAULTS = {"claude_timeout": ("sandbox_timeout", "A docker command did not finish within its time limit"),
+                 "claude_output_limit": ("sandbox_output_limit", "A docker command printed more than its output limit"),
+                 "claude_unavailable": ("sandbox_unavailable", "The docker client could not be started")}
 
 COLLECT = r'''
 import os,stat,json,base64
@@ -74,8 +83,14 @@ class DockerSandbox:
         if endpoint and self.endpoint:
             command += ["--host",self.endpoint]
         command += args
-        code,out,err = self.process(command,cwd=self.source,env=self.env,prompt=prompt,
-                                   timeout=timeout,max_bytes=max_bytes)
+        try:
+            code,out,err = self.process(command,cwd=self.source,env=self.env,prompt=prompt,
+                                       timeout=timeout,max_bytes=max_bytes)
+        except Fault as error:
+            if error.code not in CLIENT_FAULTS:
+                raise
+            name,message=CLIENT_FAULTS[error.code]
+            raise Fault(name,message+" ("+" ".join(str(item) for item in args[:2])+", "+str(timeout)+" s).") from None
         if self.log:
             self.log.emit("sandbox_command", container=self.name, operation=args[:2], exit_code=code,
                           stdout=out.decode("utf-8",errors="replace") if capture_output else {"bytes":len(out)},
@@ -96,7 +111,10 @@ class DockerSandbox:
             self.endpoint=None
         if code or not local_endpoint(self.endpoint):
             raise Fault("sandbox_remote_forbidden", "Use a local Docker engine through a named pipe or Unix socket.")
-        code,out,_=self.invoke(["image","inspect",image],capture_output=False)
+        code,out,err=self.invoke(["image","inspect",image],capture_output=False)
+        if code and DAEMON_DOWN.search(err):
+            raise Fault("sandbox_unavailable", "Docker is not running or cannot be reached; start Docker Desktop with "
+                        "Linux containers. The client said: " + err.decode("utf-8","replace").strip()[-200:])
         try:
             info=json.loads(out)[0]
             self.image=info["Id"]
@@ -112,9 +130,9 @@ class DockerSandbox:
         # A private outer directory protects host data; the mounted inner tree
         # has portable read permissions for the unprivileged container user.
         # Original submitted files and their permissions are never changed.
-        self.staging=tempfile.TemporaryDirectory(prefix="sci-verifier-container-")
+        self.staging=Path(tempfile.mkdtemp(prefix="sci-verifier-container-"))
         original=self.source
-        self.source=Path(self.staging.name)/"files"
+        self.source=self.staging/"files"
         self.source.mkdir(mode=0o755)
         count,total=0,0
         try:
@@ -136,12 +154,11 @@ class DockerSandbox:
                 if directory.is_dir():
                     directory.chmod(0o755)
         except BaseException:
-            self.staging.cleanup()
-            self.staging=None
+            self.discard_staging()
             raise
         mounts=["--mount",f"type=bind,source={self.source},target=/submission,readonly"]
         if self.inputs:
-            task=Path(self.staging.name)/"task"
+            task=self.staging/"task"
             task.mkdir(mode=0o755)
             try:
                 for name,raw in sorted(self.inputs.items()):
@@ -150,13 +167,11 @@ class DockerSandbox:
                     atomic_write(task/name,raw)
                     (task/name).chmod(0o644)
             except BaseException:
-                self.staging.cleanup()
-                self.staging=None
+                self.discard_staging()
                 raise
             mounts+=["--mount",f"type=bind,source={task},target={TASK_ROOT},readonly"]
-        if "," in self.staging.name:
-            self.staging.cleanup()
-            self.staging=None
+        if "," in str(self.staging):
+            self.discard_staging()
             raise Fault("sandbox_path_invalid", "Use a temporary source path without commas.")
         self.deadline=time.monotonic()+self.timeout
         args=["run","--detach","--rm","--pull","never","--name",self.name,
@@ -227,7 +242,8 @@ class DockerSandbox:
             result,total,seen=[],0,set()
             for item in files:
                 path=item["path"]
-                if not valid_relative(path) or path in seen:
+                # Saved under the run's artifact directory on the host, so the name must be one any host can save.
+                if not portable_relative(path) or path in seen:
                     raise ValueError()
                 raw=base64.b64decode(item["base64"],validate=True)
                 total+=len(raw)
@@ -250,9 +266,13 @@ class DockerSandbox:
                                   lifetime_seconds=self.timeout)
         finally:
             self.created=False
-            if self.staging:
-                self.staging.cleanup()
-                self.staging=None
+            self.discard_staging()
+
+    def discard_staging(self):
+        """Remove the staged copy with bounded retries; a file Docker Desktop still holds is logged, never raised."""
+        if self.staging:
+            remove_directory(self.staging,self.log)
+            self.staging=None
 
     def __exit__(self,*args):
         self.close()

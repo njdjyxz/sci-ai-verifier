@@ -10,7 +10,6 @@ import base64
 import json
 import math
 import re
-import tempfile
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -54,6 +53,7 @@ STDERR_TAIL = 600
 DESIGN_FAULTS = {"claude_timeout": "did not finish within its time limit",
                  "sandbox_timeout": "did not finish within its time limit",
                  "claude_output_limit": "printed more than its output limit",
+                 "sandbox_output_limit": "printed more than its output limit",
                  "sandbox_artifacts_invalid": "wrote files past the size, count or credential checks"}
 # Generous: a generator writes a few small files, and a solver fits a few curves.
 GENERATOR_SECONDS = 120
@@ -272,7 +272,8 @@ class SandboxRunner:
         return self.judges(packet)
 
     def generate(self, code, arguments):
-        with tempfile.TemporaryDirectory(prefix="sci-verifier-generator-") as temporary:
+        from .claude_runner import session_directory
+        with session_directory("sci-verifier-generator-", self.log) as temporary:
             source = Path(temporary)
             atomic_write(source / "generator.py", code.encode("utf-8"))
             with self.factory(source, self.settings, timeout=GENERATOR_SECONDS + 30, log=self.log) as sandbox:
@@ -288,7 +289,8 @@ class SandboxRunner:
                 "files": written, "image_id": image}
 
     def solve(self, code, given, files):
-        with tempfile.TemporaryDirectory(prefix="sci-verifier-solver-") as temporary:
+        from .claude_runner import session_directory
+        with session_directory("sci-verifier-solver-", self.log) as temporary:
             source = Path(temporary)
             atomic_write(source / "solver.py", code.encode("utf-8"))
             with self.factory(source, self.solver_settings, timeout=SOLVER_SECONDS + 30, log=self.log,
