@@ -48,7 +48,8 @@ re-read one pinned document or committed artifact if you lose this message.
    and a reference solution that passes every output, every section of the claim used by a task.
    Where the sections lead to an answer no fixed key captures, such as advice with several right
    answers, use a judged output with criteria quoted from your sources; that design settles at D.
-   Without a container, use a design of questions instead ("Claims" in the local contract).
+   Without a container nothing can run, so a claim ends on the documentary path or a recorded
+   limitation ("Claims" in the local contract).
    Then call select_local_candidate proposing exactly the ceiling Python reports for that
    design. Aiming lower is refused, and so is claiming more. An independent critique session
    then judges whether the evidence really tests the claim.

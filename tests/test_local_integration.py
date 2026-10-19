@@ -189,6 +189,24 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("The test AI disagreed with the skill in 1 of "+str(len(trials))+" trials",markdown)
         self.assertIn(said,markdown)
 
+    def test_a_trial_that_fails_while_disagreeing_still_fails(self):
+        """The contract's own case: the test AI follows the wrong step, fails, and says what it would do."""
+        h=self.h
+        h.subject.mode="wrong"
+        original=h.subject.observe
+        said="Step B keeps the loading factor; dividing by the loading control gives 1.4."
+
+        def observe(**request):
+            observation=original(**request)
+            return {**observation,"text":observation["text"]+"\nDisagreement with the skill: "+said}
+        h.subject.observe=observe
+        h.ready()
+        h.call("execute_local_claim",claim_id=h.claim_id)
+        self.assertEqual(h.data["result"]["comparison_status"],"fail")
+        h.call("write_report_card")
+        trials=h.data["report"]["claims"][0]["tests"]
+        self.assertEqual({(trial["comparison_status"],trial["disagreement"]) for trial in trials},{("fail",said)})
+
 
 class PublicationTests(unittest.TestCase):
     """The draft pull request is the review request; a person merges it."""

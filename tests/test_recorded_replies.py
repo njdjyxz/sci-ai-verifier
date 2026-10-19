@@ -237,6 +237,11 @@ class RecordedReplyTests(unittest.TestCase):
         self.assertTrue(refusal["is_error"])
         self.assertIn("No such tool available: bash", json.dumps(refusal["content"]))
         self.assertEqual(response["structured_output"]["supported_grade"], "A")
+        # This recording proves the boundary only. Its reply predates rubric v7, so the live schema refuses
+        # it for want of `unsourced_rules`; a run on the live rubric must record its replacement (README).
+        self.assertNotIn("unsourced_rules", response["structured_output"])
+        with self.assertRaises(Fault):
+            validate_task_critique(response["structured_output"], [case for case in response["structured_output"]["task_checks"]])
 
     def test_a_recorded_safety_refusal_is_named_and_not_a_crash(self):
         """A provider refusal is its own operational outcome, never a scientific result."""
@@ -467,6 +472,19 @@ class TaskCritiqueShapeTests(unittest.TestCase):
                        {key: value for key, value in self.base().items() if key != "task_checks"}):
             with self.subTest(broken=canonical(broken)[:90]):
                 self.refused(broken)
+
+    def test_unsourced_rules_need_a_quoted_rule_a_reason_and_whether_a_search_sought_it(self):
+        """Rubric v8 ("Unsourced rules" in local-tasks.md): `searched` decides U against not looked up."""
+        rule = {"rule": "r² below 0.93 rejects the fit", "reason": "No source states it.", "searched": False}
+        validate(self.base(unsourced_rules=[rule]), task_critique_schema(["t1", "t2"]), "critique")
+        for label, broken in (("no searched", {key: value for key, value in rule.items() if key != "searched"}),
+                              ("searched as text", {**rule, "searched": "no"}), ("blank rule", {**rule, "rule": " "}),
+                              ("blank reason", {**rule, "reason": ""}), ("extra key", {**rule, "grade": "U"})):
+            with self.subTest(label):
+                self.refused(self.base(unsourced_rules=[broken]))
+        self.refused(self.base(unsourced_rules=[rule] * 9))
+        self.refused(self.base(unsourced_rules="none"))
+        self.refused({key: value for key, value in self.base().items() if key != "unsourced_rules"})
 
     def test_task_answers_that_do_not_match_the_packet_are_refused(self):
         rejected = self.verdict("outside_claim", "Ask what the claim states.")

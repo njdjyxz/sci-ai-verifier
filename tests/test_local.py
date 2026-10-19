@@ -604,6 +604,23 @@ class ClaimScopeTests(unittest.TestCase):
         self.assertIn("answers every required revision", prompt)
         self.assertIn('"Negotiating the grade"', prompt)
         self.assertNotIn("fact by fact", prompt)
+        # Designs of questions were retired on 2026-10-05; the prompt kept offering them without a container.
+        self.assertNotIn("design of questions", prompt)
+        self.assertIn("Without a container nothing can run", prompt)
+
+    def test_the_run_limits_cover_the_twelve_claims_a_manifest_may_hold(self):
+        """Five-claim runs used 54 to 73 planner turns, up to 7,300 log events and 10 MiB, and up to four of
+        the eight repairs; a twelve-claim run under the old caps of 100 turns, 20,000 events, 32 MiB and 8
+        repairs would have been cut off with no report."""
+        from sci_ai_verifier.claude_runner import PLANNER_TURNS, ClaudeCode
+        from sci_ai_verifier.local import MAX_CLAIMS
+        from sci_ai_verifier.runlog import MAX_EVENTS, MAX_LOG_BYTES
+        self.assertGreaterEqual(PLANNER_TURNS, MAX_CLAIMS * 15)
+        self.assertGreaterEqual(MAX_EVENTS, MAX_CLAIMS * 1500)
+        self.assertGreaterEqual(MAX_LOG_BYTES, MAX_CLAIMS * 2 * 1024 * 1024)
+        self.assertGreaterEqual(self.h.runtime.limits["repair_retries"], MAX_CLAIMS * 2)
+        command = ClaudeCode(auth="subscription").command(Path("work"), "session", controller=True, mcp=Path("mcp.json"))
+        self.assertEqual(command[command.index("--max-turns") + 1], str(PLANNER_TURNS))
         pinned = dict(self.h.runtime._instruction_blocks())
         self.assertIn("**A claim is a group of whole sections**", pinned["references/local-tasks.md"])
         self.assertIn("## The reference solution", pinned["references/local-tasks.md"])

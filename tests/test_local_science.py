@@ -1,5 +1,6 @@
 """Evidence-strength ceilings, the critique boundary and assessor limits for task designs; no live models."""
 
+import json
 import os
 import sys
 import unittest
@@ -554,6 +555,43 @@ class ReplySchemaSessionTests(unittest.TestCase):
             response,_=isolated_answer(ClaudeCode(auth="subscription",process=process),{"evidence":"e"},
                                        role="critic",system_prompt="Answer.",schema=self.SCHEMA)
         return response,seen["command"]
+
+    def test_two_judges_are_asked_and_each_reply_is_checked_again(self):
+        """judge_pair ("Judged outputs" in local-tasks.md): two fresh sessions over one packet, each answering
+        every criterion in the judge schema, which Python checks again rather than trusting the CLI."""
+        from sci_ai_verifier.claude_runner import ClaudeCode
+        from sci_ai_verifier.documentary import JUDGE_RUBRIC,JUDGE_TIMEOUT_SECONDS,judge_pair,judge_schema
+        packet={"job":"Advise.","answer":"Block with BSA.","rubric":JUDGE_RUBRIC,
+                "criteria":[{"id":"c1","question":"Names BSA?","source_quote":"q"},{"id":"c2","question":"Says why?","source_quote":"q"}]}
+        replies=[{"answers":{"c1":{"fact":"It names BSA.","answer":"yes"},"c2":{"fact":"No reason.","answer":"no"}}},
+                 {"answers":{"c1":{"fact":"BSA is named.","answer":"yes"},"c2":{"fact":"Silent on why.","answer":"no"}}}]
+        seen=[]
+
+        def process(command,**kwargs):
+            seen.append((command,kwargs))
+            session=command[command.index("--session-id")+1]
+            reply=replies[len(seen)-1]
+            events=[{"type":"assistant","session_id":session,"message":{"model":"judge-model","role":"assistant","content":[
+                        {"type":"tool_use","id":"toolu_1","name":"StructuredOutput","input":reply}]}},
+                    {"type":"result","subtype":"success","is_error":False,"session_id":session,"result":"",
+                     "structured_output":reply,"total_cost_usd":0.01}]
+            return 0,b"".join(canonical(event)+b"\n" for event in events),b""
+        with patch.dict(os.environ,{"CLAUDE_CODE_OAUTH_TOKEN":"fake-oauth-for-boundary-test"}):
+            value=judge_pair(ClaudeCode(auth="subscription",process=process),packet)
+        self.assertEqual(len(seen),2)
+        self.assertEqual([item["answers"] for item in value],[reply["answers"] for reply in replies])
+        self.assertEqual({item["observed_model_ids"][0] for item in value},{"judge-model"})
+        self.assertNotEqual(value[0]["session_id"],value[1]["session_id"])
+        for command,kwargs in seen:
+            self.assertEqual(json.loads(command[command.index("--json-schema")+1]),judge_schema(["c1","c2"]))
+            self.assertEqual((command[command.index("--tools")+1],kwargs["timeout"]),("",JUDGE_TIMEOUT_SECONDS))
+            self.assertEqual(json.loads(kwargs["prompt"]),packet)
+        # A reply outside the schema the CLI let through is refused here, as a judge fault.
+        replies[1]={"answers":{"c1":{"fact":"x","answer":"yes"}}}
+        seen.clear()
+        with patch.dict(os.environ,{"CLAUDE_CODE_OAUTH_TOKEN":"fake-oauth-for-boundary-test"}),self.assertRaises(Fault) as caught:
+            judge_pair(ClaudeCode(auth="subscription",process=process),packet)
+        self.assertEqual(caught.exception.code,"judge_response_invalid")
 
     def test_the_session_gets_the_schema_room_to_correct_and_no_other_tool(self):
         response,command=self.ask()

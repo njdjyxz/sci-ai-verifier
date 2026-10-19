@@ -346,6 +346,13 @@ def stage_skill(directory, source):
     return plugin, pins, left_out
 
 
+# The planner's turn limit. Five-claim runs used 54 to 73 turns (0d15e36c to d2b54156), about 14 a
+# claim, so the twelve claims a manifest may hold ("Claims" in local-tasks.md) need about 170; the
+# attempt deadline and the subject-call budget bound the run before this does.
+PLANNER_TURNS = 400
+# A trial runs the skill on a task's files and writes a results file, which took more turns than
+# the questions it replaced ("Tasks" in local-tasks.md).
+SUBJECT_TURNS = 40
 # Undocumented switches present in Claude Code 2.1.268 that stop it answering with a model
 # other than the pinned one. The stream is still checked, because a trial counts only when
 # one model answered it ("Subject boundary" in local-contract.md).
@@ -569,9 +576,7 @@ class ClaudeCode:
                    "--session-id", session, "--model", self.model, "--no-session-persistence",
                    "--restricted", "--setting-sources", "", "--settings", canonical(settings).decode(),
                    "--strict-mcp-config", "--mcp-config", str(mcp) if mcp else '{"mcpServers":{}}',
-                   # A trial runs the skill on a task's files and writes a results file, which took more
-                   # turns than the questions it replaced ("Tasks" in local-tasks.md).
-                   "--permission-mode", "dontAsk", "--max-turns", "100" if controller else "40",
+                   "--permission-mode", "dontAsk", "--max-turns", str(PLANNER_TURNS if controller else SUBJECT_TURNS),
                    "--tools", "WebSearch" if controller else "Skill"]
         if self.auth == "api":
             command.append("--bare")

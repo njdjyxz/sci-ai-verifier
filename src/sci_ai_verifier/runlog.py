@@ -16,8 +16,11 @@ from .ingest import SECRET_BYTES
 from .storage import atomic_write, file_lock, no_links
 
 SENSITIVE = re.compile(r"token|secret|password|authorization|api.?key|credential", re.I)
-MAX_EVENTS = 20000
-MAX_LOG_BYTES = 32*1024*1024
+# Bounds on a runaway log, not on a large run: five-claim runs wrote 6,000 to 7,300 events and 6 to
+# 10 MiB (2f395087, d2b54156), so the twelve claims a manifest may hold need about 18,000 and 25 MiB.
+# Reaching either ends the attempt, so they sit well above that.
+MAX_EVENTS = 60000
+MAX_LOG_BYTES = 96*1024*1024
 MAX_TEXT = 16000
 # Threads of one process may log at once, as four parallel claim-only sessions did until their
 # retirement on 2026-10-05. The file lock alone does not serialize threads of one process on

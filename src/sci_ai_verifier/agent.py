@@ -135,6 +135,10 @@ class Runtime:
         if profile=="local":
             from .local import MAX_CLAIMS
             local_limits["max_claims"]=MAX_CLAIMS
+            # The repair budget is spent run-wide, and exhausting it closes the run with no report. Five-claim
+            # runs used up to four of the eight (d2b54156, f1e6e90b): a refused fetch or an unqualified design
+            # costs one each, so twelve claims need room for about two apiece.
+            local_limits["repair_retries"]=32
         self.limits = {**DEFAULT_LIMITS, **({"max_steps": 256} if profile != "stage2" else {}), **local_limits, **(limits or {})}
         if profile == "demo":
             self.limits.update(max_steps=512, repair_retries=32, illegal_transitions=32,
