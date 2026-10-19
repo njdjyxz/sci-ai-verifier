@@ -71,7 +71,7 @@ themselves (`pip`, `setuptools`, `wheel`, `uv`) are rejected, and so is a comman
 sets any option other than a harmless one such as `--upgrade` or `--quiet`, so a skill
 cannot choose the index. A `-r` naming a requirements file inside the snapshot is
 skipped, because that file is read on its own. A `--hash` value is dropped, because the
-verifier hashes what it downloads. At most 100 requirements are accepted.
+verifier hashes what it downloads. At most 100 declared requirements are accepted.
 
 **Imports.** A top-level module the skill's code imports, in its `.py` files and the
 Python code blocks of its Markdown, that no declared requirement provides is added as a

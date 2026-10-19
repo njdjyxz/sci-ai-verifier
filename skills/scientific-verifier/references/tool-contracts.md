@@ -569,10 +569,10 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   planner intact. The whole page is pinned, and quotes are checked against all of it.
 - `qualify_local_tasks`: in local_discovery, propose a task design for the claim:
   `name`, `scope`, `limitations`, an optional `generator` (`code`, `reference_ref`,
-  `model_quote`), a `solver` (`code`) and one to six `cases`, each a task with `case_id`,
-  `job`, `sections`, optional `arguments` and `reference_files`, one to twelve `outputs`
+  `model_quote`), a `solver` (`code`) and `cases`, each a task with `case_id`,
+  `job`, `sections`, optional `arguments` and `reference_files`, `outputs`
   and `applicability`. "Tasks" and "Where expected values come from" in `local-tasks.md`
-  own what the fields mean. Python checks every quote against its pinned reference and
+  own what the fields mean and how many tasks, outputs and files a design may hold. Python checks every quote against its pinned reference and
   that the tasks together use every section of the claim, then runs the generator once
   for each task with `arguments` and the solver once for each task, each in a new
   container with no network ("The reference solution" in `local-tasks.md` owns which
