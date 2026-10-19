@@ -3215,3 +3215,160 @@ Show the PI the demo pages (`72bb6e51`, `7cfc4df5`, `0d15e36c`) and the three ne
 
 The operator chooses which of open questions 1 to 6 to act on. It is finished when each is decided or
 deliberately left, and recorded here.
+
+## Claude: 2026-10-19 (code review before more skills: a grading bug, the two known bugs, six more fixes; operator items)
+
+### Current stage and status
+
+Version 0.8.0 on `main`. A general code review before more scientific skills are sent for
+live testing, working alone from the brief, with three read-only subagents on safety,
+Windows robustness and the tests; every subagent finding was re-read in the code before
+anything changed. Baseline at `44ad4aa`: 422 tests, 2 skipped. Nine commits since; 443
+tests pass, 2 skipped, and each new test was checked to fail when its fix is undone. **No
+live run has confirmed any of these fixes: they pass the automated tests only.** `src/`
+changed, so a session whose `serve-local` started before `326f4e2` runs old code and must
+be restarted before the next run.
+
+### What has been done
+
+In priority order, each with its commit.
+
+- **P1, wrong science.** One bug. A departure the critique lists holds the proposal one
+  grade down (A to B, B to C, C or D to no grade); accepting the settled grade re-ran the
+  audit with the hold off, which was right for B after A but, when the hold had left no
+  grade, let the planner re-propose the ceiling and regain C or D (`local_science.audit`,
+  `local.select`). The audit now takes the accepted grade, `None` included, and holds the
+  settled ceiling to it. `tool-contracts.md` already said so. `326f4e2`. Checked and found
+  right: `check`, `score`, near misses, `off_reference`, `verdict_for`'s order against the
+  rubric's status table, `decide` over counted tasks only, the coverage return, the U split
+  with its pre-v8 default, the report card against the HTML page's grade, status, counts and
+  flags.
+- **Known bug (b), `runlog.emit`.** Every event rewrote `workflow.jsonl` and `workflow.md`
+  whole through `os.replace`, which Windows refuses while a reader holds the file (run
+  `74000d89`), and the cost grew with the run (run `d416f79d`). A write now extends a
+  projection that holds every earlier event and rewrites one that does not; `atomic_write`
+  retries a refused replace for about two seconds; a projection still held is left to the
+  next write, since the event file is the record. A real Windows test holds the file open.
+  Contract: "Acceptance" in `local-contract.md`. `bf9febe`.
+- **Known bug (a), staging.** Setup takes its one snapshot of the skill before the model
+  probe, asks `staging_problem` of it and stops as `unsupported_subject`, naming the file,
+  before any session; the same snapshot feeds the environment build. A dot path such as
+  `.gitignore` or `.github/` was refused outright, so such a skill could never run; it is now
+  left out of the staged skill, whatever it holds, and named on the receipt in
+  `source_not_staged`. `.markdown` files are checked like `.md`. Contracts: "Computational
+  execution and operator settings" in `local-contract.md`, the receipt in
+  `artifact-contracts.md`. `05f009a`.
+- **The end-of-run re-run executed unsettled plans.** `RETRY_FAULTS` is keyed by code, and a
+  critique session shares `claude_timeout` and the rest with a trial: a critique timing out
+  in round two left round one's revision-required plan for `retry_stopped_claims` to execute
+  and grade, and `fallback_documentary` to assess. The claim now records the audit of the
+  plan it fixed, and both cover a fault only when that plan is the one that stopped.
+  Contract: "Subject boundary". `2079e9f`.
+- **P3, the safety scan could stall or crash the report.** Unbounded regexes (a comment
+  opener scanned to the end of the file from every `<!--`; two patterns read to the end of
+  a line from every match), a newline count per finding, and `ast.unparse` overflowing on a
+  command of 600 nested strings while `ast.parse` succeeded; all inside `write_report_card`
+  with no guard. Bounded, with a scan failure recorded on the report as `scan_failed` rather
+  than losing it. A 280 KB crafted line took 39 s before and milliseconds after. `30fc805`.
+- **P4, faults named for what they are.** A docker command that hung raised the CLI's
+  `claude_timeout`, which `execute` reported as the subject reaching its 600 s limit; a
+  stopped Docker Desktop was `sandbox_image_unavailable` "prepare the image"; a subject
+  stopped by HTTP 429 or its turn limit was one incomplete-observation message. Generated
+  files named `nul.txt`, with a control character or over 150 characters failed the host
+  write after the trial. The staged container copy was removed with `TemporaryDirectory`,
+  which raises on a file Docker Desktop still holds. All fixed: `sandbox.invoke` reports its
+  client's faults as `sandbox_*`, preflight names a stopped engine, `stop_reason` is shared
+  by planner and subject, `portable_relative` guards artifact names, and `remove_directory`
+  retries. `4401732`.
+- **P4, limits sized for twelve claims.** The kept runs: five claims use 54 to 73 planner
+  turns, 6,000 to 7,300 log events and 6 to 10 MiB, and up to four of eight repairs
+  (`d2b54156`, `f1e6e90b`). The caps of 100 turns, 20,000 events, 32 MiB and 8 repairs
+  would cut a twelve-claim run off with no report. Now 400, 60,000, 96 MiB and 32, held
+  above the twelve-claim need by a test. The planner's prompt still offered "a design of
+  questions" without a container; it now says what the contract says. `7177a77`.
+- **P5, tests.** Added: `judge_pair` asks two sessions and re-checks each reply; the
+  `unsourced_rules` shape under rubric v8; a trial that fails while disagreeing; the
+  refused-tool recording's staleness under the live schema, noted in the recordings README.
+  `7177a77`.
+- **P2, drift.** The state x tool matrix in `workflow.md` matches `CLAIM_LEGAL` and the tool
+  sections; the artifact contract matches the JSON `report` writes; the import and command
+  tables match `resource-policy.md`. Two restatements fixed: `qualify_local_tasks` restated
+  the task and output counts `local-tasks.md` owns, and the requirement cap counts declared
+  requirements. `3f15af5`.
+
+### Open questions for the operator
+
+Collected, not built. Each with where it is, the options and a recommendation.
+
+1. **What status grade U carries.** `evidence-rubric.md`'s status table (row 1) gives U
+   `null` with `no_reference_grade`; "Verdict authority" (line 193), `tool-contracts.md:510`
+   and `artifact-contracts.md:337` say `inconclusive`. The code does both:
+   `record_local_unverified` writes `inconclusive`, and a documentary assessment that
+   addresses nothing writes `null`/`no_reference_grade` (`local.documentary_record`). Neither
+   is a pass or fail. Options: (a) U is always `null` with `no_reference_grade`, as the ordered
+   table says; (b) always `inconclusive`. Recommended: (a). A U has no reference, so "did the
+   claim hold" has no value; `inconclusive` reads as a verdict that was reached.
+2. **The repair budget is run-wide.** `tools._error` ends the whole run at zero, where
+   `workflow.md` ("Limits") says a claim-local limit ends the claim. Raised from 8 to 32 for
+   the local profile; the contract mismatch stands. Options: (a) say in the contract that the
+   local profile's budget is run-wide; (b) make it claim-scoped (a budget per claim in the
+   retryable envelope). Recommended: (a) now, (b) if a run ever exhausts 32.
+3. **A critique, judge or assessor session that fails before replying ends the claim.**
+   `local.select` turns any critique fault into a limitation; `documentary.isolated_answer`
+   maps every failed session that did answer in shape to `critic_unavailable`, a 429 among
+   them; a judge fault after all trials ran discards them (`local.execute`). Options: (a) one
+   bounded second session for a failure that is not a schema failure, since nothing scientific
+   was observed; (b) leave it. Costs a session, so the operator's. Recommended: (a).
+4. **`external_tools.credential_env` may name any variable but five** (`local_config.py`
+   denylist). A configuration naming `CLAUDE_CONFIG_DIR`, `ANTHROPIC_BASE_URL` or
+   `CLAUDE_CODE_NO_MODEL_FALLBACK` re-points subject and planner sessions, because the names
+   are copied after `isolated_environment` set them (`claude_runner.observe`,
+   `local_entry._verify`). Operator-controlled, so no skill can use it. Recommended: refuse
+   names starting `CLAUDE_`, `ANTHROPIC_`, `SCI_VERIFIER_`, `PYTHON`, `NODE_` and ending
+   `_PROXY`. Install and permission policy.
+5. **Two directive forms the staging guard does not refuse**: `` `!`whoami` `` (a backtick
+   before the `!`, exempted for run `eaf7da1a`'s "`!` comment lines") and a tilde fence
+   `~~~!`. Whether Claude Code expands either is unknown; `disableSkillShellExecution` is set
+   and `--setting-sources ""`. Recommended: try both once against the CLI, then decide.
+6. **Re-record `critic-refused-tool.jsonl`** from a critique that asks for a tool under rubric
+   v8 (about $1), as the recordings README's own rule asks; until then it proves the refused-
+   call boundary only.
+7. **`report_html.py`'s question-era branches** (multiple-choice chips, the AI-reader column,
+   claim-only probes; about 120 lines) draw nothing for a 0.8.0 run but still render pages of
+   runs before 2026-10-05. Keep as compatibility or delete with the `mixed` fixture in
+   `test_report_html.py`. Structure, so the operator's. Recommended: keep until those run
+   folders are gone, then delete.
+8. The earlier open questions stand: 1 to 4 and 6 of the 2026-10-13 entry, and 5(c) `--python`
+   and 5(d) sdist-only packages. 5(a) and 5(b) are built above.
+
+### Findings not fixed
+
+- Tests that cannot fail: `test_local_science.py` asserts `MAX_ROUNDS == len(GRADES)`, the
+  definition itself; `test_local_tasks.py` checks substrings of `TESTER_INSTRUCTION`;
+  `test_report_html.py` checks `render() == render()`. `test_desktop_package.py` rebuilds
+  the tracked `dist/` during the suite.
+- Minor labels: the MCP host closing stdin is recorded as the operator's cancellation
+  (`mcp.py`); a `taskkill` that times out raises `TimeoutExpired` past `execute`'s handler;
+  an installer container and wheels volume leak if Python dies mid-build; implied imports
+  can add up to 27 requirements past the declared cap of 100, inside `max_packages`.
+- Verified and left alone: the OAuth token reaches only the CLI environment and MCP
+  placeholders, and every logging process scrubs it by value; containers run with no
+  network, read-only root, dropped capabilities and read-only mounts; archives are never
+  expanded on the host; snapshot paths reject links and traversal.
+
+### Not reviewed
+
+The Stage 2/3, chemical and demo code beyond its tests; the catalog publication and
+release modules beyond a read; the HTML page against a kept run's records was read, not
+rendered; Claude Code's own directive parser (item 5).
+
+### Urgent next steps, if any
+
+`src/` changed in seven commits: restart the Claude Code session so its `serve-local`
+runs the new code, or run `scripts/verify.py verify` directly.
+
+### Recommended next action
+
+The verifier is ready to test more skills once the session is restarted. The next live run
+is the first check of these fixes; read its log for `sandbox_` faults, the retry records
+and the projection sizes. Then settle the operator items above, 1 and 3 first.
