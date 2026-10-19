@@ -771,11 +771,8 @@ def execute(store, state, claim_id, subject, retry=False):
         return limitation(store,state,claim_id,"audit_invalidated","The plan differs from its accepted audit.")
     if state["subject_calls_used"] + len(candidate["cases"])*trials > settings["max_subject_calls"]:
         return limitation(store, state, claim_id, "subject_budget_exhausted", "The configured subject call limit would be exceeded.")
-    snapshot = verified_snapshot(store, state)
-    source=[]
-    for entry in snapshot["files"]:
-        raw=store.get(entry["digest"])
-        source.append({"path":entry["path"],**({"content":raw.decode("utf-8")} if entry["encoding"]=="utf-8" else {"base64":base64.b64encode(raw).decode()})})
+    from .ingest import source_items
+    source = source_items(store, verified_snapshot(store, state))
     from .local_tasks import score as score_task, task_input
     from .documentary import judge_pair
     receipts, observations, scored_trials = [], [], []

@@ -140,26 +140,50 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(result["invocation_verified"])
 
     def test_dynamic_shell_and_configuration_are_rejected_but_scripts_are_staged(self):
+        from sci_ai_verifier.claude_runner import staging_problem
         # A trial runs the skill's own scripts in its container, so a script is staged as a file.
         with tempfile.TemporaryDirectory() as temporary:
-            plugin, pins = stage_skill(Path(temporary), [{"path": "SKILL.md", "content": "Plain skill"},
-                                                         {"path": "scripts/fit.py", "content": "print('fit')"}])
+            plugin, pins, left_out = stage_skill(Path(temporary), [{"path": "SKILL.md", "content": "Plain skill"},
+                                                                   {"path": "scripts/fit.py", "content": "print('fit')"}])
             self.assertEqual((plugin / "skills/submitted/scripts/fit.py").read_text(), "print('fit')")
-            self.assertEqual([pin["path"] for pin in pins], ["SKILL.md", "scripts/fit.py"])
+            self.assertEqual(([pin["path"] for pin in pins], left_out), (["SKILL.md", "scripts/fit.py"], []))
         # An exclamation mark that is itself inline code is text, as in run eaf7da1a's biopython reference.
         with tempfile.TemporaryDirectory() as temporary:
             stage_skill(Path(temporary), [{"path": "SKILL.md", "content": "Plain skill"},
                                           {"path": "notes.md", "content": "`#`, `;`, or `!` comment lines are ignored"}])
         for filename, content in (("SKILL.md", "!`echo evil`"), ("SKILL.md", "```!\necho evil\n```"),
                                   ("notes.md", "!`echo evil`"), ("notes.md", "Run it: !`ls -l` first"),
-                                  (".claude/settings.json", "{}")):
-            with tempfile.TemporaryDirectory() as temporary, self.assertRaises(Fault):
-                source = [{"path": "SKILL.md", "content": "Plain skill"}]
-                if filename == "SKILL.md":
-                    source = [{"path": filename, "content": content}]
-                else:
-                    source.append({"path": filename, "content": content})
+                                  ("notes.md", "```!\necho evil\n```"), ("guide.markdown", "!`echo evil`"),
+                                  ("docs/CLAUDE.md", "Plain"), ("AGENTS.md", "Plain"),
+                                  ("scripts/key.txt", "token ghp_" + "a" * 40)):
+            source = [{"path": "SKILL.md", "content": "Plain skill"}]
+            if filename == "SKILL.md":
+                source = [{"path": filename, "content": content}]
+            else:
+                source.append({"path": filename, "content": content})
+            # The same answer before any trial, naming the file, and at every trial.
+            self.assertIn(filename, staging_problem(source) or "", filename)
+            with tempfile.TemporaryDirectory() as temporary, self.assertRaises(Fault) as caught:
                 stage_skill(Path(temporary), source)
+            self.assertEqual(caught.exception.code, "unsupported_subject")
+        self.assertIsNone(staging_problem([{"path": "SKILL.md", "content": "Plain skill"}]))
+
+    def test_dot_paths_are_left_out_of_the_staged_skill_and_named(self):
+        """A skill shipping `.gitignore` or `.github/` used to be refused at every trial, after the plan was
+        paid for. Claude's own configuration lives in dot paths, so they are left out instead, whatever
+        they hold, and the receipt names them."""
+        from sci_ai_verifier.claude_runner import staging_problem
+        source = [{"path": "SKILL.md", "content": "Plain skill"}, {"path": ".gitignore", "content": "*.pyc\n"},
+                  {"path": ".claude/settings.json", "content": "{}"},
+                  {"path": ".github/notes.md", "content": "!`echo evil`"}, {"path": "scripts/fit.py", "content": "x"}]
+        self.assertIsNone(staging_problem(source))
+        with tempfile.TemporaryDirectory() as temporary:
+            plugin, pins, left_out = stage_skill(Path(temporary), source)
+            staged = sorted(path.relative_to(plugin / "skills/submitted").as_posix()
+                            for path in (plugin / "skills/submitted").rglob("*") if path.is_file())
+        self.assertEqual(staged, ["SKILL.md", "scripts/fit.py"])
+        self.assertEqual([pin["path"] for pin in pins], ["SKILL.md", "scripts/fit.py"])
+        self.assertEqual(left_out, [".gitignore", ".claude/settings.json", ".github/notes.md"])
 
     def test_real_process_timeout_is_bounded(self):
         started = time.monotonic()

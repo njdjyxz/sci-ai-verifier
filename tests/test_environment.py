@@ -700,6 +700,7 @@ class EntryTests(unittest.TestCase):
 
         def prepare(source, source_root, settings, **kwargs):
             self.order.append("environment")
+            self.taken = kwargs.get("taken")
             if isinstance(environment, Fault):
                 raise environment
             return {**environment, "source_path": str(source)}
@@ -735,6 +736,22 @@ class EntryTests(unittest.TestCase):
         self.assertEqual(self.order, ["probe", "environment"])  # nothing was built, so nothing to remove
         self.assertEqual(planner, [])  # no planner session, so no planner cost
         self.assertFalse((self.base / ".verifier" / "runs").exists() and any((self.base / ".verifier" / "runs").iterdir()))
+
+    def test_a_skill_the_trials_cannot_stage_stops_setup_before_the_probe(self):
+        """Run eaf7da1a's planner spent about $15 before its first trial met the directive."""
+        (self.source / "notes.md").write_text("Run it: !`ls -l` first", encoding="utf-8")
+        result, planner = self.verify(built_record("", None))
+        self.assertEqual(result["error"]["code"], "unsupported_subject")
+        self.assertIn("notes.md", result["error"]["message"])
+        self.assertEqual((self.order, planner), ([], []))
+        self.assertFalse((self.base / ".verifier" / "runs").exists())
+
+    def test_setup_hands_its_one_snapshot_to_the_environment_and_dot_files_do_not_stop_it(self):
+        (self.source / ".gitignore").write_text("*.pyc\n", encoding="utf-8")
+        result, _ = self.verify(built_record("", None))
+        self.assertEqual(result["error"]["code"], "planner_incomplete")
+        self.assertEqual(self.order, ["probe", "environment", "removed"])
+        self.assertEqual(sorted(entry["path"] for entry in self.taken["files"]), [".gitignore", "SKILL.md"])
 
     def test_a_built_image_reaches_only_the_planner_tool_server_as_the_subject_image(self):
         result, planner = self.verify(built_record("", None))

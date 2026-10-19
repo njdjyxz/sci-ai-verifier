@@ -620,8 +620,24 @@ def remove_environment(record, settings, *, workspace, log=None, process=None):
     remove(docker, ["image", "rm", "--force", record["image_id"]], log)
 
 
-def prepare_environment(source, source_root, settings, *, workspace, limits, log=None, process=None):
-    """The record of "Skill environment"; its `image_id` is the image subject trials will use."""
+def setup_snapshot(source, source_root, limits, store):
+    """Setup's snapshot of the skill, taken exactly as `load_submitted_skill` will take it: the record, or
+    `None` with the reason when the source cannot be read, which the planner's `load_submitted_skill`
+    then meets and journals as usual. A cancellation passes through."""
+    state = {"source_path": str(source), "source_root": str(source_root), "limits": limits, "run_id": None,
+             "updated_at": utc_now(), "implementation_version": __version__}
+    try:
+        taken, _ = snapshot(store, state)
+    except (Fault, OSError) as error:
+        if getattr(error, "code", None) in PASS_THROUGH:
+            raise
+        return None, getattr(error, "code", "source_unreadable")
+    return taken, None
+
+
+def prepare_environment(source, source_root, settings, *, workspace, limits, log=None, process=None, taken=None):
+    """The record of "Skill environment"; its `image_id` is the image subject trials will use. `taken` is
+    the snapshot setup already took, so the skill is read once."""
     docker = DockerSandbox(workspace, settings, log=log, process=process)
     operator = docker.preflight()["image_id"]
     sweep_environments(docker, log)
@@ -631,16 +647,11 @@ def prepare_environment(source, source_root, settings, *, workspace, limits, log
               "commands": [],
               "manifest": None, "operator_manifest": None}
     store = Store(workspace)
-    state = {"source_path": str(source), "source_root": str(source_root), "limits": limits, "run_id": None,
-             "updated_at": utc_now(), "implementation_version": __version__}
-    try:
-        taken, _ = snapshot(store, state)
-    except (Fault, OSError) as error:
-        if getattr(error, "code", None) in PASS_THROUGH:
-            raise
-        # The planner's load_submitted_skill meets the same problem and journals it as usual.
-        record.update(status="source_unavailable", reason=getattr(error, "code", "source_unreadable"))
-        return finish(record, log)
+    if taken is None:
+        taken, reason = setup_snapshot(source, source_root, limits, store)
+        if taken is None:
+            record.update(status="source_unavailable", reason=reason)
+            return finish(record, log)
     record["snapshot_digest"] = taken["digest"]
     # What a task design's generator can use, and its solver when nothing is built ("The reference solution"
     # in local-tasks.md).

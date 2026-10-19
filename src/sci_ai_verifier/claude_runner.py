@@ -270,39 +270,72 @@ def source_bytes(item):
         raise Fault("subject_source_invalid", "Submitted files need valid text or base64 bytes.") from None
 
 
-def stage_skill(directory, source):
-    """Wrap only the instruction body; never load submitted hooks, settings or dynamic shell directives.
+# Instruction files Claude Code reads on its own; a submitted one is never staged under any name.
+CLAUDE_FILES = {"claude.md", "claude.local.md", "agents.md"}
 
-    Scripts are staged as files, for the container a trial runs them in."""
-    plugin = Path(directory) / "plugin"
-    target = plugin / "skills" / "submitted"
+
+def staged(relative):
+    """True when a snapshot path is staged for a trial. A path with a part starting with a dot, where
+    Claude's own configuration lives, is left out rather than refused: a skill shipping `.gitignore`
+    or `.github/` is as testable as one without them."""
+    return not any(part.startswith(".") for part in PurePosixPath(relative).parts)
+
+
+def staging_problem(source):
+    """Why `stage_skill` would refuse this snapshot, or None ("Subject boundary" in local-contract.md).
+
+    Setup asks this of its own snapshot before the model probe, so a skill the trials cannot load
+    costs no planner session: run eaf7da1a's planner had spent about $15 before its first trial
+    found the directive. Every trial asks again when it stages the skill."""
     top = next((item for item in source if item["path"] == "SKILL.md"), None)
     if top is None:
-        raise Fault("unsupported_subject", "A submitted skill needs a top-level SKILL.md.")
+        return "A submitted skill needs a top-level SKILL.md."
     try:
         body = source_bytes(top).decode("utf-8")
     except UnicodeError:
-        raise Fault("unsupported_subject", "SKILL.md must be UTF-8 text.") from None
-    if body.startswith("---\n"):
-        end = body.find("\n---", 4)
-        if end < 0:
-            raise Fault("unsupported_subject", "Submitted skill frontmatter is incomplete.")
-        body = body[end + 4:].lstrip("\n")
-    pins = []
+        return "SKILL.md must be UTF-8 text."
+    if body.startswith("---\n") and body.find("\n---", 4) < 0:
+        return "Submitted skill frontmatter is incomplete."
     for item in source:
         relative = item["path"]
         path = PurePosixPath(relative)
-        raw=source_bytes(item)
-        if (not valid_relative(relative) or any(part.startswith(".") for part in path.parts)
-                or any(part.casefold() in {"claude.md", "claude.local.md", "agents.md"} for part in path.parts)
-                or (path.suffix.lower()==".md" and SHELL_DIRECTIVE.search(raw))
-                or SECRET_BYTES.search(raw)):
-            raise Fault("unsupported_subject", "Submitted configuration or dynamic shell directives cannot be enabled.")
+        if not valid_relative(relative) or any(part.casefold() in CLAUDE_FILES for part in path.parts):
+            return "Submitted Claude configuration cannot be enabled: " + relative
+        if not staged(relative):
+            continue
+        raw = source_bytes(item)
+        if path.suffix.lower() in (".md", ".markdown") and SHELL_DIRECTIVE.search(raw):
+            return "A dynamic shell directive cannot be enabled: " + relative
+        if SECRET_BYTES.search(raw):
+            return "Credential-like content cannot be staged: " + relative
+    return None
+
+
+def stage_skill(directory, source):
+    """Wrap only the instruction body; never load submitted hooks, settings or dynamic shell directives.
+
+    Scripts are staged as files, for the container a trial runs them in. Returns the plugin directory,
+    the pins of the staged files and the paths left out."""
+    problem = staging_problem(source)
+    if problem:
+        raise Fault("unsupported_subject", problem)
+    plugin = Path(directory) / "plugin"
+    target = plugin / "skills" / "submitted"
+    body = source_bytes(next(item for item in source if item["path"] == "SKILL.md")).decode("utf-8")
+    if body.startswith("---\n"):
+        body = body[body.find("\n---", 4) + 4:].lstrip("\n")
+    pins, left_out = [], []
+    for item in source:
+        relative = item["path"]
+        if not staged(relative):
+            left_out.append(relative)
+            continue
+        raw = source_bytes(item)
         payload = ("---\nname: submitted\ndescription: Execute the pinned submitted skill on the given input.\n---\n\n" + body).encode("utf-8") if relative == "SKILL.md" else raw
         atomic_write(target / relative, payload)
         pins.append({"path": relative, "original_sha256": digest(raw), "loaded_sha256": digest(payload)})
     atomic_write(plugin / ".claude-plugin" / "plugin.json", canonical({"name": "verifier-subject", "version": "1.0.0"}))
-    return plugin, pins
+    return plugin, pins, left_out
 
 
 # Undocumented switches present in Claude Code 2.1.268 that stop it answering with a model
@@ -543,7 +576,7 @@ class ClaudeCode:
             prepare_workspace(directory)
             if not self.settings.get("sandbox_image"):
                 raise Fault("sandbox_configuration_required", "A task trial needs the operator's pinned container image.")
-            plugin, pins = stage_skill(directory, source)
+            plugin, pins, left_out = stage_skill(directory, source)
             env = {**isolated_environment(Path(temporary) / "config", self.auth), **NO_SUBSTITUTION}
             for tool in self.settings["external_tools"].values():
                 for key in tool["credential_env"]:
@@ -609,6 +642,6 @@ class ClaudeCode:
                             + substitute["category"] + ") and Claude Code answered it with "
                             + substitute["fallback_model"] + " instead. That answer is not the pinned model's and was not used.")
             result.update(model_id=self.model, refusals=refusals, skill_name=SUBJECT_SKILL, source_pins=pins,
-                          authentication_mode=self.auth, synthetic=False,
+                          source_not_staged=left_out, authentication_mode=self.auth, synthetic=False,
                           boundary="local Linux container; host CLI has Skill and bounded container MCP tools")
             return result

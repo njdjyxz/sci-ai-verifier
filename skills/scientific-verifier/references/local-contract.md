@@ -21,7 +21,11 @@ Scripts, binary input and generated regular files are supported. Submitted
 hooks, settings and dynamic skill shell directives are never enabled. A Markdown file holding
 one, `!` before a command in backticks or a fence opened with three backticks and `!`, is
 refused. An exclamation mark that is itself inline code is text. Run `eaf7da1a`'s biopython
-skill wrote "`!` comment lines are ignored", and every trial was refused. Generated
+skill wrote "`!` comment lines are ignored", and every trial was refused. Setup refuses such
+a skill on its own snapshot, before the model probe and any planner cost; that run's planner
+had spent about $15 before its first trial found the directive. A path with a part starting
+with a dot, where Claude's own configuration lives, is left out of the staged skill and named
+on the trial's receipt, so a skill shipping `.gitignore` or `.github/` still runs. Generated
 files are size/path/credential checked and saved as content-addressed evidence.
 Container cleanup occurs on success, failure and interruption, with a bounded
 container lifetime as a backstop. This is not a claim of VM-level isolation.

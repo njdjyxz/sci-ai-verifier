@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from .agent import ConfigurationError, Runtime
 from .claude_runner import (NO_SUBSTITUTION, ClaudeCode, prepare_workspace, isolated_environment, parse_events,
-                            session_directory, sweep_stale_directories)
+                            session_directory, staging_problem, sweep_stale_directories)
 from .common import Fault, canonical
 from .local import DEADLINE_ENV, OPERATIONS
 from .local_candidates import safe_payload
@@ -225,6 +225,7 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
     settings=load_configuration(config_path)
     adapter = ClaudeCode(executable=executable, model=model, auth=auth, log=log,settings=settings)
     preflight = adapter.preflight()
+    taken = None
     if settings["sandbox_image"]:
         # Probe the container engine before spending a planner session. The CLI preflight
         # reports `live_execution_tested: false` and never touches Docker, so a stopped
@@ -232,17 +233,29 @@ def _verify(source_path, *, workspace, instructions, model, auth, executable, ti
         # whose every execution claim was already doomed.
         from .sandbox import DockerSandbox
         preflight["sandbox"] = DockerSandbox(workspace, settings).preflight()
+        # A skill the trials cannot load is refused here, on the snapshot the environment is built
+        # from, rather than at the first trial after the whole plan was paid for (run eaf7da1a).
+        from .environment import setup_snapshot
+        from .ingest import source_items
+        from .local_config import source_limits
+        from .storage import Store
+        from .tools import DEFAULT_LIMITS
+        store = Store(workspace)
+        taken, _ = setup_snapshot(source, source if source.is_dir() else source.parent,
+                                  {**DEFAULT_LIMITS, **source_limits(settings)}, store)
+        problem = staging_problem(source_items(store, taken)) if taken else None
+        if problem:
+            raise Fault("unsupported_subject", problem + " The trials could not stage this skill, so the "
+                        "verification stops before any planner session.")
     preflight["model_probe"] = probe_model(adapter)
     environment = None
     if settings["sandbox_image"]:
         # After the probe, so a CLI that cannot serve the model costs no download; before the run
         # exists, so nothing the planner does can reach the one step that downloads packages.
         from .environment import prepare_environment, remove_environment, report_summary
-        from .local_config import source_limits
-        from .tools import DEFAULT_LIMITS
         environment = prepare_environment(source, source if source.is_dir() else source.parent, settings,
                                           workspace=workspace, limits={**DEFAULT_LIMITS, **source_limits(settings)},
-                                          log=log)
+                                          log=log, taken=taken)
         preflight["environment"] = report_summary(environment)
         if environment["status"] == "built":
             if cleanups is not None:

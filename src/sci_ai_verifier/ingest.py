@@ -189,6 +189,17 @@ def snapshot(store, state):
     return record, payload
 
 
+def source_items(store, record):
+    """A snapshot's files as the subject runner stages them: text as `content`, bytes as `base64`."""
+    import base64
+    items = []
+    for entry in record["files"]:
+        raw = store.get(entry["digest"])
+        items.append({"path": entry["path"], **({"content": raw.decode("utf-8")} if entry["encoding"] == "utf-8"
+                                                 else {"base64": base64.b64encode(raw).decode()})})
+    return items
+
+
 def verified_snapshot(store, state, snapshot_id=None, snapshot_digest=None):
     record = store.get_json(state["source_ref"])
     expected = digest(canonical({"policy": record["policy"], "files": record["files"]}))
