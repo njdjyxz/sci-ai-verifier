@@ -252,12 +252,17 @@ def case_gap(candidate, counted, grade, supported, departures=False):
             "summary": summary}
 
 
-def audit(candidate, claim, settings, selection, references, *, critique=None, rounds=1, judged=True):
+def audit(candidate, claim, settings, selection, references, *, critique=None, rounds=1, accepted=False):
     """Freeze the plan, its evidence ceiling and the critique that settled the grade.
 
-    `judged` is false when the planner accepts the grade this design's critique already settled at:
-    that grade already holds any departure's limit, which applies to the proposal the critique judged.
+    `accepted` is False while the critique judges this proposal. When the planner accepts the grade
+    this exact design's critique already settled at, it is that grade, `None` included, and the settled
+    ceiling is held to it: a departure's hold applies to the proposal the critique judged, so it is
+    neither applied again to the accepted grade nor lost when it held the design to no grade. Before
+    this, accepting a design a departure held to no grade at C or D meant proposing the ceiling again,
+    and the design regained C or D.
     """
+    accepting = accepted is not False
     problems = []
     if len(candidate["cases"]) < TASK_MINIMUM:
         problems.append("insufficient_distinct_cases")
@@ -276,9 +281,11 @@ def audit(candidate, claim, settings, selection, references, *, critique=None, r
     settled = weaker(weaker(proposed, supported if supported in graded else None), case_ceiling)
     # Run 2bef9e0d's critique worked out that the skill's two-step formula passed only inside the tolerance,
     # agreed with A, and listed it as a coverage gap. A departure now holds the grade below the proposal.
-    held = bool(judged and critique and critique.get("departures"))
+    held = bool(not accepting and critique and critique.get("departures"))
     if held:
         settled = weaker(settled, BELOW.get(proposed))
+    if accepting:
+        settled = weaker(settled, accepted)
     return {
         "kind": "local-plan-audit", "candidate_fingerprint": fingerprint(candidate),
         "selection_digest": digest(canonical(selection)),

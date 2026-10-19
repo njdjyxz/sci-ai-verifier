@@ -542,7 +542,7 @@ def select(store, state, claim_id, work, args, subject):
                  "claim_id": claim_id}
     work["selection_ref"] = keep(store, state, selection)
     audit_record = audit(candidate, claim, settings, selection, references, critique=critique, rounds=rounds,
-                         judged=not accepting)
+                         accepted=accepted if accepting else False)
     work["audit_ref"] = keep(store, state, audit_record)
     work["negotiation_refs"].append(work["audit_ref"])
     if not audit_record["mechanically_accepted"]:

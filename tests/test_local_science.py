@@ -330,12 +330,49 @@ class DecisionTests(unittest.TestCase):
                          {"r":dict(RETRIEVED)},critique=critique)
             self.assertEqual((record["settled_ceiling"],record["held_by_departures"]),(held,True))
         accepted=audit(candidate,{"scope":"s"},{"max_subject_calls":64},{**self.selection,"target_grade":"B"},
-                       {"r":dict(RETRIEVED)},critique=critique,judged=False)
+                       {"r":dict(RETRIEVED)},critique=critique,accepted="B")
         self.assertEqual((accepted["settled_ceiling"],accepted["held_by_departures"]),("B",False))
         clean=audit(candidate,{"scope":"s"},{"max_subject_calls":64},self.selection,{"r":dict(RETRIEVED)},
                     critique={**critique,"departures":[]})
         self.assertEqual((clean["settled_ceiling"],clean["held_by_departures"]),("A",False))
         self.assertIn("departures",POLICY)
+
+    def test_accepting_a_design_a_departure_held_to_no_grade_settles_at_no_grade(self):
+        """A departure holds C, or a judged design's D, to no grade. Accepting that is proposing the ceiling
+        again, since there is no lower grade to name, and the settled grade must stay none: the planner of
+        such a design used to regain C or D on acceptance, and the departure's hold vanished with it."""
+        verdicts=[{"case_id":str(i),"verdict":"counts","reason":"r","replacement":"","criterion_given":""}
+                  for i in range(4)]
+        critique={"supported_grade":"C","findings":["f"]*len(TASK_CRITIQUE_RUBRIC["criteria"]),"objections":[],
+                  "required_revisions":[],"departures":["Followed literally, the formula keeps the loading."],
+                  "case_verdicts":verdicts}
+        # Two trials hold the reference to C.
+        selection={**self.selection,"target_grade":"C","trials_per_case":2}
+        judged=audit(design(4,ref="r"),{"scope":"s"},{"max_subject_calls":64},selection,{"r":dict(RETRIEVED)},
+                     critique=critique)
+        self.assertEqual((judged["settled_ceiling"],judged["held_by_departures"]),(None,True))
+        accepted=audit(design(4,ref="r"),{"scope":"s"},{"max_subject_calls":64},selection,{"r":dict(RETRIEVED)},
+                       critique=critique,accepted=None)
+        self.assertEqual((accepted["settled_ceiling"],accepted["held_by_departures"]),(None,False))
+        # The same for a judged design, whose ceiling is D.
+        from sci_ai_verifier.local_tasks import METHOD_VERSION
+        self.references={"r":{**RETRIEVED,"text":"Quoted rule."}}
+        cases=[{**quoted(index,"r"),"outputs":[{"field":"advice","type":"judged","expected":["q"],"source":"judged",
+                                              "criteria":[{"question":"q","reference_ref":"r","source_quote":"Quoted rule."}],
+                                              "fail_example":"wrong"}]} for index in range(2)]
+        design_d={"method":"task","method_version":METHOD_VERSION,"name":"Judged","scope":"s","limitations":"l",
+                  "solver":{"code":"print(1)"},"cases":cases}
+        critique_d={**critique,"supported_grade":"D","case_verdicts":verdicts[:2]}
+        selection_d={**self.selection,"target_grade":"D"}
+        judged=audit(design_d,{"scope":"s"},{"max_subject_calls":64},selection_d,self.references,critique=critique_d)
+        self.assertEqual((judged["evidence_ceiling"],judged["settled_ceiling"]),("D",None))
+        accepted=audit(design_d,{"scope":"s"},{"max_subject_calls":64},selection_d,self.references,
+                       critique=critique_d,accepted=None)
+        self.assertIsNone(accepted["settled_ceiling"])
+        # Accepting a grade the critique settled at, B after A, still holds there and no lower.
+        held=audit(design(4,ref="r"),{"scope":"s"},{"max_subject_calls":64},{**self.selection,"target_grade":"B"},
+                   {"r":dict(RETRIEVED)},critique={**critique,"supported_grade":"A"},accepted="B")
+        self.assertEqual(held["settled_ceiling"],"B")
 
 
 class IndependentSessionTests(unittest.TestCase):
