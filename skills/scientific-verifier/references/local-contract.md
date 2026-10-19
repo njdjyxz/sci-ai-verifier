@@ -431,7 +431,9 @@ One disclosed retry is the exception. When `write_report_card` is called, Python
 re-runs once, in full, each claim whose execution a subject-trial fault stopped: a
 safety refusal, a model switch, a CLI failure or timeout, or a container failure. The
 retry uses the same frozen plan, model and inputs. A wrong answer is never retried,
-because it is evidence; neither is a security fault or a failure of Python's own checks.
+because it is evidence; neither is a security fault or a failure of Python's own checks,
+nor a fault that stopped a critique, judge or assessor session before the plan was fixed,
+which stopped no trial.
 The first attempt's record and receipts stay in the report beside the retry's. A claim
 is not retried, and the report says why, when its plan settled no execution grade (the
 documentary step after it needs the planner), when the subject-call budget cannot

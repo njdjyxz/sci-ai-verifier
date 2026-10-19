@@ -592,6 +592,8 @@ def select(store, state, claim_id, work, args, subject):
                                "difference outside its tolerance, and propose its ceiling, or accept "
                                + (settled_grade or "that this design supports no execution grade") + "."}
                    if held else {})}
+    # The plan the trials run; the end-of-run re-run and fallback cover only a fault that stopped it.
+    work["fixed_audit_ref"] = work["audit_ref"]
     state["claim_states"][claim_id] = "local_ready"
     return {"outcome": "local_plan_fixed", "candidate": candidate,
             "selection_ref": work["selection_ref"], "audit": audit_record}
@@ -905,6 +907,15 @@ RETRY_REPORT_SECONDS = 300
 DEADLINE_ENV = "SCI_VERIFIER_ATTEMPT_DEADLINE"
 
 
+def trial_stopped(work, stopped):
+    """True when `stopped`, the claim's terminal record, is a subject-trial fault that stopped the plan the
+    claim had fixed. A critique, judge or assessor session that fails before the plan is fixed, such as a
+    critique that times out in a later negotiation round, shares these fault codes but stopped no trial:
+    re-running the claim would execute an earlier design the planner never settled."""
+    return (stopped.get("fault") in RETRY_FAULTS and work.get("fixed_audit_ref") is not None
+            and work["fixed_audit_ref"] == work.get("audit_ref"))
+
+
 def retry_stopped_claims(store, state, subject):
     """Re-run once, in full, each claim a subject-trial fault stopped, and record why not otherwise."""
     import os
@@ -917,7 +928,7 @@ def retry_stopped_claims(store, state, subject):
                 or not work.get("outcome_ref") or not work.get("audit_ref") or not work.get("selection_ref")):
             continue
         first = store.get_json(work["outcome_ref"])
-        if first.get("fault") not in RETRY_FAULTS:
+        if not trial_stopped(work, first):
             continue
         trials = len(store.get_json(work["candidate_ref"])["cases"]) * store.get_json(work["selection_ref"])["trials_per_case"]
         record = {"kind": "local-retry", "claim_id": claim_id, "fault": first["fault"], "first_attempt_ref": work["outcome_ref"]}
@@ -979,7 +990,7 @@ def fallback_documentary(store, state, subject):
                 or not work.get("outcome_ref")):
             continue
         stopped = store.get_json(work["outcome_ref"])
-        if stopped.get("fault") not in RETRY_FAULTS:
+        if not trial_stopped(work, stopped):
             continue
         fallback_for = {"fault": stopped["fault"], "limitation_ref": work["outcome_ref"], "reason": stopped["reason"]}
         record = {"kind": "local-fallback", "claim_id": claim_id, **fallback_for}

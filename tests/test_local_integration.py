@@ -819,6 +819,25 @@ class GradeNegotiationTests(unittest.TestCase):
         self.assertIsNone(row["fallback"])  # a security fault is not a trial fault a D may stand in for
         self.assertEqual(len(h.subject.requests),1)
 
+    def test_a_critique_that_stops_in_a_later_round_is_neither_re_run_nor_given_a_fallback(self):
+        """The re-run was keyed on the fault code alone, which a critique session shares with a trial: a
+        critique timing out in round two left round one's unsettled plan for the end-of-run re-run to
+        execute and grade."""
+        h=self.h
+        four=h.candidate(lookup=False,rows=fixture.ROWS+("zeta",),name="Fixture table, four rows")
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=self.critic("B")):
+            h.select(self.key,target_grade="A")
+        self.assertEqual(h.data["outcome"],"local_grade_revision_required")
+        with patch("sci_ai_verifier.documentary.critique_tasks",side_effect=Fault("claude_timeout","fixture")):
+            h.select(four,target_grade="A")
+        self.assertEqual((h.data["outcome"],h.data["claim_states"][h.claim_id]),("claude_timeout","terminal_operational"))
+        with patch("sci_ai_verifier.documentary.assess",side_effect=AssertionError("must not run")):
+            h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual((row["record"]["code"],row["record"]["evidence_grade"]),("claude_timeout",None))
+        self.assertEqual((row["retry"],row["fallback"]),(None,None))
+        self.assertEqual(h.subject.requests,[])
+
     def test_a_re_run_the_time_left_cannot_cover_is_skipped_and_says_why(self):
         import os,time
         from sci_ai_verifier.local import DEADLINE_ENV
