@@ -194,6 +194,13 @@ JUDGE_TIMEOUT_SECONDS = 300
 REPLY_TOOL = "StructuredOutput"
 REPLY_TURNS = 4
 INDEPENDENCE = "fresh host-selected no-tool session; no planner conversation"
+# A session that fails before it answers in shape is started once more, fresh: a rate limit, a timeout, a
+# process that exits without a result. Nothing scientific was observed, so a second session is not grade
+# shopping. A reply in shape, whatever it says, is never re-rolled, and a session the schema stopped is not
+# started again: it had its turns to correct its shape. A critique's 429 used to end its claim outright.
+SESSION_ATTEMPTS = 2
+RETRIED_FAULTS = {"claude_timeout", "claude_output_limit", "claude_unavailable", "claude_incomplete",
+                  "claude_protocol_error", "claude_identity_error"}
 
 
 def text(maximum, description=None):
@@ -329,13 +336,29 @@ def unshaped(raw):
 
 def isolated_answer(adapter,packet,*,role,system_prompt,schema,limit=64000,timeout=ASSESSOR_TIMEOUT_SECONDS,
                     effort=None,max_bytes=ASSESSOR_OUTPUT_BYTES):
-    """One fresh session over an immutable packet, answering in `schema`; returns its parsed events.
+    """A fresh session over an immutable packet, answering in `schema`; returns its parsed events, with
+    `session_attempts` saying how many sessions were started.
 
     Claude Code hands a reply that breaks the schema back to the session with the reason, so
-    the session corrects its own shape. One that never meets it is `<role>_response_invalid`.
+    the session corrects its own shape. One that never meets it is `<role>_response_invalid`. A
+    session that fails before it answers is started once more (SESSION_ATTEMPTS).
     """
     if len(canonical(packet))>limit:
         raise Fault(role+"_packet_limit","The independent "+role+" packet exceeds its byte limit.")
+    for attempt in range(1,SESSION_ATTEMPTS+1):
+        try:
+            response,session=one_session(adapter,packet,role=role,system_prompt=system_prompt,schema=schema,
+                                         timeout=timeout,effort=effort,max_bytes=max_bytes)
+        except Fault as error:
+            if attempt==SESSION_ATTEMPTS or error.code not in RETRIED_FAULTS|{role+"_unavailable"}:
+                raise
+            continue
+        response["session_attempts"]=attempt
+        return response,session
+
+
+def one_session(adapter,packet,*,role,system_prompt,schema,timeout,effort,max_bytes):
+    """One session, started and read; the caller decides whether a failure earns another."""
     session=str(uuid4())
     with session_directory("sci-verifier-"+role+"-",getattr(adapter,"log",None)) as temporary:
         directory=Path(temporary)/"workspace"
@@ -375,6 +398,7 @@ def assess(adapter,packet):
         "Use only the fixed rubric and packet. Do not claim tested scientific performance. Return your assessment in the "
         "structured output; its schema describes each field.")
     return {"assessment":validate_assessment(response["structured_output"],packet),"session_id":session,
+            "session_attempts":response.get("session_attempts",1),
             "observed_model_ids":response["observed_model_ids"],"packet_ref":digest(canonical(packet)),
             "rubric_ref":RUBRIC_REF,"usage":response["usage"],"total_cost_usd":response["total_cost_usd"],
             "independence":INDEPENDENCE,"ai_judgment":True}
@@ -433,7 +457,8 @@ def critique_tasks(adapter, packet):
                                         max_bytes=CRITIC_OUTPUT_BYTES)
     sections = [item["text"] for item in (packet.get("claim") or {}).get("sections") or []]
     return {**validate_task_critique(response["structured_output"], case_ids, sections),
-            "session_id": session, "observed_model_ids": response["observed_model_ids"], "effort": CRITIC_EFFORT,
+            "session_id": session, "session_attempts": response.get("session_attempts",1),
+            "observed_model_ids": response["observed_model_ids"], "effort": CRITIC_EFFORT,
             "packet_ref": digest(canonical(packet)), "rubric_ref": TASK_CRITIQUE_REF, "usage": response["usage"],
             "total_cost_usd": response["total_cost_usd"], "independence": INDEPENDENCE, "ai_judgment": True}
 
@@ -475,7 +500,7 @@ def judge_pair(adapter, packet):
         except Fault:
             raise Fault("judge_response_invalid", "A judge must answer inside its fixed rubric.") from None
         safe_payload(value)
-        replies.append({"answers": value["answers"], "session_id": session,
+        replies.append({"answers": value["answers"], "session_id": session, "session_attempts": response.get("session_attempts",1),
                         "observed_model_ids": response["observed_model_ids"],
                         "total_cost_usd": response["total_cost_usd"]})
     return replies

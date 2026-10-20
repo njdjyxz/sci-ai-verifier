@@ -655,7 +655,11 @@ section left out, held twice or unknown is refused as `sections_incomplete`, nam
   reply still counts. Runs `b573cd15` and `4f16f74d` each lost a claim when a critique asked
   for `bash` and Claude Code refused it. A session that ends without a
   reply in shape is `critic_response_invalid` or `assessor_response_invalid`, an
-  operational failure, never a grade and never a scientific finding. A critique holds
+  operational failure, never a grade and never a scientific finding. A session that fails
+  before it answers at all, on a rate limit, a timeout or an exit without a result, is
+  started once more, fresh, and its record says how many sessions were started; a reply in
+  shape, whatever it says, is never re-rolled, and a session the schema stopped is not
+  started again. A critique holds
   `supported_grade` (`A`, `B`, `C`, `D` or `none`), `findings` (exactly one string per
   rubric criterion, in order), `objections`, `required_revisions`, `coverage_gaps` and
   `departures` (each at most eight strings, empty when there are none), `unsourced_rules`

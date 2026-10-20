@@ -614,6 +614,56 @@ class ReplySchemaSessionTests(unittest.TestCase):
         self.assertEqual(response["structured_output"],{"answer":"9"})
         self.assertEqual([(call["name"],call["completed"]) for call in response["tool_calls"]],[("Bash",False)])
 
+    def test_a_session_that_fails_before_answering_is_started_once_more(self):
+        """A critique's 429 used to end its claim outright; nothing scientific was observed, so a second fresh
+        session is not grade shopping. A reply in shape, and a session the schema stopped, are never retried."""
+        from sci_ai_verifier.claude_runner import ClaudeCode
+        from sci_ai_verifier.documentary import isolated_answer
+        reply={"answer":"9"}
+
+        def process_for(first):
+            calls=[]
+
+            def process(command,**kwargs):
+                session=command[command.index("--session-id")+1]
+                calls.append(session)
+                if len(calls)==1 and first=="raise":
+                    raise Fault("claude_timeout","fixture")
+                failed=len(calls)==1 and first is not None
+                result={"type":"result","subtype":first if failed else "success","is_error":failed,"session_id":session,
+                        "result":canonical(reply).decode()}
+                if not failed:
+                    result["structured_output"]=reply
+                events=[{"type":"assistant","session_id":session,"message":{"model":"m","role":"assistant","content":[
+                            {"type":"tool_use","id":"toolu_1","name":"StructuredOutput","input":reply}]}},result]
+                return (1 if failed else 0),b"".join(canonical(event)+b"\n" for event in events),b""
+            return process,calls
+
+        def ask(first):
+            process,calls=process_for(first)
+            with patch.dict(os.environ,{"CLAUDE_CODE_OAUTH_TOKEN":"fake-oauth-for-boundary-test"}):
+                response,session=isolated_answer(ClaudeCode(auth="subscription",process=process),{"evidence":"e"},
+                                                 role="critic",system_prompt="Answer.",schema=self.SCHEMA)
+            return response,session,calls
+        response,session,calls=ask(None)
+        self.assertEqual((response["session_attempts"],len(calls)),(1,1))
+        for first in ("error_during_execution","raise"):
+            response,session,calls=ask(first)
+            self.assertEqual((response["structured_output"],response["session_attempts"]),(reply,2),first)
+            self.assertEqual(len(set(calls)),2,"the second session is fresh")
+            self.assertEqual(session,calls[1])
+        # A session the schema stopped had its turns to correct its shape; it is not started again.
+        with self.assertRaises(Fault) as caught:
+            ask("error_max_turns")
+        self.assertEqual(caught.exception.code,"critic_response_invalid")
+        # Two failures are the limitation they always were.
+        process,calls=process_for("error_during_execution")
+        always=lambda command,**kwargs:(1,process(command,**kwargs)[1],b"")  # noqa: E731
+        with patch.dict(os.environ,{"CLAUDE_CODE_OAUTH_TOKEN":"fake-oauth-for-boundary-test"}),self.assertRaises(Fault) as caught:
+            isolated_answer(ClaudeCode(auth="subscription",process=always),{"evidence":"e"},role="critic",
+                            system_prompt="Answer.",schema=self.SCHEMA)
+        self.assertEqual((caught.exception.code,len(calls)),("critic_unavailable",2))
+
     def test_a_session_whose_replies_never_met_the_schema_is_an_invalid_reply(self):
         """Probed live on 2026-09-28: a session whose replies the schema refused twice ended as
         error_max_turns, exit code 1."""
