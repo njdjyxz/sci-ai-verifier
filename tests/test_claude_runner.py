@@ -162,12 +162,16 @@ class RunnerTests(unittest.TestCase):
                                                                    {"path": "scripts/fit.py", "content": "print('fit')"}])
             self.assertEqual((plugin / "skills/submitted/scripts/fit.py").read_text(), "print('fit')")
             self.assertEqual(([pin["path"] for pin in pins], left_out), (["SKILL.md", "scripts/fit.py"], []))
-        # An exclamation mark that is itself inline code is text, as in run eaf7da1a's biopython reference.
-        with tempfile.TemporaryDirectory() as temporary:
-            stage_skill(Path(temporary), [{"path": "SKILL.md", "content": "Plain skill"},
-                                          {"path": "notes.md", "content": "`#`, `;`, or `!` comment lines are ignored"}])
+        # An exclamation mark that is itself inline code is text, as in run eaf7da1a's biopython reference, and
+        # Claude Code expands neither a `!` glued to other text nor a tilde fence.
+        for content in ("`#`, `;`, or `!` comment lines are ignored", "see `!`whoami` here", "a!`not run`",
+                        "~~~!\necho evil\n~~~"):
+            with tempfile.TemporaryDirectory() as temporary:
+                stage_skill(Path(temporary), [{"path": "SKILL.md", "content": "Plain skill"},
+                                              {"path": "notes.md", "content": content}])
         for filename, content in (("SKILL.md", "!`echo evil`"), ("SKILL.md", "```!\necho evil\n```"),
                                   ("notes.md", "!`echo evil`"), ("notes.md", "Run it: !`ls -l` first"),
+                                  ("notes.md", "Run it:\t!`ls -l` first"), ("notes.md", "see !`echo\nevil` now"),
                                   ("notes.md", "```!\necho evil\n```"), ("guide.markdown", "!`echo evil`"),
                                   ("docs/CLAUDE.md", "Plain"), ("AGENTS.md", "Plain"),
                                   ("scripts/key.txt", "token ghp_" + "a" * 40)):

@@ -124,6 +124,18 @@ class DeclarationTests(unittest.TestCase):
         self.assertEqual(requirements(record), ["narwhals==2.24.0", "numpy==2.4.6", "pandas", "scipy<2,>=1.13"])
         self.assertEqual(record["rejected"], [])
 
+    def test_an_interpreter_option_is_dropped_with_its_value_like_a_hash(self):
+        """pydeseq2's one install command passed --python .venv-pydeseq2/bin/python and was rejected whole, so
+        its trials lacked PyDESeq2; the trial's image supplies the interpreter."""
+        text = ("```bash\nuv pip install --python .venv-pydeseq2/bin/python pydeseq2==0.5.0\n"
+                "pip install -p /usr/bin/python3 numpy\npip install --python=/opt/py scipy\n```\n")
+        record = Declarations([("SKILL.md", text)]).record()
+        self.assertEqual(requirements(record), ["numpy", "pydeseq2==0.5.0", "scipy"])
+        self.assertEqual(record["rejected"], [])
+        self.assertEqual([note["note"] for note in record["notes"]], ["python_option_dropped"] * 3)
+        # The interpreter's path never becomes a requirement.
+        self.assertFalse(any("venv" in item["name"] or "/" in item["name"] for item in record["requirements"]))
+
     def test_requirements_files_and_pyproject(self):
         record = Declarations([
             ("requirements.txt", "# pinned\nnumpy==2.4.6 \\\n    --hash=sha256:" + "1" * 64 + "\n-r extra/requirements-dev.txt\n"

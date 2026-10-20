@@ -20,7 +20,9 @@ It must invoke the pinned submitted Skill before producing its answer.
 Scripts, binary input and generated regular files are supported. Submitted
 hooks, settings and dynamic skill shell directives are never enabled. A Markdown file holding
 one, `!` before a command in backticks or a fence opened with three backticks and `!`, is
-refused. An exclamation mark that is itself inline code is text. Run `eaf7da1a`'s biopython
+refused. The forms are the ones Claude Code itself expands: the `!` at the start of a line
+or after a space, the command possibly spanning lines. An exclamation mark that is itself
+inline code is text. Run `eaf7da1a`'s biopython
 skill wrote "`!` comment lines are ignored", and every trial was refused. Setup refuses such
 a skill on its own snapshot, before the model probe and any planner cost; that run's planner
 had spent about $15 before its first trial found the directive. A path with a part starting
@@ -71,7 +73,8 @@ themselves (`pip`, `setuptools`, `wheel`, `uv`) are rejected, and so is a comman
 sets any option other than a harmless one such as `--upgrade` or `--quiet`, so a skill
 cannot choose the index. A `-r` naming a requirements file inside the snapshot is
 skipped, because that file is read on its own. A `--hash` value is dropped, because the
-verifier hashes what it downloads. At most 100 declared requirements are accepted.
+verifier hashes what it downloads, and a `--python` interpreter, because the trial's image
+supplies it. At most 100 declared requirements are accepted.
 
 **Imports.** A top-level module the skill's code imports, in its `.py` files and the
 Python code blocks of its Markdown, that no declared requirement provides is added as a
@@ -367,7 +370,9 @@ scikit-survival's promise of no network calls.
 
 The `Local profile` matrix in workflow.md and `Local profile tools` in
 tool-contracts.md define the same legality. Every internal mutation uses the
-existing run ID, state token, step/repair budgets and journal. The planner must
+existing run ID, state token, step/repair budgets and journal. The repair and
+illegal-transition budgets are run-wide here, 32 and 8, and exhausting one ends the
+run with no report; the claim-local limits of `workflow.md` are the broader target's. The planner must
 lookup before discovering. References and candidates are immutable objects;
 selection pins the exact candidate before any subject observation. A local
 candidate can be reused offline by digest, including its reference evidence.

@@ -40,6 +40,8 @@ INSTALLERS = {"pip", "setuptools", "wheel", "uv"}
 REASONS = {"direct_reference", "editable_install", "environment_marker", "index_option", "installer_package",
            "invalid_pyproject", "invalid_requirement", "local_path", "requirements_file_outside_snapshot",
            "shell_syntax", "too_many_requirements", "unparseable_command", "unsupported_option"}
+# An option that only selects the interpreter, which the trial's image supplies ("Skill environment").
+INTERPRETER_OPTIONS = {"--python", "-p"}
 HARMLESS_OPTIONS = {"-U", "--upgrade", "-q", "-qq", "-qqq", "--quiet", "-v", "--verbose", "--no-cache-dir",
                     "--disable-pip-version-check", "--no-input", "--user", "--system", "--force-reinstall",
                     "--no-warn-script-location", "--prefer-binary"}
@@ -258,6 +260,12 @@ class Declarations:
                     index += 1
                     continue
                 option = word.split("=", 1)[0]
+                if option in INTERPRETER_OPTIONS:
+                    # pydeseq2's one install command names a virtual environment's interpreter; the trial's
+                    # image supplies the interpreter, so the option is dropped with its value, as --hash is.
+                    self.notes.append({"source": source, "note": "python_option_dropped"})
+                    index += 1 if "=" in word else 2
+                    continue
                 return self.reject(source, text, "editable_install" if option in ("-e", "--editable")
                                    else "index_option" if option in INDEX_OPTIONS else "unsupported_option")
             # shlex returns unquoted shell punctuation as tokens of its own; a quoted

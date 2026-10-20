@@ -25,10 +25,12 @@ from .storage import atomic_write, no_links
 # were tested on.
 MIN_VERSION = (2, 1, 268)
 SUBJECT_SKILL = "verifier-subject:submitted"
-# A dynamic shell directive ("Subject boundary" in local-contract.md): `!` before a backtick-quoted command, or a
-# fence opened with ```!. An exclamation mark that is itself inline code is text: run eaf7da1a's biopython skill
-# wrote "`!` comment lines are ignored", and the plain byte test refused every trial.
-SHELL_DIRECTIVE = re.compile(rb"(?<!`)!`[^`\n]+`|```!")
+# A dynamic shell directive ("Subject boundary" in local-contract.md), in exactly the two forms Claude Code
+# 2.1.280 expands (read from its binary on 2026-10-19): a backtick-quoted command after `!` at the start of a
+# line or after whitespace, the command free to span lines, or a fence opened with ```!. A tilde fence and a
+# `!` glued to other text are not expanded. An exclamation mark that is itself inline code is text: run
+# eaf7da1a's biopython skill wrote "`!` comment lines are ignored", and the plain byte test refused every trial.
+SHELL_DIRECTIVE = re.compile(rb"(?m)(?:^|(?<=\s))!`[^`]+`|```!")
 
 
 def terminate_tree(process):
