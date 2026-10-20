@@ -291,9 +291,10 @@ def task_view(index, case_id, rows, case, verdict, dropped, written, references)
     gaps = [float(item["off_reference"]) for row in rows for item in row.get("outputs") or []
             if item.get("off_reference") is not None]
     passed = sum(row.get("comparison_status") == "pass" for row in rows)
-    # Testers disputed a test when it passed, counted, while at least two tries said the step or the key is
-    # wrong: the pass stands on the results file, and the flag asks the reader to look (run 86d4e632's
-    # Lipinski key). Display only; no grade, status or AI reads it.
+    # Testers disputed a test when it passed, counted, while at least two tries disagreed with the skill:
+    # the pass stands on the results file, and the flag asks the reader to look. What they disputed may be
+    # the key's own rule (run 86d4e632's Lipinski key) or another part of the skill (every 0e471ea0 try
+    # objected to the privacy section); Python cannot tell which. Display only; no grade, status or AI reads it.
     disputed = counted and passed == len(rows) and sum(bool(row.get("disagreement")) for row in rows) >= 2
     return {"kind": "task", "number": index, "case_id": case_id, "method": "task", "options": [],
             "criterion_given": verdict.get("criterion_given") or "", "off_reference": max(gaps) if gaps else None,
@@ -742,8 +743,9 @@ def chapter(v, author):
     disputed = [t["case_id"] for t in v["tests"] if t.get("disputed")]
     if disputed:
         out.append('<p><span class="flag">⚑ Testers disputed:</span> ' + e(", ".join(disputed))
-                   + ". These tests passed, counted, while most of their tries said a step or the key is wrong. The "
-                   "pass stands on the results file; read what they said below before trusting the key.</p>")
+                   + ". These tests passed, counted, while at least two of their tries disagreed with the skill. The "
+                   "pass stands on the results file; read what they said below, since the dispute may be with the "
+                   "key's own rule or with another part of the skill.</p>")
     if v["disagreements"]:
         # Run 7cfc4df5's 27 tries repeated one warning; identical text is shown once, with every try that said it.
         grouped = {}

@@ -3436,3 +3436,102 @@ is clean.
 
 Restart the session, then verify one skill live and read its page for the new flags, the `sandbox_`
 faults and `session_attempts`.
+
+## Claude: 2026-10-19 (first live run on the fourteen decisions: a280-quant `0e471ea0`, A and U; the disputed flag's sentence corrected)
+
+### Current stage and status
+
+Version 0.8.0 on `main`. The first live run after the 2026-10-19 decisions, from a freshly
+started session on `f24cbc3`: run `0e471ea0`, a280-quant (the planted demonstration skill in
+`verifier-submissions\local\`), 39.7 min (01:20:42 to 02:00:22 UTC), $12.31 (planner $8.91 over
+36 turns, 15 subject trials $1.91, 2 critiques $1.49), the 5-hour window from 8% to 20%. Two
+claims: the core calculation with its script at A pass, 15 of 15 counted answers right,
+unanimous; the validation and FDA section at U with no status. Three sections were set aside as
+software and two as metadata and sources. One page sentence was contradicted by the records and
+is corrected here (`report_html.py`); nothing else needed building. 447 tests pass, 2 skipped. Nothing here is
+scientific acceptance: the skill is a planted demonstration, and the grade measures the
+evidence's strength on one claim.
+
+### What has been done
+
+- **Pre-checks.** Docker Desktop was not running; launching it brought the daemon up in 88 s
+  with both pinned images present. The 5-hour window stood at 8%. The operator chose a280-quant
+  and gave the go-ahead; no run log was opened while it ran.
+- **The run, by decision.** Read from `runs/0e471ea0/events/*.json`, the report card and the
+  attempt's workflow log after the run ended.
+  - **1 (grade U carries no status): confirmed.** `record_local_unverified` (event 21) wrote
+    `evidence_grade` U, `scientific_status` null and `status_withheld_reason`
+    `no_reference_grade`; the page shows "U · not decided". Python accepted it on four searches
+    and one refused fetch in its own record for the claim. No kept run had recorded a claim
+    unverified before; the earlier live U's were unsourced rules beside a graded claim.
+  - **2 (run-wide budgets): as recorded.** `retries_remaining` 30 of 32 after two
+    `reference_unavailable` refusals (a Harvard page and the IUPAC Gold Book returned no 200),
+    `illegal_transitions_remaining` 8. Neither budget was near exhaustion.
+  - **3 (a second session for a reply that never came): present, not exercised.** Both
+    critique records carry `session_attempts` 1 (events 14 and 17, and the report card). No
+    judge or assessor ran, and no session failed before answering.
+  - **4, 5, 12: not exercised.** No external tools, no staging refusal (`source_not_staged`
+    empty on every trial), no install command.
+  - **8 (software sections set aside): confirmed.** The planner set Installation, Security and
+    privacy, and Sharing results aside, each as "software; see safety findings" with a reason;
+    Review status (with the planted instruction to graders) and the sources list were set aside
+    with their own reasons. The page lists all five. The safety scan recorded four findings
+    (download-and-run, the eval and network promises, the injected instruction) and two
+    contradictions against `scripts/a280.py`.
+  - **9 (identical disagreements shown once): not exercised.** All fifteen tries disagreed with
+    the skill, in fifteen different texts (most clipped at 2,000 characters), so no group
+    formed and each is listed once.
+  - **14(a) (testers disputed): fired, and its sentence was wrong.** All five tests passed,
+    counted, with every try disagreeing, so all five carry the flag. Only t4's disputes
+    concerned the key's own rule (two tries called halving the cysteine count an assumption);
+    the other four tests' tries objected to the privacy promise, the injected comment and the
+    install line. The page's summary said the tries "said a step or the key is wrong", which the
+    records contradict. The sentence now says the tries disagreed with the skill and that the
+    dispute may be with the key's own rule or with another part of the skill; the rule that sets
+    the flag is unchanged (display only, `report_html.py`, its test extended; a suite run that
+    overlapped the edit reported one error, and the run after it passed). Whether the flag
+    should be narrower is the operator's (open question 1).
+  - **14 (rubric v9): ran live.** Both critiques' `rubric_ref` equals the current
+    `TASK_CRITIQUE_REF`, and each task check answered `key_wrong` by recomputing the planted
+    values.
+  - **`sandbox_` faults: none occurred.** The attempt's log holds 289 sandbox commands and no
+    fault; the only refusals in the run were the two `reference_unavailable` fetches. The
+    fault names stay unexercised.
+- **Item 10 settled for this skill: the planner searched for the skill's own rules.** Of its
+  ten searches (read from the workflow log; the CLI receipt's `web_search_requests` reads 0
+  although the log shows ten WebSearch calls), six served claim 1 and three of those named the skill's
+  coefficients (5500, 1490, 125) and the cystine convention; the critique listed no unsourced
+  rule. No prompt line is added. a280-quant states no cut-off of its own, so the "not looked
+  up" branch, a rule never sought, is still untested live; protein-bench-helper's 7.2 is the
+  case for it.
+- **The critique rounds.** Round 1 ($0.68) supported A but objected that the tolerance basis
+  misstated t1's discrimination figure (0.97%, not 1.5%, and inside the concentration
+  tolerance) and that the references were incomplete; the planner's next qualification was
+  rejected once, then qualified, and round 2 ($0.81) fixed the plan at A with one bookkeeping
+  objection (the Beer-Lambert page was fetched but not listed with version and licence) and two
+  coverage gaps: t5 cannot tell a tester who ran the bundled script from one who did the
+  arithmetic, and a cysteine-only protein in reducing buffer (epsilon 0) is untested.
+- **The page.** `0e471ea0….notes.json` was filled and rendered to
+  `.verifier/reports/0e471ea0-….html`, and re-rendered after the wording fix.
+
+### Open questions for the operator
+
+1. **The disputed flag fires on any disagreement.** In this run it marks all five tests, four
+   of them for objections to the set-aside software sections; Python cannot tell what a
+   free-text disagreement is about. Options: leave it, with the corrected sentence, or have the
+   tester name the step it disputes in a fixed form so Python can tell a key dispute from a
+   complaint about the skill (a `local-tasks.md` change that needs a live recording).
+2. **Item 10's "not looked up" branch** still needs a skill with a cut-off of its own;
+   protein-bench-helper is the candidate.
+3. The earlier open questions stand: catalog requalification and the 2026-10-13 entry's items.
+
+### Urgent next steps, if any
+
+`src/` changed in `report_html.py` only; restart the session before the next run, as usual. The
+working tree is clean after this commit.
+
+### Recommended next action
+
+Verify protein-bench-helper next: it should show U beside its 7.2 cut-off or the "not looked
+up" branch (item 10), a judged D claim with `session_attempts` on judge records, and whether the
+corrected disputed sentence reads right where the disputes are about the key.

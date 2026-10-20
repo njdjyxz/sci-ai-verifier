@@ -183,6 +183,9 @@ class ReportHtmlTests(unittest.TestCase):
                 "disagreements": rows[:2], "trials_run": 3}
         chapter = report_html.chapter(view, "Claude")
         self.assertIn("Testers disputed:</span> lip. These tests passed, counted", chapter)
+        # Run 0e471ea0: every try disputed the privacy section, not the key, so the page may not say which.
+        self.assertIn("at least two of their tries disagreed with the skill", chapter)
+        self.assertNotIn("said a step or the key is wrong", chapter)
         self.assertIn("Testers disputed this test", report_html.task_table(view))
         # One disagreeing try, a failing try, or an uncounted test is not a dispute.
         for changed in (rows[:1] + [row(2, None), row(3, None)],
