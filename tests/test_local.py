@@ -607,6 +607,11 @@ class ClaimScopeTests(unittest.TestCase):
         # Designs of questions were retired on 2026-10-05; the prompt kept offering them without a container.
         self.assertNotIn("design of questions", prompt)
         self.assertIn("Without a container nothing can run", prompt)
+        # A section about the skill as software is set aside; the safety findings cover it (runs 50074a5f, ed14663f).
+        from sci_ai_verifier.local import CLAIM_MANIFEST_DESCRIPTION
+        self.assertIn("A section about the skill as software, not the science", prompt)
+        self.assertIn("'software; see safety findings'", CLAIM_MANIFEST_DESCRIPTION)
+        self.assertIn("about the skill as software", dict(self.h.runtime._instruction_blocks())["references/local-tasks.md"])
 
     def test_the_run_limits_cover_the_twelve_claims_a_manifest_may_hold(self):
         """Five-claim runs used 54 to 73 planner turns, up to 7,300 log events and 10 MiB, and up to four of

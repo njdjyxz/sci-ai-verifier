@@ -27,8 +27,11 @@ CLAIM_MANIFEST_DESCRIPTION = (
     "In source_ready only: commit claims quoted from delivered snapshot ranges. Each claim is a group of whole "
     "sections of the skill file that serve one purpose, named by the IDs load_submitted_skill returned; every "
     "section goes in exactly one claim or in set_aside with a reason, and a longer skill gets more claims, at most "
-    + str(MAX_CLAIMS) + ", as \"Claims\" in local-tasks.md says. Use Not specified for absent scope/behavior; add "
-    "no background definitions. An empty list, with every section set aside, is valid. No grading.")
+    + str(MAX_CLAIMS) + ", as \"Claims\" in local-tasks.md says. A section that states facts about the skill as "
+    "software, such as its network use, privacy, security or installation, is set aside with the reason "
+    "'software; see safety findings': the safety scan covers it, and a claim built on it measures the test AI's "
+    "reading of the code, not the science. Use Not specified for absent scope/behavior; add no background "
+    "definitions. An empty list, with every section set aside, is valid. No grading.")
 CLAIM_LIMIT_MESSAGE = ("A local manifest holds at most " + str(MAX_CLAIMS) + " claims (\"Claims\" in "
                        "local-tasks.md). Group sections that serve one purpose into one claim.")
 OPERATIONS = ("list_local_candidates", "fetch_local_reference", "qualify_local_tasks", "select_local_candidate",

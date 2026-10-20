@@ -30,7 +30,11 @@ claim's sections in `sections`. Sections that only work together belong in one c
 
 **Nothing is left out.** Every section is in exactly one claim or in the manifest's
 `set_aside` list, each with a `reason`: a section with nothing to test, such as metadata,
-a list of references or related skills, or installation notes. Python refuses a manifest
+a list of references or related skills, or installation notes, or one that states facts
+about the skill as software, such as a promise about its network use or privacy, which the
+safety findings cover ("Safety findings" in `local-contract.md`). In runs `50074a5f` and
+`ed14663f` such a section became a claim, and its tasks measured the test AI's reading of
+the code rather than the science. Python refuses a manifest
 that leaves a section out, names one twice or names one that does not exist. The report
 and the run's page list the sections set aside with their reasons.
 

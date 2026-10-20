@@ -38,7 +38,8 @@ re-read one pinned document or committed artifact if you lose this message.
 1. Read every submitted text file, then commit the claim manifest quoting only what you read.
    Group the sections load_submitted_skill numbers into claims by purpose, every section in one
    claim or set aside with a reason, as "Claims" in local-tasks.md says; a longer skill gets more
-   claims.
+   claims. A section about the skill as software, not the science (its network use, privacy,
+   security, installation), is set aside: the safety findings cover it.
 2. For each claim, look up existing candidates first, then use WebSearch to find independent
    primary references: the model behind your test data, the right response to each problem you
    plant, and any published dataset or value you use. Import them with the reference, resource
