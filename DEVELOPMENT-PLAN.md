@@ -3373,14 +3373,14 @@ The verifier is ready to test more skills once the session is restarted. The nex
 is the first check of these fixes; read its log for `sandbox_` faults, the retry records
 and the projection sizes. Then settle the operator items above, 1 and 3 first.
 
-## Claude: 2026-10-19 (the review's fourteen decisions, built as recommended; one re-recording for the operator to run)
+## Claude: 2026-10-19 (the review's fourteen decisions, built as recommended; rubric v9 re-recorded and committed)
 
 ### Current stage and status
 
 Version 0.8.0 on `main`. The operator took every recommendation of the 2026-10-19 code review
-("fix everything by your recommendations"). Six commits build nine of them; four needed nothing
-built; one, the rubric v9 question, is edited but not committed, because its live re-recording is
-a paid session the operator must run (below). 447 tests pass, 2 skipped, on the committed tree.
+("fix everything by your recommendations"). Seven commits build ten of them; four needed nothing
+built. The last, the rubric v9 question, went in with its critique re-recorded live once the
+operator gave permission for the paid session. 447 tests pass, 2 skipped.
 **No live run has confirmed any of this.** `src/` changed again: restart the session before the
 next run.
 
@@ -3411,33 +3411,28 @@ next run.
   that at least two tries disputed is flagged "Testers disputed this test". Display only. `0013623`.
 - **12. `--python` dropped with its value**, as `--hash` is, with a note; pydeseq2's command now
   declares its package. `70a920b`.
-- **14. Rubric v9**, edited and tested but **not committed**: `key_wrong` asks whether a key's quote
-  states the whole rule, its condition included; `local-tasks.md` says so; the pin in
-  `test_recorded_replies.py` reads v9. The recorded critique must be re-recorded under v9 before
-  this can be committed with a passing suite. The script is written; the operator runs it (below).
+- **14. Rubric v9.** `key_wrong` asks whether a key's quote states the whole rule, its condition
+  included; `local-tasks.md` says so; the pin in `test_recorded_replies.py` reads v9. The recorded
+  critique was re-recorded under v9 with `scripts/record_critique.py` (run `3f073fec` claim 1's
+  packet, `claude-opus-5` at `high`, $0.94, 286 s): the same verdicts and unsourced rules as under
+  v8, three coverage gaps naming the untested score, cap and cut-off, a first reply wrapped in a
+  stray `input` key and resent, and grade A where the v8 recording gave B on the same verdicts (one
+  sample each, so spread, not effect). `40fb8ec`.
 - Nothing to build: **6** (keep the next live critique that asks for a tool), **7** (keep the
   question-era page branches until the old runs are gone), **10** (wait for one run under v8 before
   touching the search instruction), **11** (leave catalog requalification), **13** (wheels only).
 
 ### Open questions for the operator
 
-1. **Run the re-recording** (about $1, up to 20 minutes), from the repository root with
-   `SCI_VERIFIER_OAUTH_TOKEN` set: `python scripts/record_critique.py "D:/Su Lab/sci-ai-verifier"`. It replays run `3f073fec` claim 1's
-   packet with the live rubric, writes `tests/recorded/critic-task-structured.jsonl` and the packet,
-   and prints the grade, verdicts and cost. Then update the recordings README row and the
-   expectations of `test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet` to what
-   the new critique said, run the suite, and commit.
-2. Item 10 stands: after the next live run, check whether the planner searched for the skill's own
+1. Item 10 stands: after the next live run, check whether the planner searched for the skill's own
    cut-offs; if not, add one line to its prompt.
 
 ### Urgent next steps, if any
 
-`src/` changed in five of these commits: restart the session before the next run. The working tree
-holds the uncommitted rubric v9 edits in `documentary.py`, `local-tasks.md` and
-`test_recorded_replies.py`; do not start a verification from this checkout until they are either
-committed with the new recording or reverted.
+`src/` changed in six of these commits: restart the session before the next run. The working tree
+is clean.
 
 ### Recommended next action
 
-Run the re-recording and commit it, restart the session, then verify one skill live and read its
-page for the new flags, the `sandbox_` faults and `session_attempts`.
+Restart the session, then verify one skill live and read its page for the new flags, the `sandbox_`
+faults and `session_attempts`.
