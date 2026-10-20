@@ -117,7 +117,9 @@ operations. Apps without such an adapter need app-specific integration work.
 
 Each `external_tools` entry has `executable` (absolute native program path),
 `sha256` (of that executable), `arguments` (fixed argument list), `description`,
-`credential_env` (environment variable names only), and `read_only: true`.
+`credential_env` (environment variable names only, never the CLI's own: a name starting
+`CLAUDE_`, `ANTHROPIC_`, `SCI_VERIFIER_`, `PYTHON` or `NODE_`, ending `_PROXY`, or a
+system path variable is refused), and `read_only: true`.
 The model supplies JSON data, never an executable, command template or shell
 arguments. Program changes fail the digest check. Shell and script launchers are
 rejected. The adapter runs on the host and is explicitly trusted; its declaration

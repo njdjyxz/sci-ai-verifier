@@ -229,6 +229,24 @@ class SandboxTests(unittest.TestCase):
             with self.assertRaises(Fault):
                 load_configuration(path)
 
+    def test_an_app_credential_may_not_take_a_name_the_cli_owns(self):
+        """A configuration naming CLAUDE_CONFIG_DIR or ANTHROPIC_BASE_URL would re-point the subject and planner
+        sessions, since app credentials are copied after their isolated environment is set."""
+        import sys
+        path=self.directory/"settings.json"
+
+        def settings(names):
+            return canonical({"external_tools":{"app":{"executable":sys.executable,"sha256":"a"*64,"arguments":[],
+                                                       "description":"Fixture","credential_env":names,"read_only":True}}})
+        path.write_bytes(settings(["LAB_API_TOKEN","MY_APP_KEY"]))
+        self.assertEqual(load_configuration(path)["external_tools"]["app"]["credential_env"],["LAB_API_TOKEN","MY_APP_KEY"])
+        for name in ("CLAUDE_CONFIG_DIR","CLAUDE_CODE_NO_MODEL_FALLBACK","ANTHROPIC_BASE_URL","ANTHROPIC_AUTH_TOKEN",
+                     "SCI_VERIFIER_INTERNAL_CREDENTIAL","PYTHONPATH","PYTHONSTARTUP","NODE_EXTRA_CA_CERTS","HTTPS_PROXY",
+                     "NO_PROXY","PATH","HOME","TEMP"):
+            path.write_bytes(settings([name]))
+            with self.subTest(name=name),self.assertRaises(Fault):
+                load_configuration(path)
+
 
 if __name__=="__main__":
     unittest.main()

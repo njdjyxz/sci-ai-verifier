@@ -37,6 +37,20 @@ def valid_package_index(value):
             and port in (None, 443) and bool(re.fullmatch(r"[A-Za-z0-9.-]+", parts.hostname)))
 
 
+# Names an app adapter's credential may not take: the CLI's own variables, which the subject and planner
+# sessions receive after their isolated environment is set, so a configuration naming CLAUDE_CONFIG_DIR,
+# ANTHROPIC_BASE_URL or CLAUDE_CODE_NO_MODEL_FALLBACK would re-point them.
+CLI_OWNED_PREFIXES = ("CLAUDE_", "ANTHROPIC_", "SCI_VERIFIER_", "PYTHON", "NODE_")
+CLI_OWNED_NAMES = {"PATH", "PATHEXT", "COMSPEC", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE", "TEMP", "TMP",
+                   "APPDATA", "LOCALAPPDATA", "PROGRAMFILES", "OS"}
+
+
+def app_credential_name(name):
+    """True when `name` may carry an app adapter's credential into a session."""
+    return (name not in CLI_OWNED_NAMES and not name.startswith(CLI_OWNED_PREFIXES) and not name.endswith("_PROXY")
+            and name not in {"NO_PROXY"})
+
+
 def load_configuration(path=None):
     settings = deepcopy(DEFAULTS)
     if path is not None:
@@ -96,7 +110,7 @@ def load_configuration(path=None):
                 or any(not isinstance(arg,str) or len(arg)>2000 for arg in tool["arguments"])
                 or not isinstance(tool["description"],str) or not 1<=len(tool["description"])<=2000
                 or not isinstance(tool["credential_env"],list) or len(tool["credential_env"])>10
-                or any(not isinstance(env,str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}",env) or env in {"CLAUDE_CODE_OAUTH_TOKEN","ANTHROPIC_API_KEY","PATH","PYTHONPATH","NODE_OPTIONS"} for env in tool["credential_env"])
+                or any(not isinstance(env,str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}",env) or not app_credential_name(env) for env in tool["credential_env"])
                 or tool["read_only"] is not True):
             raise Fault("configuration_invalid", "App adapters must be pinned read-only native programs with fixed arguments and named credential environment variables.")
     if not isinstance(settings["resources"],dict) or len(settings["resources"])>100:
