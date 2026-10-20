@@ -3372,3 +3372,72 @@ runs the new code, or run `scripts/verify.py verify` directly.
 The verifier is ready to test more skills once the session is restarted. The next live run
 is the first check of these fixes; read its log for `sandbox_` faults, the retry records
 and the projection sizes. Then settle the operator items above, 1 and 3 first.
+
+## Claude: 2026-10-19 (the review's fourteen decisions, built as recommended; one re-recording for the operator to run)
+
+### Current stage and status
+
+Version 0.8.0 on `main`. The operator took every recommendation of the 2026-10-19 code review
+("fix everything by your recommendations"). Six commits build nine of them; four needed nothing
+built; one, the rubric v9 question, is edited but not committed, because its live re-recording is
+a paid session the operator must run (below). 447 tests pass, 2 skipped, on the committed tree.
+**No live run has confirmed any of this.** `src/` changed again: restart the session before the
+next run.
+
+### What has been done
+
+- **1. Grade U carries no status.** `record_local_unverified` wrote `inconclusive`; it now writes
+  `null` with `no_reference_grade`, as the rubric's status table says, and the rubric's "Verdict
+  authority" and "Result interpretation", `commit_claim_result`, the grade-U transition in
+  `workflow.md`, `artifact-contracts.md` and the local contract agree. `5cb8285`.
+- **2. Run-wide budgets stated.** The local contract says the repair and illegal-transition budgets
+  are run-wide, 32 and 8, and that exhausting one ends the run. `70a920b`.
+- **3. A second session for a reply that never came.** `isolated_answer` starts one more fresh
+  session when the first fails before answering (a rate limit, a timeout, an exit without a result);
+  a reply in shape is never re-rolled and a session the schema stopped is not started again. Each
+  record carries `session_attempts`. Contract in the reply-shape paragraph of `tool-contracts.md`.
+  `4417f5a`.
+- **4. CLI-owned credential names refused.** `credential_env` may not name anything starting
+  `CLAUDE_`, `ANTHROPIC_`, `SCI_VERIFIER_`, `PYTHON` or `NODE_`, ending `_PROXY`, or a system path
+  variable; `LOCAL-CONFIG.md` says so. `23ac904`.
+- **5. Directive forms as the CLI expands them.** Read from Claude Code 2.1.280's binary: an inline
+  directive only after a `!` at the start of a line or after whitespace, the command free to span
+  lines; a fence only as three backticks and `!`. A tilde fence and a glued `!` are never expanded.
+  The guard now refuses exactly those forms, so a multi-line command is no longer exempt. `70a920b`.
+- **8. Software sections set aside.** "Claims" in `local-tasks.md`, the manifest tool's description
+  and the planner's prompt say a section about the skill as software is set aside with the reason
+  "software; see safety findings". `df9d1ba`.
+- **9. Identical disagreements shown once**, naming every try, and **14(a)** a passing counted test
+  that at least two tries disputed is flagged "Testers disputed this test". Display only. `0013623`.
+- **12. `--python` dropped with its value**, as `--hash` is, with a note; pydeseq2's command now
+  declares its package. `70a920b`.
+- **14. Rubric v9**, edited and tested but **not committed**: `key_wrong` asks whether a key's quote
+  states the whole rule, its condition included; `local-tasks.md` says so; the pin in
+  `test_recorded_replies.py` reads v9. The recorded critique must be re-recorded under v9 before
+  this can be committed with a passing suite. The script is written; the operator runs it (below).
+- Nothing to build: **6** (keep the next live critique that asks for a tool), **7** (keep the
+  question-era page branches until the old runs are gone), **10** (wait for one run under v8 before
+  touching the search instruction), **11** (leave catalog requalification), **13** (wheels only).
+
+### Open questions for the operator
+
+1. **Run the re-recording** (about $1, up to 20 minutes), from the repository root with
+   `SCI_VERIFIER_OAUTH_TOKEN` set: `python scripts/record_critique.py "D:/Su Lab/sci-ai-verifier"`. It replays run `3f073fec` claim 1's
+   packet with the live rubric, writes `tests/recorded/critic-task-structured.jsonl` and the packet,
+   and prints the grade, verdicts and cost. Then update the recordings README row and the
+   expectations of `test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet` to what
+   the new critique said, run the suite, and commit.
+2. Item 10 stands: after the next live run, check whether the planner searched for the skill's own
+   cut-offs; if not, add one line to its prompt.
+
+### Urgent next steps, if any
+
+`src/` changed in five of these commits: restart the session before the next run. The working tree
+holds the uncommitted rubric v9 edits in `documentary.py`, `local-tasks.md` and
+`test_recorded_replies.py`; do not start a verification from this checkout until they are either
+committed with the new recording or reverted.
+
+### Recommended next action
+
+Run the re-recording and commit it, restart the session, then verify one skill live and read its
+page for the new flags, the `sandbox_` faults and `session_attempts`.
