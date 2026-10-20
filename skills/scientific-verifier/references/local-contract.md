@@ -274,7 +274,7 @@ missing assessment, is an operational failure.
 
 A completed assessment that addresses the claim is grade D with Python's status.
 Documentary D is consistency with sources only; execution accuracy remains
-unverified, and AI judgment is primary and disclosed. U/inconclusive is a separate
+unverified, and AI judgment is primary and disclosed. U, with no status, is a separate
 no-evidence path; runtime failures never establish it. Both paths carry the evidence
 preconditions stated for `assess_local_documentary` and `record_local_unverified` in
 tool-contracts.md.

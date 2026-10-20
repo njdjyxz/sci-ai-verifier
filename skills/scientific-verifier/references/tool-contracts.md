@@ -497,7 +497,7 @@ Input uses exactly one form:
 
 - `evaluated_result` for grades A through C: claim, route, plan, source snapshot, audit, execution, evaluator, bundle, resource-lock, resource, and subject-runner references; `grade_policy_ref`; coverage; trial count, aggregation rule, and observed agreement; AI involvement; downgrade reasons; warnings; and report notes. Status and grade are omitted or must equal Python's authoritative execution `decision_status` and `achieved_grade_ceiling` exactly; policy reasons/inputs are copied, not re-estimated.
 - `documentary_result` for grade D: the same applicable references plus completed assessment ID, audited packet/rubric references, citations, findings, assessor identity/independence, and AI/human disclosure copied from that assessment. Status is omitted or must equal the accepted assessment status; the planning agent cannot supply a new judgment.
-- `unverified_result` for grade U: claim, route, plan, source snapshot, attempted-evidence references, missing evidence, searches or checks performed, downgrade reasons, limitations, and explicit `not_applicable` stage markers. Status is omitted or `inconclusive`.
+- `unverified_result` for grade U: claim, route, plan, source snapshot, attempted-evidence references, missing evidence, searches or checks performed, downgrade reasons, limitations, and explicit `not_applicable` stage markers. Status is omitted; Python withholds it as `no_reference_grade`.
 
 Successful outcome: `claim_result_committed`.
 
@@ -505,9 +505,9 @@ Successful data: immutable claim-result ID, result kind, Python-accepted status,
 
 Side effects: writes the claim-result artifact.
 
-Retryable conditions: grade or status differing from the authoritative A-through-C execution result, a grade-U status other than `inconclusive`, documentary fields/status that differ from the completed independent assessment, missing provenance/policy disclosure, missing subject-runner or trial disclosure on an evaluated result, or incomplete coverage disclosure. A `lower_grade_required` execution cannot authorize an evaluated result. Missing independent assessment is handled by execution's `assessor_unavailable` outcome before `result_commit`, not an invitation for the planner to manufacture one.
+Retryable conditions: grade or status differing from the authoritative A-through-C execution result, any grade-U status, documentary fields/status that differ from the completed independent assessment, missing provenance/policy disclosure, missing subject-runner or trial disclosure on an evaluated result, or incomplete coverage disclosure. A `lower_grade_required` execution cannot authorize an evaluated result. Missing independent assessment is handled by execution's `assessor_unavailable` outcome before `result_commit`, not an invitation for the planner to manufacture one.
 
-Ordinary outcomes: pass, fail, or inconclusive at grades A through D as permitted by the rubric, and only inconclusive at grade U.
+Ordinary outcomes: pass, fail, or inconclusive at grades A through D as permitted by the rubric, and no status at grade U, withheld as `no_reference_grade`.
 
 Fatal conditions: contradictory or corrupted evidence references or storage failure.
 
@@ -750,7 +750,7 @@ operational outcome. The planner cannot replace the assessor's verdict.
 
 `record_local_unverified` is legal in those same states. It means no acceptable
 A-through-D evidence was found, not that an operation failed. It preserves any
-comparison evidence and records U/inconclusive; failures must use
+comparison evidence and records U with no status; failures must use
 record_local_limitation.
 
 Both require the claim's catalog lookup, at least one reference Python retrieved

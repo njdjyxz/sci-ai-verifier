@@ -190,7 +190,7 @@ Documentary-only D does not execute the submitted skill, so it does not require 
 
 - For grades A through C, `execute_evaluation_plan` returns `completed_deterministic_decision` with the authoritative status and `achieved_grade_ceiling` produced by the audited rules, plus `grade_policy_ref` and `grade_limit_reasons`. The verifier agent may explain them but may not select, revise, or override them. `commit_claim_result` copies the exact strongest supported grade and status; caller-supplied values must be omitted or equal those execution values. `lower_grade_required` is a replanning outcome and cannot be committed as an evaluated result.
 - For grade D, `execute_evaluation_plan` obtains a completed assessment through a runner-provisioned independent assessor meeting the audited documentary plan's assessor boundary. The host selects and verifies the assessor; the planner cannot invent its identity. The assessor is a separate session given only the bounded judgment packet, cited evidence, and audited rubric, not the planning conversation. `documentary_assessment_ready` means that this assessment has completed and its identity, independence, rubric findings, status, and provenance are recorded. A completed assessment against the installed rubric is grade D on its own; no further sign-off is required, and none of it makes the conclusion more than documentary. The planning session never assesses its own packet, and result commit preserves the recorded assessment rather than accepting a new planning-agent judgment. If no eligible independent assessor is available, or assessment cannot complete within the runner's bounded limits, `assessor_unavailable` records a terminal claim-scoped operational outcome before result commit, with no scientific status. It does not justify either D or U.
-- Grade U always has `status: inconclusive`. `pass` or `fail` with grade U is invalid.
+- Grade U carries no status: `null` with `no_reference_grade`, as the status table says. `pass`, `fail` or `inconclusive` with grade U is invalid; `inconclusive` would read as a verdict that was reached.
 
 Operational completion, schema validity, evaluator crashes, unavailable tools, and exhausted runtime limits never determine a scientific status.
 
@@ -234,4 +234,4 @@ ai_involvement:
   verdict: false
 ```
 
-An A-grade failure is strong evidence that the claim is incorrect within the tested scope. A D-grade pass establishes documentary consistency only, not scientific accuracy. U is valid only with `inconclusive` and never supports a scientific pass or fail conclusion.
+An A-grade failure is strong evidence that the claim is incorrect within the tested scope. A D-grade pass establishes documentary consistency only, not scientific accuracy. U carries no status and never supports a scientific pass or fail conclusion.

@@ -969,7 +969,8 @@ def page(run, notes):
                "<dt>Grade A–D</dt><dd>How strong the tests and their answer keys are. A is the strongest. It is set "
                "before the tests run, and it is not an approval of the skill.</dd>"
                "<dt>Status</dt><dd>pass: every counted answer was right. fail: at least one was wrong. "
-               "inconclusive: the evidence could not decide.</dd>"
+               "inconclusive: the evidence could not decide. not decided: no verdict was reached, for a claim with "
+               "no reference (grade U) or one a fault stopped.</dd>"
                "<dt>Counted</dt><dd>Only tests the reviewer AI accepted count toward the status. The others still "
                "ran and are shown.</dd>"
                + ("" if tasks else

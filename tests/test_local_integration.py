@@ -1257,7 +1257,18 @@ class GateTests(unittest.TestCase):
         allowed=self.attempt("record_local_unverified",search_account="Retrieved the table; it does not state this value.",
                              missing_evidence="No independent expected answer for the claim's scope.")
         self.assertEqual(allowed["status"],"ok")
-        self.assertEqual(allowed["data"]["result"]["evidence_grade"],"U")
+        result=allowed["data"]["result"]
+        # U carries no status ("Status" in evidence-rubric.md): it used to read inconclusive, as if a verdict was reached.
+        self.assertEqual((result["evidence_grade"],result["scientific_status"],result["status_withheld_reason"]),
+                         ("U",None,"no_reference_grade"))
+        h.data=allowed["data"]
+        h.call("write_report_card")
+        row=h.data["report"]["claims"][0]
+        self.assertEqual((row["record"]["evidence_grade"],row["record"]["scientific_status"]),("U",None))
+        markdown=Path(h.data["report_markdown_path"]).read_text(encoding="utf-8")
+        self.assertIn("Scientific status: unassigned; evidence grade: U",markdown)
+        self.assertIn("Status withheld: no_reference_grade.",markdown)
+        self.assertNotIn("inconclusive",markdown)
 
     def test_documentary_is_refused_while_a_qualified_candidate_is_unused(self):
         h=self.h

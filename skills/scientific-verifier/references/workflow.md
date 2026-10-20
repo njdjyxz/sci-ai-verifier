@@ -472,7 +472,7 @@ Grade U is committed from `result_commit`, the same state every other result is 
 
 Before requesting the result, ensure the committed plan or run artifacts record attempted evidence paths, missing evidence, searches and checks performed, limitations, and downgrade reasons.
 
-Request `commit_claim_result` using `unverified_result`, the applicable claim, route, plan and source-snapshot references, attempted-evidence references, explicit `not_applicable` markers for stages that did not run, and `evidence_grade: U`. Omit status or set it to `inconclusive`.
+Request `commit_claim_result` using `unverified_result`, the applicable claim, route, plan and source-snapshot references, attempted-evidence references, explicit `not_applicable` markers for stages that did not run, and `evidence_grade: U`. Omit status; Python withholds it as `no_reference_grade`.
 
 - `claim_result_committed`: the U result is terminal.
 - `retryable`: correct only missing provenance, disclosures, or not-applicable markers.

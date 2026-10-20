@@ -334,7 +334,7 @@ Every claim result contains the claim, route, plan, source-snapshot, applicable 
 
 - `evaluated_result`: evidence grade A through C; requires audit, execution, evaluator, bundle, and revision-bound resource-lock references. Python copies the deterministic execution status and strongest `achieved_grade_ceiling`, rejecting a different status or grade.
 - `documentary_result`: evidence grade D; requires an audited documentary-rubric harness and a completed independent documentary-assessment artifact with judgment packet, citations, assessor identity, and disclosed AI or human judgment. Python copies the assessment's `pass`, `fail`, or `inconclusive` status and rejects a different one.
-- `unverified_result`: evidence grade U; status is fixed to `inconclusive`, and attempted-evidence provenance plus explicit `not_applicable` markers replace stages that never ran.
+- `unverified_result`: evidence grade U; status is `null` with `no_reference_grade`, and attempted-evidence provenance plus explicit `not_applicable` markers replace stages that never ran.
 
 Additional fields include:
 

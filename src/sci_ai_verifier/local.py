@@ -715,9 +715,12 @@ def documentary_step(store,state,claim_id,name,args,subject):
     retained={"claim_id":claim_id,"receipts":previous["receipts"] if previous else [],
               "comparison_ref":work.get("result_ref"),"synthetic":state["subject_config"]["synthetic"]}
     if name=="record_local_unverified":
-        record={**retained,"kind":"local-unverified","scientific_status":"inconclusive","evidence_grade":"U",
-                "search_account":args["search_account"],"missing_evidence":args["missing_evidence"],
-                "limitations":["No acceptable scientific evidence established; operational failures do not authorize this result."]}
+        # U carries no status: with no reference there is no expected answer, so "did the claim hold" has no
+        # value, not a weak one ("Status" in evidence-rubric.md). It used to read inconclusive, as if reached.
+        record={**retained,"kind":"local-unverified","scientific_status":None,"status_withheld_reason":"no_reference_grade",
+                "evidence_grade":"U","search_account":args["search_account"],"missing_evidence":args["missing_evidence"],
+                "limitations":["No acceptable scientific evidence established, so no verdict; operational failures do "
+                               "not authorize this result."]}
     else:
         refs=set(work["reference_refs"])
         if work.get("candidate_ref"):
