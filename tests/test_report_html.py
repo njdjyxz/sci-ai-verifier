@@ -58,7 +58,8 @@ class ReportHtmlTests(unittest.TestCase):
                                    "claim_probe": {"cases": [{"case_id": "c_choice", "outcome": "reached",
                                                               "samples": [{"answer": "2"}, {"answer": "2"}]}]}}},
             "references": {REFERENCE: {"url": "javascript:alert(1)", "version": "a hostile source"}},
-            "tests": [trial("c_choice", 1, "2", "pass"), trial("c_choice", 2, "2", "pass"),
+            "tests": [trial("c_choice", 1, "2", "pass"),
+                      {**trial("c_choice", 2, "2", "pass"), "disagreement": "Step 2 picks alpha. " + HOSTILE},
                       {**trial("c_choice", 3, HOSTILE, "fail"), "disagreement": "Step 2 picks alpha. " + HOSTILE},
                       trial("c_term", 1, "beta", "pass", counted=False)]}
         documentary = {
@@ -160,10 +161,34 @@ class ReportHtmlTests(unittest.TestCase):
     def test_what_the_test_ai_said_is_wrong_with_the_skill_shows_under_its_claim(self):
         """"Disagreements" in local-tasks.md: beside the verdicts, which it never moves."""
         page = self.render()
-        self.assertIn("The test AI disagreed with the skill</span> in 1 of 4 tries", page)
-        self.assertIn("c_choice, try 3", page)
-        self.assertIn("Step 2 picks alpha. &lt;script&gt;", page)
+        self.assertIn("The test AI disagreed with the skill</span> in 2 of 4 tries", page)
+        # Run 7cfc4df5's 27 tries repeated one warning: the same words are shown once, naming every try.
+        self.assertIn("c_choice, try 2; c_choice, try 3</b><span class=\"dim\"> · the same words in 2 tries</span>", page)
+        self.assertEqual(page.count("Step 2 picks alpha. &lt;script&gt;"), 1)
         self.assertNotIn(HOSTILE, page)
+
+    def test_a_passing_counted_test_most_tries_disputed_is_flagged_and_its_pass_stands(self):
+        """Run 86d4e632: every try followed the skill's Lipinski rule, passed its key, and said the rule is wrong.
+        The flag is display only; nothing else reads it."""
+        output = {"field": "passes", "type": "boolean", "expected": False}
+        def row(n, said):
+            return {"case_id": "lip", "trial": n, "observed": "done", "comparison_status": "pass", "counted": True,
+                    "input": "Apply the rule.", "expected": {"passes": False}, "disagreement": said,
+                    "outputs": [{**output, "present": True, "found": False, "status": "pass"}]}
+        rows = [row(1, "Lipinski tolerates one violation."), row(2, "The rule allows one failure."), row(3, None)]
+        task = report_html.task_view(1, "lip", rows, {"outputs": [output]}, {}, None, {}, {})
+        self.assertTrue(task["disputed"])
+        self.assertEqual(task["passed"], 3)
+        view = {**report_html.views(report_html.Run(self.workspace, RUN[:8]), {})[0], "tests": [task], "tasks": True,
+                "disagreements": rows[:2], "trials_run": 3}
+        chapter = report_html.chapter(view, "Claude")
+        self.assertIn("Testers disputed:</span> lip. These tests passed, counted", chapter)
+        self.assertIn("Testers disputed this test", report_html.task_table(view))
+        # One disagreeing try, a failing try, or an uncounted test is not a dispute.
+        for changed in (rows[:1] + [row(2, None), row(3, None)],
+                        [rows[0], rows[1], {**row(3, None), "comparison_status": "fail"}],
+                        [{**item, "counted": False} for item in rows]):
+            self.assertFalse(report_html.task_view(1, "lip", changed, {"outputs": [output]}, {}, None, {}, {})["disputed"])
 
     def test_without_notes_the_long_claim_folds_away_and_a_test_shows_its_question(self):
         """The planner's statement is written to be tested, not read: 150 words in run 90c60cbe."""

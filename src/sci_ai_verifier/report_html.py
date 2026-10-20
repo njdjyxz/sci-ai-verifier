@@ -290,9 +290,15 @@ def task_view(index, case_id, rows, case, verdict, dropped, written, references)
         outputs.append({**output, "url": source.get("url"), "version": source.get("version")})
     gaps = [float(item["off_reference"]) for row in rows for item in row.get("outputs") or []
             if item.get("off_reference") is not None]
+    passed = sum(row.get("comparison_status") == "pass" for row in rows)
+    # Testers disputed a test when it passed, counted, while at least two tries said the step or the key is
+    # wrong: the pass stands on the results file, and the flag asks the reader to look (run 86d4e632's
+    # Lipinski key). Display only; no grade, status or AI reads it.
+    disputed = counted and passed == len(rows) and sum(bool(row.get("disagreement")) for row in rows) >= 2
     return {"kind": "task", "number": index, "case_id": case_id, "method": "task", "options": [],
             "criterion_given": verdict.get("criterion_given") or "", "off_reference": max(gaps) if gaps else None,
             "near_miss": any(item.get("near_miss") for row in rows for item in row.get("outputs") or []),
+            "disputed": disputed,
             "asks": written.get("asks"), "review": written.get("review"), "question": rows[0].get("input", ""),
             "expected": rows[0].get("expected") or {}, "outputs": outputs, "files": rows[0].get("files") or [],
             "sections": rows[0].get("sections") or [], "planted": case.get("planted"),
@@ -300,8 +306,7 @@ def task_view(index, case_id, rows, case, verdict, dropped, written, references)
             "trials": rows, "counted": counted,
             "not_counted": NOT_COUNTED.get(reason.get("verdict"), reason.get("verdict")) if not counted else None,
             "verdict": verdict, "dropped": dropped, "probe": [], "probe_reached": None, "unit": None,
-            "quote": None, "reference": {}, "calculated": None,
-            "passed": sum(row.get("comparison_status") == "pass" for row in rows), "by_reader": 0}
+            "quote": None, "reference": {}, "calculated": None, "passed": passed, "by_reader": 0}
 
 
 def shown(output, value):
@@ -538,6 +543,7 @@ def task_table(v):
                         f'{(": " + e(misses(row))) if misses(row) else ""}</span>' for row in t["trials"])
         given = (f'<div class="dim">The job gives a rule the skill does not: {e(t["criterion_given"])}</div>'
                  if t["criterion_given"] else "")
+        given += ('<div class="flag">⚑ Testers disputed this test</div>' if t.get("disputed") else "")
         near = (f'<div class="dim">On tolerance only: up to {t["off_reference"]:.1%} from the reference '
                 f'solution</div>' if t["off_reference"] is not None else "")
         out.append(f'<tr><td class="n">{t["number"]}</td><td>{e(t["asks"] or gist(t["question"]))}'
@@ -733,13 +739,23 @@ def chapter(v, author):
     if v["run_problems"]:
         out.append('<p><span class="flag">⚑ While running the skill</span>, the test AI met: '
                    + e("; ".join(v["run_problems"])) + ". The skill may not run as shipped on this computer.</p>")
+    disputed = [t["case_id"] for t in v["tests"] if t.get("disputed")]
+    if disputed:
+        out.append('<p><span class="flag">⚑ Testers disputed:</span> ' + e(", ".join(disputed))
+                   + ". These tests passed, counted, while most of their tries said a step or the key is wrong. The "
+                   "pass stands on the results file; read what they said below before trusting the key.</p>")
     if v["disagreements"]:
+        # Run 7cfc4df5's 27 tries repeated one warning; identical text is shown once, with every try that said it.
+        grouped = {}
+        for row in v["disagreements"]:
+            grouped.setdefault(row["disagreement"], []).append(f'{row.get("case_id")}, try {row.get("trial")}')
         out.append(f'<p><span class="flag">⚑ The test AI disagreed with the skill</span> in {len(v["disagreements"])} '
                    f'of {v["trials_run"]} tries. It followed the skill anyway, so the verdicts stand on what the skill '
                    "gives. What it said is wrong:</p><ul class='plain'>"
-                   + "".join(f'<li><b>{e(row.get("case_id"))}, try {e(row.get("trial"))}</b>'
-                             f'<blockquote class="said">{e(row["disagreement"])}</blockquote></li>'
-                             for row in v["disagreements"]) + "</ul>")
+                   + "".join(f'<li><b>{e("; ".join(tries))}</b>'
+                             + (f'<span class="dim"> · the same words in {len(tries)} tries</span>' if len(tries) > 1 else "")
+                             + f'<blockquote class="said">{e(said)}</blockquote></li>'
+                             for said, tries in grouped.items()) + "</ul>")
     if v["tests"]:
         out.append(("<h3>The tasks</h3><p class='dim'>Each task gives fresh AI sessions input files and a job. They "
                     "follow the skill and write their results, and Python checks every output.</p>" if v["tasks"]
