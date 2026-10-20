@@ -51,6 +51,8 @@ VERDICTS=("supported","contradicted","not_addressed")
 # b573cd15 and 3f073fec graded claims on their sourced parts while a skill's own cut-offs went untested.
 # v8 says whether a search sought each unsourced rule: run 5f7062fa tested a blocking rule against a source that
 # run 72bb6e51 did not find and graded U, and a rule no search sought is not looked up, not U.
+# v9 asks whether a key's quote states the whole rule, its condition included: run 86d4e632's key failed any
+# single Lipinski violation, as the skill did, from a quote that gave the four limits but not "two or more".
 TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table's order
     ("outside_claim", "beyond_scope",
      "Does the task ask for work or a conclusion the claim's sections never give, so that a subject correctly "
@@ -71,6 +73,9 @@ TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table'
     ("key_wrong", "unsound",
      "Is any expected value or tolerance wrong? Check every output, its quote as well as its number: is its value "
      "not planted as stated, does its quote fail to say what the output needs, or could a correct analysis miss it? "
+     "Where a key applies a rule, does the quote state the whole rule, its condition included, such as how many "
+     "of its criteria must fail? A quote that lists a rule's limits but not its condition can give a key that "
+     "repeats the skill's own error. "
      "For a judged output: does a criterion not follow from its quote, or could a correct answer fail it? "
      "A key the skill's own procedure misses where it departs from the reference solution is not wrong; see "
      "rubric.departures."),
@@ -79,7 +84,7 @@ TASK_QUESTIONS = (  # (answer key, verdict a yes gives, question), in the table'
      "unit, an inverted ratio or the wrong order of steps, pass every output of the task within its tolerance, even "
      "one the task was not built to catch? For a judged output: would a plausible wrong answer meet every criterion? "
      "Name it. If you can name one that passes, the answer is yes."))
-TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v8","criteria":[
+TASK_CRITIQUE_RUBRIC={"id":"local-task-critique-v9","criteria":[
         "Whether each task's expected values are right and independent of the skill: the generator implements "
         "evidence.generator.model_quote and plants what each output expects, each quote supports its output, each "
         "judged output's criteria follow from their quotes, and none rests on the skill's own text",

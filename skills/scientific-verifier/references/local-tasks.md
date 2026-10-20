@@ -255,7 +255,10 @@ solver code, each task's job, sections, arguments, files (names, sizes, the star
 text file), planted values, outputs with their tolerances and quotes, each judged output's
 criteria, `fail_example` and the judges' verdicts at qualification, and the solver's
 results. Its rubric asks whether each expected value is right and independent of the
-skill, whether the tasks exercise the claim as a whole, whether the comparison is fair
+skill, and whether the quote behind a key states the whole rule it applies, its condition
+included (run `86d4e632`'s key failed any single Lipinski violation, as the skill did, from
+a quote that gave the four limits but not the "two or more" condition), whether the tasks
+exercise the claim as a whole, whether the comparison is fair
 and exposes any departure of the skill from the reference solution, whether a stronger grade
 was passed over, and whether earlier concerns are answered. For each task it answers fixed
 questions, each tied to a row of the verdict table in "Cases each grade requires" of

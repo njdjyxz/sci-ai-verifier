@@ -34,7 +34,7 @@ RECORDED = ROOT / "tests/recorded"
 # recording maps to the key its refused reply added. The question critique and the claim-only answer
 # were given schemas retired with question tests on 2026-10-05; they stay as more live evidence of
 # Claude Code's correction loop, which every structured session relies on.
-STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": None,
+STRUCTURED_RECORDINGS = {"assessor-structured.jsonl": None, "critic-task-structured.jsonl": "input",
                          "judge-structured.jsonl": "$PARAMETER_NAME",
                          "critic-structured.jsonl": "StructuredOutput", "claim-probe-structured.jsonl": "a"}
 # Streams that are not the verifier's own replies, exercised by their own tests.
@@ -128,10 +128,10 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_a_reply_the_schema_refused_was_corrected_in_the_same_session(self):
         """The slips a free-text reader met one lost claim at a time. Run 0a243b7e lost a claim to an
-        empty extra key; here a claim-only answer added a stray `a`, and a critique a stray
-        `StructuredOutput`, as earlier ones added `evidence_limits`, `evidence_ceiling` and wrapped
-        their reply in `$PARAMETER_NAME`; Git history keeps them. Claude Code refused each and the
-        session resent it."""
+        empty extra key; here a claim-only answer added a stray `a`, a critique a stray
+        `StructuredOutput`, a judge wrapped its reply in `$PARAMETER_NAME` and a task critique in `input`,
+        as earlier ones added `evidence_limits` and `evidence_ceiling`; Git history keeps them. Claude
+        Code refused each and the session resent it."""
         for name, stray in STRUCTURED_RECORDINGS.items():
             with self.subTest(recording=name):
                 attempts = reply_attempts(recorded(name))
@@ -160,16 +160,17 @@ class RecordedReplyTests(unittest.TestCase):
 
     def test_the_recorded_task_critique_is_a_complete_answer_to_its_real_packet(self):
         """Run 3f073fec's claim 1 packet, a made-up QC score and cut-off whose tasks tested only its inputs,
-        judged at high by the pinned model under rubric v8. It lists the score and the 7.2 cut-off, each quoted
+        judged at high by the pinned model under rubric v9. It lists the score and the 7.2 cut-off, each quoted
         exactly from the claim's section, as rules no source states, says no search sought either, so they are
-        not looked up rather than U, and counts three of four tasks."""
+        not looked up rather than U, and counts three of four tasks. It supports A, as the run's own critique did;
+        the v8 recording supported B on the same verdicts."""
         raw, sent = recorded("critic-task-structured.jsonl"), packet("critic-task-packet.json")
         self.assertEqual(digest(canonical(sent["rubric"])), TASK_CRITIQUE_REF)
         case_ids = [case["case_id"] for case in sent["evidence"]["tasks"]]
         sections = [item["text"] for item in sent["claim"]["sections"]]
         value = validate_task_critique(parse_events(raw, expected_session=session_of(raw))["structured_output"],
                                        case_ids, sections)
-        self.assertEqual((sent["proposed_grade"], value["supported_grade"]), ("A", "B"))
+        self.assertEqual((sent["proposed_grade"], value["supported_grade"]), ("A", "A"))
         self.assertEqual(len(value["findings"]), len(TASK_CRITIQUE_RUBRIC["criteria"]))
         # Python's verdicts from its answers ("Cases each grade requires" in evidence-rubric.md).
         self.assertEqual([(item["case_id"], item["verdict"]) for item in value["case_verdicts"]],
@@ -208,7 +209,7 @@ class RecordedReplyTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-for-boundary-test"}):
             value = critique_tasks(ClaudeCode(auth="subscription", process=replay), sent)
-        self.assertEqual((value["supported_grade"], value["rubric_ref"], value["effort"]), ("B", TASK_CRITIQUE_REF, "high"))
+        self.assertEqual((value["supported_grade"], value["rubric_ref"], value["effort"]), ("A", TASK_CRITIQUE_REF, "high"))
         self.assertEqual(value["independence"], "fresh host-selected no-tool session; no planner conversation")
         self.assertEqual((json.loads(seen["prompt"]), seen["timeout"]), (sent, CRITIC_TIMEOUT_SECONDS))
         command = seen["command"]
@@ -531,7 +532,9 @@ class TaskCritiqueShapeTests(unittest.TestCase):
     def test_the_task_rubric_mirrors_the_table_that_owns_it(self):
         """"Cases each grade requires" in evidence-rubric.md owns the verdicts and the task counts."""
         from sci_ai_verifier.local_science import TASK_DIRECT, TASK_MINIMUM
-        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v8")
+        self.assertEqual(TASK_CRITIQUE_RUBRIC["id"], "local-task-critique-v9")
+        # A quote that lists a rule's limits but not its condition gave run 86d4e632 the skill's own Lipinski error.
+        self.assertIn("state the whole rule, its condition included", TASK_CRITIQUE_RUBRIC["task_questions"]["key_wrong"])
         # U only after a search sought a source ("Rules no source states" in evidence-rubric.md).
         self.assertIn("Set searched true only when", TASK_CRITIQUE_RUBRIC["unsourced_rules"])
         # Fixed questions, each tied to a row of the verdict table, which Python turns into the verdict.
