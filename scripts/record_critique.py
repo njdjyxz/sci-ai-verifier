@@ -33,7 +33,7 @@ def recorder(command, **kwargs):
     return code, raw, err
 
 
-adapter = ClaudeCode(executable=shutil.which("claude"), model="claude-opus-5", auth="subscription", process=recorder)
+adapter = ClaudeCode(executable=shutil.which("claude"), model="claude-opus-5-5", auth="subscription", process=recorder)
 value = critique_tasks(adapter, packet)
 raw = captured["raw"]
 assert b"\r\n" not in raw and raw.endswith(b"\n"), "stream shape"

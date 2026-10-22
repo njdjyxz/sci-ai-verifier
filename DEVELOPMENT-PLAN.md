@@ -3535,3 +3535,35 @@ working tree is clean after this commit.
 Verify protein-bench-helper next: it should show U beside its 7.2 cut-off or the "not looked
 up" branch (item 10), a judged D claim with `session_attempts` on judge records, and whether the
 corrected disputed sentence reads right where the disputes are about the key.
+
+## Claude: 2026-10-21 (the pin moves to Opus 5.5; thirty skills staged for a stratified sweep)
+
+### Current stage and status
+
+Version 0.8.0 on `main`. The operator upgraded Claude Code to 2.1.302, and the verifier's own CLI
+answered a one-word probe on `claude-opus-5-5` ($0.06, 2.2 s), so the MCP registration now pins
+`--model claude-opus-5-5`; `LOCAL-INSTALL.md` says so and records the dates. **Changing the pin
+starts a new series**: every run before this entry is on `claude-opus-5`, and the recorded task
+critique (`tests/recorded/critic-task-structured.jsonl`, rubric v9) was judged by `claude-opus-5`
+at `high`. The critique-effort replays of 2026-10-08 that fixed `high` were on Opus 5 too; Opus 5.5
+as critic is untested. No live run has used the new pin.
+
+### What has been done
+
+- Thirty third-party skills were staged outside the repository, in
+  `D:/Su Lab/verifier-submissions/batch-2026-10-20/`, as a stratified mix: 8 known-good (false-alarm
+  control), 10 pre-fix (an earlier upstream revision that a later upstream commit corrected, so the
+  error is real and the diff is the key), 6 aggregator copies, 6 wild. The keys are in
+  `D:/Su Lab/verifier-keys/batch-2026-10-20/`, apart from anything a run reads. The batch README
+  carries the ledger and five suggested waves of six. None has run.
+
+### Open questions for the operator
+
+1. Which skill runs first, and from which session: this session's `serve-local` started on the old
+   pin and old code, so a run from here must go through `scripts/verify.py verify` with
+   `--model claude-opus-5-5`, or through a fresh session.
+
+### Recommended next action
+
+Run wave 1 of the batch one skill at a time as the usage window allows, reading each run for the
+new pin's `probe` record, `session_attempts` and the `sandbox_` faults, and fill the ledger.

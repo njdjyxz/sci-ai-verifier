@@ -135,7 +135,7 @@ and its settings need changing, remove the old registration using the
 
 ```powershell
 $verifierClaude = (Get-Command claude.exe -ErrorAction Stop).Source
-claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5 --timeout 10800
+claude.exe mcp add --env 'CLAUDE_CODE_OAUTH_TOKEN=${SCI_VERIFIER_OAUTH_TOKEN:-}' --transport stdio --scope user scientific-verifier-local -- "C:/Python314/python.exe" "D:/Su Lab/sci-ai-verifier/scripts/verify.py" serve-local --workspace "D:/Su Lab/sci-ai-verifier" --config "D:/Su Lab/sci-ai-verifier/.verifier/local-settings.json" --claude-executable "$verifierClaude" --model claude-opus-5-5 --timeout 10800
 ```
 
 Expect an **Added** message. The first line finds the installed Claude program;
@@ -143,7 +143,9 @@ the second registers a tool connection named `scientific-verifier-local` in your
 personal Claude Code configuration. It is available across projects. The saved
 configuration contains a credential placeholder, not the token itself.
 
-`--model claude-opus-5` pins an exact model rather than the `opus` alias. This
+`--model claude-opus-5-5` pins an exact model rather than the `opus` alias (the pin was
+`claude-opus-5` from 2026-09-22 to 2026-10-21, when Claude Code 2.1.302 was confirmed to
+serve Opus 5.5). This
 matters more than it looks. A verdict is evidence about *one* model running the
 skill, so the runner freezes the model identity at the first trial and refuses a
 trial set containing two. An alias is free to resolve to a different version
