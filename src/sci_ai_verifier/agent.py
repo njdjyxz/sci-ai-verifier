@@ -139,6 +139,11 @@ class Runtime:
             # runs used up to four of the eight (d2b54156, f1e6e90b): a refused fetch or an unqualified design
             # costs one each, so twelve claims need room for about two apiece.
             local_limits["repair_retries"]=32
+            # The illegal-transition budget is spent the same way, and a planner that reads several
+            # snapshot files in one message spends one per file after the first before it sees any
+            # refusal: datamol 8ea6c851 sent nine and closed at eight; rdkit-library bb4687ac and
+            # statsmodels 836ad6ac sent eight and finished with one left.
+            local_limits["illegal_transitions"]=32
         self.limits = {**DEFAULT_LIMITS, **({"max_steps": 256} if profile != "stage2" else {}), **local_limits, **(limits or {})}
         if profile == "demo":
             self.limits.update(max_steps=512, repair_retries=32, illegal_transitions=32,

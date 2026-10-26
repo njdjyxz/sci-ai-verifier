@@ -516,6 +516,32 @@ class LocalTests(unittest.TestCase):
         self.assertEqual((cancelled["error"]["code"], cancelled["error"]["message"]),
                          ("cancelled", "The operator cancelled this run."))
 
+    def test_a_message_of_nine_stale_reads_leaves_the_run_open(self):
+        """Opus 5.5 reads several snapshot files in one message, every call carrying the token of the
+        reply it last saw, and each call after the first is refused before the planner sees any result.
+        datamol 8ea6c851 sent nine and closed at the budget of eight; rdkit-library bb4687ac and
+        statsmodels 836ad6ac sent eight and finished with one left. The budget now matches the repair
+        budget, and the prompt says a plain read rotates the token too."""
+        from sci_ai_verifier.local_entry import PLANNER_PROMPT
+        args = {"run_id": self.data["run_id"], "state_token": self.data["state_token"],
+                "snapshot_id": self.snapshot["id"], "snapshot_digest": self.snapshot["digest"], "path": "SKILL.md"}
+        results = [self.runtime.call("read_snapshot_file", dict(args)) for _ in range(9)]
+        self.assertEqual([r["status"] for r in results], ["ok"] + ["retryable"] * 8)
+        self.assertEqual({r["error"]["code"] for r in results[1:]}, {"illegal_transition"})
+        self.assertEqual(results[-1]["error"]["run_state"], "source_ready")
+        self.assertEqual(results[-1]["error"]["illegal_transitions_remaining"],
+                         self.runtime.limits["illegal_transitions"] - 8)
+        self.assertGreaterEqual(self.runtime.limits["illegal_transitions"], self.runtime.limits["repair_retries"])
+        self.assertIn("32 and 32", dict(self.runtime._instruction_blocks())["references/local-contract.md"])
+        prompt = " ".join(PLANNER_PROMPT.split())
+        self.assertIn("Send one verifier tool call per message", prompt)
+        self.assertIn("even a plain read, rotates the token", prompt)
+        # The newest token, from the last refusal, carries the run on.
+        self.data = {**self.data, "state_token": results[-1]["error"]["state_token"]}
+        self.assertEqual(self.call("read_snapshot_file", snapshot_id=self.snapshot["id"],
+                                   snapshot_digest=self.snapshot["digest"], path="SKILL.md")["outcome"],
+                         "snapshot_file_returned")
+
 
 class ClaimScopeTests(unittest.TestCase):
     """"Claims" in local-tasks.md: each claim a group of whole sections, nothing left out, at most twelve."""

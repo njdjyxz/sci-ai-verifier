@@ -3567,3 +3567,49 @@ as critic is untested. No live run has used the new pin.
 
 Run wave 1 of the batch one skill at a time as the usage window allows, reading each run for the
 new pin's `probe` record, `session_attempts` and the `sandbox_` faults, and fill the ledger.
+
+## Claude: 2026-10-25 (datamol `8ea6c851` closed by nine reads in one message; one call per message in the prompt; the local illegal-transition budget 8 -> 32)
+
+### Current stage and status
+
+Version 0.8.0 on `main`, pinned to `claude-opus-5-5`. The datamol run `8ea6c851` (attempt
+`77fee34e`, 2026-10-24) ended `illegal_transition_limit` after 10 steps and about 30 s: the
+planner put nine `read_snapshot_file` calls in one assistant message, all carrying the token
+`load_submitted_skill` returned. The first was accepted and rotated the token; the next eight
+were refused (`illegal_transition`, "Use a legal tool with the latest returned state token.")
+before the planner saw any result, and the eighth refusal spent the run-wide budget of 8. Python
+followed `workflow.md` ("a second workflow request in the same turn") and `tool-contracts.md`;
+the planner broke the rule, and its own closing message named the misreading: it did not know a
+plain read rotates the token. Across the 49 kept attempts the habit belongs to the new pin: 2 of
+16 `claude-opus-5` runs batched reads (two each), 10 of 26 `claude-opus-5-5` runs did (nine,
+eight, eight, seven, six, five, three, two, two, two), and rdkit-library `bb4687ac` and
+statsmodels `836ad6ac` finished with one illegal transition left. Pairs of parallel
+`fetch_local_reference` cost one each in seven runs, a cost this plan already records.
+`runtime-contract.md` asks that "a single confused step is recoverable"; one batched message is
+one step, and at 8 it was not.
+
+### What has been done
+
+- The planner prompt (`local_entry.py`) now says: one verifier tool call per message, wait for
+  its reply, and even a plain read rotates the token; further calls in the same message are
+  refused and spend the illegal-transition budget.
+- The local illegal-transition budget is 32, beside the repair budget of 32 (`agent.py`;
+  `local-contract.md` "Legal operations"). The demo profile already ran at 32. A batch of nine
+  stale reads now leaves the run in `source_ready` with 24 left, and the newest token carries it
+  on; `test_local.py` holds that case and the prompt's sentences. The suite ran 448 tests, 2 skipped, all passing (2026-10-25).
+- Not done: letting an accepted read keep the token, so a batch of reads succeeds. That changes
+  the serialization every profile shares (`tools.py`, `workflow.md`, `tool-contracts.md`,
+  `runtime-contract.md`) and inverts `test_stale_concurrent_requests_cannot_both_run`; it is the
+  next step only if batches keep appearing under the new sentence.
+
+### Open questions for the operator
+
+1. Whether to re-run datamol on this commit, and from which session: a `serve-local` started
+   before it keeps the old prompt and budget, so the run goes through `scripts/verify.py verify`
+   or a fresh session.
+
+### Recommended next action
+
+Re-run datamol when the usage window allows, then count batched reads in every later run by
+grouping the planner's tool_use blocks by `message.id` in `workflow.jsonl`: with none, the
+sentence worked; with batches still spending the budget, make reads keep the token.

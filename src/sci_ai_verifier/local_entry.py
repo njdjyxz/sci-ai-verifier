@@ -29,9 +29,13 @@ Pass that string, unchanged, as `source_path` to load_submitted_skill. Do not sh
 make it relative, or substitute a file name inside it.
 
 Your current state token is {state_token}. Every tool reply returns the next one; always
-use the newest. Each reply also gives attempt_seconds_remaining, the time left before you
-are stopped: judge your time by it, never by a guess. The pinned contracts that govern
-this run are appended to this message -- read them before acting. get_verifier_context
+use the newest. Send one verifier tool call per message and wait for its reply, including
+read_snapshot_file: every reply, even a plain read, rotates the token, so each further call
+in the same message is refused and spends the run's illegal-transition budget, and the run
+closes with no report when that budget is gone. Each reply also gives
+attempt_seconds_remaining, the time left before you are stopped: judge your time by it,
+never by a guess. The pinned contracts that govern this run are appended to this message
+-- read them before acting. get_verifier_context
 returns your current state, token and authorized path, and takes an optional `section` to
 re-read one pinned document or committed artifact if you lose this message.
 

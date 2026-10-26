@@ -371,8 +371,11 @@ scikit-survival's promise of no network calls.
 The `Local profile` matrix in workflow.md and `Local profile tools` in
 tool-contracts.md define the same legality. Every internal mutation uses the
 existing run ID, state token, step/repair budgets and journal. The repair and
-illegal-transition budgets are run-wide here, 32 and 8, and exhausting one ends the
-run with no report; the claim-local limits of `workflow.md` are the broader target's. The planner must
+illegal-transition budgets are run-wide here, 32 and 32, and exhausting one ends the
+run with no report; the claim-local limits of `workflow.md` are the broader target's. A
+planner that sends several reads in one message spends one illegal transition per call
+after the first before it sees any refusal (run 8ea6c851 sent nine), which is why the
+second budget matches the first. The planner must
 lookup before discovering. References and candidates are immutable objects;
 selection pins the exact candidate before any subject observation. A local
 candidate can be reused offline by digest, including its reference evidence.
