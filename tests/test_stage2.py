@@ -553,17 +553,11 @@ class Stage2Tests(unittest.TestCase):
         copied = self.base / "instructions"
         shutil.copytree(INSTRUCTIONS, copied)
         (copied / "SKILL.md").write_bytes(b"\xff")
-        process = subprocess.run(
-            [sys.executable, str(ROOT / "desktop/server.py"), "serve",
-             "--workspace", str(self.base / "data"), "--source-root", str(self.sources),
-             "--instructions", str(copied)],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True)
-        self.assertEqual(process.returncode, 2)
-        self.assertEqual(process.stdout, "")
-        self.assertNotIn("Traceback", process.stderr)
-        self.assertIn("Instruction directory", process.stderr)
-        self.assertIn("UTF-8", process.stderr)
-        self.assertEqual(len(process.stderr.strip().splitlines()), 1)
+        with self.assertRaises(ConfigurationError) as caught:
+            Runtime(self.base / "data", self.sources, copied)
+        message = str(caught.exception)
+        self.assertTrue(message.startswith("Instruction directory"), message)
+        self.assertIn("UTF-8", message)
 
     def test_saved_state_shape_matches_the_compatibility_contract(self):
         created = self.start()
@@ -583,15 +577,6 @@ class Stage2Tests(unittest.TestCase):
                 with self.assertRaises(ConfigurationError) as caught:
                     Runtime(*arguments)
                 self.assertTrue(str(caught.exception).startswith(setting), caught.exception)
-        process = subprocess.run(
-            [sys.executable, str(ROOT / "desktop/server.py"), "serve",
-             "--workspace", str(self.base / "data"), "--source-root", str(self.base / "absent"),
-             "--instructions", str(INSTRUCTIONS)],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True)
-        self.assertEqual(process.returncode, 2)
-        self.assertNotIn("Traceback", process.stderr)
-        self.assertEqual(len(process.stderr.strip().splitlines()), 1)
-        self.assertIn("Submission directory", process.stderr)
 
     def test_pinned_context_keeps_stage2_policy_and_drops_later_stages(self):
         blocks = dict(self.runtime._instruction_blocks())

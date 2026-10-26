@@ -17,8 +17,9 @@
 ## This repository
 
 The goal is the complete personal/local scientific verifier, using the user's
-installed Claude Code CLI, desktop Code tab and subscription. The latest
-`DEVELOPMENT-PLAN.md` entry is the single completion roadmap. Computational
+installed Claude Code CLI, desktop Code tab and subscription. `DEVELOPMENT-PLAN.md`
+introduces the project, records its current state and holds the roadmap; the dated
+session log lives in `DEVELOPMENT-LOG-ARCHIVE.md`, where every new dated entry goes. Computational
 skills, data and tool access, evaluator construction/qualification, audited
 sampling and grading, complete workflow logs, shared catalog contribution and
 release handling, and real local acceptance belong to that goal. The development
@@ -27,13 +28,9 @@ Do not redefine completion as a text-only, chemical-only or demonstration releas
 A hosted multiuser/API product is a separate future deployment project.
 
 Version 0.8.0 implements the local workflow, testing each claim by tasks (`local-tasks.md`):
-the skill runs on input Python built, and Python checks every output. Question tests were
-retired on 2026-10-05. The first live run with task tests (tooluniverse-dose-response,
-2026-10-06) settled its four claims at grade A with every trial passing. Under 0.7.0 one
-live run completed the earlier question workflow end to end (glycoengineering, 2026-09-16,
-four claims at evidence grade A). That is partial acceptance on the A-grade branch only;
-more skills must run before the design is treated as working.
-Its enforceable behavior is
+the skill runs on input Python built, and Python checks every output. What has been verified
+live, and what has not, is recorded once, in the plan's "Current state"; do not restate it
+here or in the install guide. Its enforceable behavior is
 documented in `skills/scientific-verifier/references/local-contract.md`.
 `verify` and `serve-local` provide one public action; Claude Code owns the planner
 loop and fresh subject sessions. Python owns deterministic tools, bounded
@@ -46,8 +43,10 @@ critique session that never saw the planning may only lower it. Seek the stronge
 justified grade; aiming low is as wrong as overclaiming. Never infer scientific
 acceptance from fixtures or silently expand configured resource/app permissions.
 
-The earlier Stage 2/3, chemical verification and same-chat demo code is preserved
-for compatibility. Demo is explicit, not the product default. Existing fixtures
+The earlier Stage 2/3, chemical verification and same-chat demo profiles are kept only
+so that runs saved under them stay readable; the Desktop Chat extension and its builder
+were removed on 2026-10-25, and retiring the profile code is a roadmap item. Demo is
+explicit, not the product default. Existing fixtures
 remain synthetic. Reviewed registries remain empty. Update contracts before
 behavior and keep policy reviewable in Markdown. Live Claude Code acceptance is
 separate from automated fixture tests and must not be claimed without evidence.
@@ -67,7 +66,7 @@ That pair is the worst case of a general rule. **A fact stated in more than one 
 
 ## Rules specific to this project
 
-- The old Python-controlled implementation under `tmp/legacy_fixed_workflow/`, the `reviews/` records and the superseded `evaluators/chemical_mass/` helper were deleted on 2026-09-15 and live only in Git history. Do not restore them or let an old design become a competing workflow controller.
+- The old Python-controlled implementation under `tmp/legacy_fixed_workflow/`, the `reviews/` records and the superseded `evaluators/chemical_mass/` helper were deleted on 2026-09-15, and the `desktop/` extension builder, `examples/submissions/`, `examples/catalog/`, `scripts/build_desktop.py` and `scripts/run_fixture_demo.py` on 2026-10-25; all live only in Git history. Do not restore them or let an old design become a competing workflow controller.
 - Registries under `registry/` hold **reviewed** entries only. Local runs autonomously write mechanically qualified candidates to `.verifier/candidates/` and historical provisional records to `.verifier/registry/`. No local tool writes to `registry/`.
 - Catalog contribution runs in this order: the agent prepares and checks, the agent opens a draft PR, a person reviews it there, the agent addresses the comments, and the person accepts by merging. Do not reintroduce a human sign-off gate before the PR. Nothing the agent prepares confers scientific approval, and no command merges.
 - Everything is content-addressed. `.gitattributes` pins LF endings; do not add a file or tool that reintroduces platform-dependent bytes.

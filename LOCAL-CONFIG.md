@@ -1,6 +1,8 @@
 # Local configuration and reusable task designs
 
-Use [LOCAL-INSTALL.md](LOCAL-INSTALL.md) for ordinary setup and manual testing.
+Use [INSTALL.md](INSTALL.md) for ordinary setup and manual testing. Commands below are
+written for PowerShell; on macOS run the same commands in Terminal with `python3`, from the
+project folder.
 This reference is for adding your datasets, scientific dependencies, app adapters
 and independently reviewed methods. None of these require switching Claude to
 API billing.
@@ -72,7 +74,7 @@ SciPy to fit models ("The reference solution" in `local-tasks.md`). It holds the
 wheels. Build it and read its ID:
 
 ```powershell
-docker build -t sci-verifier-rdkit:2026.3.6-scipy1.18.1 "D:\Su Lab\sci-ai-verifier\images\rdkit"
+docker build -t sci-verifier-rdkit:2026.3.6-scipy1.18.1 images/rdkit
 docker image inspect --format "{{.Id}}" sci-verifier-rdkit:2026.3.6-scipy1.18.1
 ```
 
@@ -94,7 +96,8 @@ Add a named entry under `resources` with exactly these fields, using real values
 }
 ```
 
-Get a file hash in PowerShell with `(Get-FileHash "D:\My Research\reference.csv" -Algorithm SHA256).Hash.ToLower()`.
+Get a file hash in PowerShell with `(Get-FileHash "D:\My Research\reference.csv" -Algorithm SHA256).Hash.ToLower()`,
+or on macOS with `shasum -a 256 ~/research/reference.csv`.
 The planner sees the configured name and provenance, not permission to read an
 arbitrary host path. JSON, rectangular CSV/TSV and ZIP structure can be checked.
 ZIP members are inspected under expansion limits and never extracted on the host.
@@ -195,7 +198,7 @@ observed; an unavailable tool or assessor is an operational failure instead.
 List saved candidates and their fingerprints at any time:
 
 ```powershell
-python scripts/local_catalog.py list --workspace "D:\Su Lab\sci-ai-verifier"
+python scripts/local_catalog.py list --workspace "<project folder>"
 ```
 
 ## Shared catalog and contributions
@@ -220,7 +223,7 @@ Export the selected candidate IDs, recording the licence and source of every
 included reference so a reviewer can judge redistribution:
 
 ```powershell
-python scripts/local_catalog.py export --workspace "D:\Su Lab\sci-ai-verifier" --candidate CANDIDATE_ID --file ".verifier\candidate-proposal.json" --redistribution "Reference sources and licences as recorded in the bundle; assessed as redistributable under those terms."
+python scripts/local_catalog.py export --workspace "<project folder>" --candidate CANDIDATE_ID --file ".verifier\candidate-proposal.json" --redistribution "Reference sources and licences as recorded in the bundle; assessed as redistributable under those terms."
 ```
 
 That statement is the preparer's assessment for a reviewer to check, not a legal
@@ -231,7 +234,7 @@ content and every task's input files are included, so inspect them before sharin
 Open the draft PR with your own signed-in [GitHub CLI](https://cli.github.com/):
 
 ```powershell
-python scripts/local_catalog.py publish --workspace "D:\Su Lab\sci-ai-verifier" --config ".verifier\local-settings.json" --file ".verifier\candidate-proposal.json" --sha256 EXACT_PRINTED_HASH --repository njdjyxz/sci-ai-verifier
+python scripts/local_catalog.py publish --workspace "<project folder>" --config ".verifier\local-settings.json" --file ".verifier\candidate-proposal.json" --sha256 EXACT_PRINTED_HASH --repository njdjyxz/sci-ai-verifier
 ```
 
 This requalifies the bundle in disposable storage, uploads it and opens one draft

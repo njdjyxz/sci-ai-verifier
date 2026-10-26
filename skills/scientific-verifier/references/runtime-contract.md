@@ -63,9 +63,9 @@ None of these are scientific outcomes and none map to `ok`, `retryable`, or `fat
 
 An `agent_unavailable` outcome never becomes grade U and never becomes a scientific `fail`. A refusal to analyze a submitted skill is a fact about the run, not evidence about the claim.
 
-## 6. Implemented Claude Desktop host
+## 6. Historical Claude Desktop host
 
-The approved integration target is Claude Desktop Chat, using an uploaded skill ZIP and a local MCP extension. The app owns planner model calls and the conversation. Python exposes five host controls and eighteen workflow tools, with profile-specific legality. The verification profile includes a host-injected subject interface and explicit replay fixtures; it does not maintain a planner model loop or implement a live provider. Replay observations are always synthetic. In-process adapter callbacks are not an isolation boundary; future live adapters must enforce their own deadlines and confinement.
+The first integration target was Claude Desktop Chat, using an uploaded skill ZIP and a local MCP extension. That extension and its builder were retired on 2026-10-25; the historical profiles remain reachable through `serve --profile <name>` so that runs saved under them stay readable, and nothing below is a target for new work. The app owned planner model calls and the conversation. Python exposes five host controls and eighteen workflow tools, with profile-specific legality. The verification profile includes a host-injected subject interface and explicit replay fixtures; it does not maintain a planner model loop or implement a live provider. Replay observations are always synthetic. In-process adapter callbacks are not an isolation boundary; future live adapters must enforce their own deadlines and confinement.
 
 The [Stage 2 contract](stage2-contract.md) records the exact enforced boundaries and exceptions to the full host target above: state-token serialization instead of assistant-turn inspection, immutable supplied context instead of guaranteed privileged message placement, bounded local tool requests instead of model billing control, and explicit recovery/cancellation instead of observing private model stop reasons. Other app tools cannot be disabled by this MCP server. Exact model and response identifiers remain null when the desktop client does not expose them.
 

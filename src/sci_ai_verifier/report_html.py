@@ -1,4 +1,4 @@
-"""A finished run as one HTML page for people to read ("HTML report" in LOCAL-INSTALL.md).
+"""A finished run as one HTML page for people to read ("HTML report" in INSTALL.md).
 
 Numbers and tables come from the run's own records: the report card, the run journal, the
 workflow log, the subject replies and the content-addressed store. Plain-language text (what the

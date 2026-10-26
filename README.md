@@ -1,89 +1,76 @@
 # Scientific Skill Verifier
 
-Version **0.8.0** is the local implementation under acceptance. Its public action
-is **verify this skill**. Claude Code plans the verification; fresh Claude Code
-sessions execute the submitted skill. Python preserves source snapshots,
-validates workflow steps, qualifies task designs and writes reports.
+A personal, local verifier for scientific agent skills. You give it a skill folder; it splits
+the skill into claims, designs tasks for each claim, runs the skill on those tasks in fresh
+Claude Code sessions inside a disposable container, checks every output in Python against
+values it planted or quoted from references it retrieved itself, has an independent Claude
+session critique the evidence, and writes a report with an **evidence grade** (A to D, or U)
+and a separate **status** (pass, fail, inconclusive). It runs on your own computer with your
+own Claude subscription; "local" means the orchestration, settings and evidence stay on your
+disk, while the model calls go to Claude.
 
-You can use the **Code tab in the Claude desktop app** for everyday verification.
-The standalone Claude Code command-line program is also required: this version
-starts its separate test sessions through that executable.
+Version **0.8.0**. One public action, **verify this skill**, exposed as the MCP tool
+`verify_skill` by `serve-local` and as `python scripts/verify.py verify <path>` on the command
+line. Claude Code owns the planning loop and the test sessions; Python owns the deterministic
+tools, bounded processes and saved evidence; no third-party Python packages are required.
 
-Start with the [Windows setup guide](LOCAL-INSTALL.md): numbered installation,
-subscription sign-in, desktop connection, first verification, and troubleshooting.
-After setup, ask: **Use scientific-verifier-local to verify this skill: <full path>**.
+## Start here
 
-The local MCP entry point, `serve-local`, exposes one tool: `verify_skill`.
-Subscription-token and API-key authentication are configurable. No credentials
-are written to verifier artifacts. This uses Claude's hosted models; local means
-local orchestration, execution boundaries and evidence storage.
+- [INSTALL.md](INSTALL.md): step-by-step setup on Windows or macOS, including how to supply
+  your own sign-in token. Nothing in this repository carries a credential.
+- [LOCAL-CONFIG.md](LOCAL-CONFIG.md): container images, packages a skill declares, datasets,
+  read-only app adapters, how the grade is decided, and catalog contributions.
+- [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md): what the project is, how it works, what has been
+  verified live, the open questions and the roadmap. Written for the next person or agent who
+  picks the project up. The dated log of every development session is in
+  [DEVELOPMENT-LOG-ARCHIVE.md](DEVELOPMENT-LOG-ARCHIVE.md).
+- [CLAUDE.md](CLAUDE.md): the working rules for agents that change this repository.
 
-An empty local catalog triggers agent-driven discovery. Public reference bytes,
-exact quotes, versions, license notes and every task's input files are pinned
-before subject execution. Qualified task designs can be reused offline. Reports
-distinguish comparison outcomes from scientific grades.
+After setup, in the Claude desktop app's Code tab, say:
 
-The evidence grade is an indicator of how gold-standard the evidence is, not an
-endorsement: A means the skill was compared against answers Python itself retrieved
-from an independent source, D means the conclusion rests on AI judgment over cited
-sources. The verifier seeks the strongest design the claim allows, proposes the
-grade it supports, and a fresh session that never saw the planning critiques that
-proposal and can only lower it. No human sign-off assigns a grade, and **no grade is
-invented**.
+> Use scientific-verifier-local to verify this skill: `<full path to a skill folder>`
 
-The build tests each claim by tasks: the skill runs in a container on input files
-Python built, and Python checks every output against a value it planted or quoted
-([`local-tasks.md`](skills/scientific-verifier/references/local-tasks.md)). It
-supports binary inputs and generated artifacts; bounded resources and configured
-read-only app adapters; audited repeated trials; negotiated A/B/C grading and
-separate documentary assessment; observable workflow logs; and pinned candidate
-import/export, prepared releases and retirement, with opt-in GitHub draft
-proposals the agent can revise after review. The public connection supports
-cancellation and progress. App-specific adapters require real application input.
-See the [configuration reference](LOCAL-CONFIG.md).
-Live CLI/desktop acceptance is still required; fixtures establish implementation
-behavior only. The [complete roadmap](DEVELOPMENT-PLAN.md#codex-2026-09-11-1932-pdt)
-defines the completion checklist and effort estimate; the
-[current log](DEVELOPMENT-PLAN.md#claude-2026-09-15) records implementation and
-acceptance status.
+## What a grade means
 
-## Development
+The grade is an indicator of evidence strength, never an endorsement, and no human enters one.
+**A**: the skill's outputs were checked by Python against values planted from, or quoted out of,
+an independent source the verifier retrieved, with enough distinct tasks and repeated trials.
+**B**: a weaker design, such as judged written answers for a text-only skill or fewer independent
+tasks. **C**: a reproducible comparison with weaker traceability. **D**: no execution; a fresh
+session judged cited sources. **U**: no acceptable source was found. The planner proposes the
+grade its design supports, Python refuses any proposal its own recorded facts cannot carry, and
+a critique session that never saw the planning can only lower it. Status is independent: a
+unanimous fail carries the same grade as a unanimous pass, and an operational failure (a refused
+or timed-out session, a package that would not install) is reported as such, never as a verdict.
 
-Python 3.11+; no third-party Python runtime dependencies.
+## Status
 
-```powershell
-python -m unittest discover -s tests -q
-python scripts/run_local_fixture.py
-```
+Live acceptance is partial. Since 2026-09-16 the verifier has completed more than forty live
+runs on real skills, and in October 2026 a thirty-skill sweep of third-party biology and
+chemistry skills (eight known-good, ten with a known upstream fix as the key, six aggregator
+copies, six unknown) found real defects in fourteen skills with no false alarm on the controls,
+missed every keyed error by omission or abstention rather than by a wrong verdict, and lost five
+skills to packages that would not build in the sandbox. The details, and what they mean for
+the roadmap, are in [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md). Fixtures remain synthetic,
+reviewed registries remain empty, and nothing in the automated suite establishes scientific
+acceptance.
 
-Use the [development plan](DEVELOPMENT-PLAN.md) as the single completion roadmap.
-The [local runtime contract](skills/scientific-verifier/references/local-contract.md)
-describes what the currently shipped code can enforce; it is not the completion goal.
+## How the repository is organised
 
-### Next implementation stage
-
-One live run has completed the whole local path (glycoengineering, 2026-09-16: five
-claims, four settled at evidence grade A, 66 of 66 trials scored, one operational
-limitation). It exercised the A-grade branch only.
-
-Continue the manual acceptance procedure in [LOCAL-INSTALL.md](LOCAL-INSTALL.md#your-manual-acceptance-tests)
-using the actual CLI, desktop, container and personal skills, with more skills chosen to
-force the B, C and documentary paths. Record the observed results before declaring live
-acceptance or scientific validity. The earlier Stage 2/3 checkpoints are historical and
-are not the current completion boundary.
-
-## Profiles and compatibility
-
-| Entry/profile | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `verify` / `serve-local` | Local workflow, independent sessions, controlled execution and reviewed evidence policies |
-| `serve --profile verification` | Historical bounded CHNOPS chemical workflow; explicitly configured subject adapter/catalog |
-| `serve --profile stage2` / `stage3` | Extraction and routing checkpoints |
-| `serve --profile demo` | Explicit historical same-chat demonstration; no independent scientific grade |
+| `skills/scientific-verifier/` | The planner's skill: `SKILL.md` and the contracts under `references/`. `workflow.md` owns tool legality, `tool-contracts.md` owns each tool, `local-contract.md` owns the local profile's enforceable behaviour, `local-tasks.md` owns claims and task tests, `evidence-rubric.md` owns the grade standards |
+| `src/sci_ai_verifier/` | The Python runtime: MCP transport, deterministic tools, container sandbox, Claude Code process control, evidence storage, grading and reports |
+| `scripts/` | `verify.py` (CLI and `serve-local`), `configure_local.py`, `report_html.py`, `local_catalog.py`, `record_critique.py`, `build_local.py` |
+| `tests/` | The automated suite (`python -m unittest discover -s tests -q`) and recorded live replies under `tests/recorded/` |
+| `images/rdkit/` | A reviewed container image with RDKit, pandas and SciPy |
+| `examples/` | Synthetic fixtures for the suite and `scripts/run_local_fixture.py` |
+| `registry/`, `catalog/` | Reviewed catalog data (empty) and the historical catalog manifest; local runs write candidates under `.verifier/`, never here |
+| `.verifier/` | Created at runtime, ignored by Git: settings, runs, attempts, reports, candidates |
 
-The retired demo branch's useful implementation is preserved in main's history.
-Old saved runs retain their profiles and immutable evidence. The Desktop builder
-remains available for compatibility. Reviewed `registry/` entries are separate
-from run-generated local candidates. The previously preserved copies under `tmp/`
-and `reviews/`, and the superseded `evaluators/chemical_mass/` helper, were removed
-on 2026-09-15; they remain in Git history.
+## Historical profiles
+
+The earlier Stage 2, Stage 3, chemical verification and same-chat demo workflows are kept so
+that runs saved under them stay readable: `python scripts/verify.py serve --profile <stage2|stage3|verification|demo>`.
+They are not the product and receive no new work; the Claude Desktop Chat extension that once
+exposed them was retired on 2026-10-25. Retiring the profile code itself is on the roadmap.

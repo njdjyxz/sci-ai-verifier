@@ -307,7 +307,7 @@ validates transitions, snapshots inputs, executes fresh subject processes, and
 writes immutable evidence. The public interface is `verify_skill(source_path, html_report)`
 or `sci-ai-verifier verify <path>`. A completed run also gets a readable HTML page and a notes
 file for the calling agent's plain-language summaries, unless `html_report` is false or
-`--no-html` is given (`LOCAL-INSTALL.md`). Historical profiles remain readable.
+`--no-html` is given (`INSTALL.md`). Historical profiles remain readable.
 
 ## Scope and evidence
 
